@@ -434,14 +434,38 @@ private suspend fun fetchForgeVersions(mcVersion: String): List<LoaderVersionIte
         for (url in urls) {
             try { text = loaderHttpGet(url); if (text.isNotBlank()) break } catch (_: Exception) {}
         }
-        if (text.isBlank()) return@withContext emptyList()
-        val arr = httpJson.parseToJsonElement(text).jsonArray
-        arr.mapNotNull { el ->
-            val obj = el.jsonObject
-            val ver = obj["version"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-            val build = obj["build"]?.jsonPrimitive?.intOrNull?.toString() ?: ""
-            LoaderVersionItem(ver, ver, if (build.isNotBlank()) mapOf("build" to build) else emptyMap())
-        }.reversed()
+        if (text.isNotBlank()) {
+            val arr = httpJson.parseToJsonElement(text).jsonArray
+            val items = arr.mapNotNull { el ->
+                val obj = el.jsonObject
+                val ver = obj["version"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                val build = obj["build"]?.jsonPrimitive?.intOrNull?.toString() ?: ""
+                LoaderVersionItem(ver, ver, if (build.isNotBlank()) mapOf("build" to build) else emptyMap())
+            }.reversed()
+            if (items.isNotEmpty()) return@withContext items
+        }
+
+        // fallback：Forge maven metadata（不包含 build，但可用于直接 maven 安装器下载）
+        val metadataUrls = listOf(
+            "https://bmclapi2.bangbang93.com/maven/net/minecraftforge/forge/maven-metadata.xml",
+            "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml",
+        )
+        val metadataText = metadataUrls.asSequence().mapNotNull { url ->
+            runCatching { loaderHttpGet(url) }.getOrNull()
+        }.firstOrNull { it.isNotBlank() }
+            ?: return@withContext emptyList()
+
+        val prefix = "$mcVersion-"
+        val versions = Regex("<version>([^<]+)</version>")
+            .findAll(metadataText)
+            .mapNotNull { it.groupValues.getOrNull(1) }
+            .filter { it.startsWith(prefix) }
+            .map { it.removePrefix(prefix) }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .toList()
+
+        versions.reversed().map { LoaderVersionItem(it, it) }
     } catch (_: Exception) { emptyList() }
 }
 

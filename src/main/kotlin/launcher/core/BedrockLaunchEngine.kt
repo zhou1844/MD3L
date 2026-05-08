@@ -290,7 +290,11 @@ class BedrockLaunchEngine : ILaunchEngine {
         return if (ext == "appx" || ext == "appxbundle" || ext == "msixbundle") source else null
     }
 
-    private data class RegisteredSlot(val aumid: String, val log: String)
+    private data class RegisteredSlot(
+        val aumid: String,
+        val packageFullName: String,
+        val log: String,
+    )
 
     private fun resolveInstalledSelectedVersionSlot(versionDir: File, packageFile: File): RegisteredSlot? {
         val marker = File(versionDir, ".installed")
@@ -298,11 +302,39 @@ class BedrockLaunchEngine : ILaunchEngine {
         val lines = runCatching { marker.readLines(Charsets.UTF_8) }.getOrDefault(emptyList())
         val markerSource = lines.firstOrNull { it.startsWith("source=") }?.substringAfter("source=")
         val markerAumid = lines.firstOrNull { it.startsWith("aumid=") }?.substringAfter("aumid=")?.takeIf { it.contains("!") }
+        val markerPackageFullName = lines.firstOrNull { it.startsWith("packageFullName=") }
+            ?.substringAfter("packageFullName=")
+            ?.takeIf { it.isNotBlank() }
         if (markerSource != packageFile.absolutePath) return null
-        if (markerAumid != null && isAumidInstalled(markerAumid)) {
-            return RegisteredSlot(markerAumid, "FAST_PATH marker aumid")
+
+        // 旧 marker 没有 packageFullName，视为不可信，强制重装到选中版本
+        if (markerAumid == null || markerPackageFullName == null) return null
+
+        if (!isAumidInstalled(markerAumid)) return null
+        val installedPackageFullName = queryInstalledPackageFullNameByAumid(markerAumid) ?: return null
+        if (!installedPackageFullName.equals(markerPackageFullName, ignoreCase = true)) {
+            println(
+                "[Bedrock] 检测到外部更新/替换：" +
+                    "marker=$markerPackageFullName, installed=$installedPackageFullName，强制重装选中版本槽位"
+            )
+            return null
         }
-        return null
+
+        return RegisteredSlot(markerAumid, markerPackageFullName, "FAST_PATH marker aumid+package")
+    }
+
+    private fun queryInstalledPackageFullNameByAumid(aumid: String): String? {
+        return try {
+            val family = aumid.substringBefore("!").replace("'", "''")
+            val script = "\$pkg = Get-AppxPackage | Where-Object { \$_.PackageFamilyName -ieq '$family' } | Select-Object -First 1; if (\$pkg) { Write-Output \$pkg.PackageFullName }"
+            val proc = ProcessBuilder("powershell", "-NoProfile", "-Command", script)
+                .redirectErrorStream(true).start()
+            val output = proc.inputStream.bufferedReader().readText().trim()
+            proc.waitFor()
+            output.takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun isAumidInstalled(aumid: String): Boolean {
@@ -319,15 +351,19 @@ class BedrockLaunchEngine : ILaunchEngine {
         }
     }
 
-    private fun appendInstallMarkerSlot(versionDir: File, packageFile: File, aumid: String) {
+    private fun appendInstallMarkerSlot(versionDir: File, packageFile: File, aumid: String, packageFullName: String) {
         val marker = File(versionDir, ".installed")
         val lines = if (marker.exists()) marker.readLines(Charsets.UTF_8).filterNot {
-            it.startsWith("source=") || it.startsWith("aumid=") || it.startsWith("slotUpdatedAt=")
+            it.startsWith("source=") ||
+                it.startsWith("aumid=") ||
+                it.startsWith("packageFullName=") ||
+                it.startsWith("slotUpdatedAt=")
         } else emptyList()
         marker.writeText(
             (lines + listOf(
                 "source=${packageFile.absolutePath}",
                 "aumid=$aumid",
+                "packageFullName=$packageFullName",
                 "slotUpdatedAt=${System.currentTimeMillis()}",
             )).joinToString("\n") + "\n",
             Charsets.UTF_8,
@@ -399,8 +435,14 @@ class BedrockLaunchEngine : ILaunchEngine {
             if (proc.exitValue() != 0) throw RuntimeException("基岩版官方 Appx 安装槽位失败 (exit ${proc.exitValue()}):\n$output")
             val aumid = output.lineSequence().firstOrNull { it.startsWith("AUMID ") }?.substringAfter("AUMID ")?.trim()?.takeIf { it.contains("!") }
                 ?: throw RuntimeException("基岩版官方 Appx 安装成功但未解析到 AUMID:\n$output")
-            appendInstallMarkerSlot(versionDir, packageFile, aumid)
-            return RegisteredSlot(aumid, output)
+            val packageFullName = output.lineSequence().firstOrNull { it.startsWith("INSTALLED ") }
+                ?.substringAfter("INSTALLED ")
+                ?.substringBefore(" @ ")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: throw RuntimeException("基岩版官方 Appx 安装成功但未解析到 PackageFullName:\n$output")
+            appendInstallMarkerSlot(versionDir, packageFile, aumid, packageFullName)
+            return RegisteredSlot(aumid, packageFullName, output)
         } finally {
             scriptFile.delete()
         }

@@ -32,7 +32,12 @@ data class LaunchContext(
     val skinUri: String = "",
     val skinModel: String = "classic",
 ) {
-    val gameDir: File get() = File(minecraftDir, "versions/${version.id}")
+    val gameDir: File
+        get() {
+            val versionRoot = File(minecraftDir, "versions/${version.id}")
+            val modpackRoot = File(versionRoot, ".minecraft")
+            return if (modpackRoot.isDirectory) modpackRoot else versionRoot
+        }
     val rootGameDir: File get() = File(minecraftDir)
     val versionDir: File get() = File(version.versionDir)
     val nativesDir: File get() = File(version.versionDir, "natives")

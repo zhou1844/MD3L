@@ -2,6 +2,7 @@
 
 import kotlinx.serialization.json.*
 import java.io.File
+import java.security.MessageDigest
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -22,25 +23,25 @@ class JavaLaunchEngine : ILaunchEngine {
         val versionJsonFile = File(context.versionDir, "${context.version.id}.json")
         val root = json.parseToJsonElement(versionJsonFile.readText(Charsets.UTF_8)).jsonObject
 
-        // 读取父版本 JSON（若存在 inheritsFrom），全局共用
-        val inheritsFrom = root["inheritsFrom"]?.jsonPrimitive?.contentOrNull
-        val parentRoot: JsonObject? = if (inheritsFrom != null) {
-            val parentFile = File(context.minecraftDir, "versions/$inheritsFrom/$inheritsFrom.json")
-            if (parentFile.exists()) json.parseToJsonElement(parentFile.readText()).jsonObject else null
-        } else null
+        // NeoForge 启动前快速校验：检测 processor 产物是否损坏，损坏则自动修复
+        preflightNeoForgeIntegrity(root, context, versionJsonFile)
 
-        // 预计算 assetsIndex：优先自身 → 父版本 assets 字段 → 父版本 ID → 自身 ID
+        val inheritanceRoots = resolveInheritanceRoots(root, context.minecraftDir)
+
+        // 预计算 assetsIndex：优先自身 → 继承链最近可用 assets 字段 → 当前版本 ID
         cachedAssetsIndex = context.version.assetsIndex.ifBlank {
-            parentRoot?.get("assets")?.jsonPrimitive?.contentOrNull
-                ?: parentRoot?.get("assetIndex")?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull
-                ?: inheritsFrom
+            inheritanceRoots.asReversed().firstNotNullOfOrNull { parent ->
+                parent["assets"]?.jsonPrimitive?.contentOrNull
+                    ?: parent["assetIndex"]?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull
+                    ?: parent["id"]?.jsonPrimitive?.contentOrNull
+            }
                 ?: context.version.id
         }
 
-        val mainClass = resolveMainClass(root, parentRoot)
-        val classPath = buildClassPath(root, context, parentRoot)
-        val gameArgs = buildGameArguments(root, context, parentRoot)
-        val jvmArgs = buildJvmArguments(root, context, classPath, parentRoot)
+        val mainClass = resolveMainClass(root, inheritanceRoots)
+        val classPath = buildClassPath(root, context, inheritanceRoots)
+        val gameArgs = buildGameArguments(root, context, inheritanceRoots)
+        val jvmArgs = buildJvmArguments(root, context, classPath, inheritanceRoots)
 
         val command = mutableListOf<String>().apply {
             add(context.javaPath)
@@ -97,6 +98,80 @@ class JavaLaunchEngine : ILaunchEngine {
         println("[JavaLaunch] ${context.version.id}: args=${command.size}, cpJars=${classPath.split(File.pathSeparator).count { it.isNotBlank() }}")
 
         return pb.start()
+    }
+
+    /**
+     * 启动前快速检测 NeoForge processor 产物完整性。
+     * 如果 neoforge-client.jar 或 SRG jar 存在但损坏（无 .class），自动触发修复。
+     */
+    private fun preflightNeoForgeIntegrity(root: JsonObject, context: LaunchContext, versionJsonFile: File) {
+        val text = versionJsonFile.readText(Charsets.UTF_8)
+        if ("net.neoforged" !in text && "neoforge" !in versionJsonFile.nameWithoutExtension.lowercase()) return
+
+        val gameArgs = root["arguments"]?.jsonObject?.get("game")?.jsonArray ?: return
+        val neoForgeVersion = gameArgs.mapIndexedNotNull { i, el ->
+            if (el is JsonPrimitive && el.content == "--fml.neoForgeVersion")
+                (gameArgs.getOrNull(i + 1) as? JsonPrimitive)?.content
+            else null
+        }.firstOrNull() ?: return
+        val mcVersion = gameArgs.mapIndexedNotNull { i, el ->
+            if (el is JsonPrimitive && el.content == "--fml.mcVersion")
+                (gameArgs.getOrNull(i + 1) as? JsonPrimitive)?.content
+            else null
+        }.firstOrNull() ?: return
+        val neoFormVersion = gameArgs.mapIndexedNotNull { i, el ->
+            if (el is JsonPrimitive && el.content == "--fml.neoFormVersion")
+                (gameArgs.getOrNull(i + 1) as? JsonPrimitive)?.content
+            else null
+        }.firstOrNull()
+
+        val librariesDir = context.librariesDir
+        val clientJar = File(librariesDir, "net/neoforged/neoforge/$neoForgeVersion/neoforge-$neoForgeVersion-client.jar")
+        val srgJar = if (neoFormVersion != null) {
+            File(librariesDir, "net/minecraft/client/$mcVersion-$neoFormVersion/client-$mcVersion-$neoFormVersion-srg.jar")
+        } else null
+
+        val clientCorrupt = clientJar.isFile && !isJarWithClasses(clientJar)
+        val srgCorrupt = srgJar != null && srgJar.isFile && !isJarWithClasses(srgJar)
+
+        if (!clientCorrupt && !srgCorrupt) return
+
+        println("[Launch] NeoForge processor 产物损坏检测：client=${clientCorrupt}, srg=${srgCorrupt}")
+        println("[Launch] 自动触发修复...")
+
+        // 删除损坏 jar 以强制 repair 重建
+        if (clientCorrupt) clientJar.delete()
+        if (srgCorrupt) srgJar?.delete()
+
+        // 同步调用修复
+        val repaired = kotlinx.coroutines.runBlocking {
+            LoaderInstaller.repairForgeIfNeeded(
+                versionJsonFile = versionJsonFile,
+                minecraftDir = context.minecraftDir,
+                javaPath = context.javaPath,
+                onProgress = { println("[Launch/Repair] $it") },
+            )
+        }
+        if (!repaired) {
+            throw RuntimeException(
+                "NeoForge 安装损坏且自动修复失败。\n" +
+                "请删除该版本后重新导入整合包，或手动重新安装 NeoForge $neoForgeVersion。"
+            )
+        }
+        println("[Launch] NeoForge 自动修复完成")
+    }
+
+    private fun isJarWithClasses(file: File): Boolean {
+        if (!file.isFile || file.length() <= 1000) return false
+        return runCatching {
+            java.util.zip.ZipFile(file).use { zip ->
+                val entries = zip.entries()
+                while (entries.hasMoreElements()) {
+                    if (entries.nextElement().name.endsWith(".class")) return@use true
+                }
+                false
+            }
+        }.getOrDefault(false)
     }
 
     private fun ensureOptions(gameDir: File) {
@@ -176,13 +251,13 @@ class JavaLaunchEngine : ILaunchEngine {
         }
     }
 
-    private fun resolveMainClass(root: JsonObject, parentRoot: JsonObject?): String {
+    private fun resolveMainClass(root: JsonObject, inheritanceRoots: List<JsonObject>): String {
         return root["mainClass"]?.jsonPrimitive?.contentOrNull
-            ?: parentRoot?.get("mainClass")?.jsonPrimitive?.contentOrNull
+            ?: inheritanceRoots.asReversed().firstNotNullOfOrNull { it["mainClass"]?.jsonPrimitive?.contentOrNull }
             ?: "net.minecraft.client.main.Main"
     }
 
-    private fun buildClassPath(root: JsonObject, context: LaunchContext, parentRoot: JsonObject?): String {
+    private fun buildClassPath(root: JsonObject, context: LaunchContext, inheritanceRoots: List<JsonObject>): String {
         val libs = mutableListOf<String>()
         val librariesDir = context.librariesDir
 
@@ -210,20 +285,39 @@ class JavaLaunchEngine : ILaunchEngine {
         }
 
         val inheritsFrom = root["inheritsFrom"]?.jsonPrimitive?.contentOrNull
-        if (parentRoot != null) collectLibs(parentRoot)
+        inheritanceRoots.forEach { collectLibs(it) }
         collectLibs(root)
 
-        val modulePathEntries = collectModulePathEntries(root, context)
+        val modulePathEntries = collectModulePathEntries(inheritanceRoots + root, context)
         findNeoForgeUniversalJar(root, context)?.let { libs.add(it.absolutePath) }
         findNeoForgePatchedJar(root, context)?.let { libs.add(it.absolutePath) }
         val versionJar = inheritsFrom ?: context.version.id
-        val jarFile = File(context.minecraftDir, "versions/$versionJar/$versionJar.jar")
+        val moduleLauncher = usesForgeModuleLauncher(root)
+        val inheritedJar = File(context.minecraftDir, "versions/$versionJar/$versionJar.jar")
+        val currentJar = File(context.minecraftDir, "versions/${context.version.id}/${context.version.id}.jar")
+        val jarFile = when {
+            inheritedJar.isFile && inheritedJar.length() > 0L -> inheritedJar
+            currentJar.isFile && currentJar.length() > 0L -> {
+                println("[Launch] 基础版本 JAR 缺失，回退使用当前版本 JAR: ${currentJar.absolutePath}")
+                currentJar
+            }
+            else -> inheritedJar
+        }
         if (jarFile.exists()) {
             // NeoForge expects the base game JAR to have this attribute, otherwise it crashes.
-            if (usesForgeModuleLauncher(root) || "neoforge" in context.version.id.lowercase() || "forge" in context.version.id.lowercase()) {
+            if (moduleLauncher) {
                 ensureJarManifestAttribute(jarFile, "Minecraft-Dists", "client")
+            } else {
+                val jarMetaRoot = if (versionJar == context.version.id) {
+                    root
+                } else {
+                    inheritanceRoots.asReversed().firstOrNull {
+                        it["id"]?.jsonPrimitive?.contentOrNull == versionJar
+                    } ?: inheritanceRoots.lastOrNull() ?: root
+                }
+                ensureClientJarIntegrityIfNeeded(jarMetaRoot, jarFile, versionJar)
             }
-            if (!usesForgeModuleLauncher(root)) libs.add(jarFile.absolutePath)
+            if (!moduleLauncher) libs.add(jarFile.absolutePath)
         }
 
         return libs.distinct()
@@ -231,23 +325,25 @@ class JavaLaunchEngine : ILaunchEngine {
             .joinToString(File.pathSeparator)
     }
 
-    private fun collectModulePathEntries(root: JsonObject, context: LaunchContext): Set<String> {
-        val jvmArgs = root["arguments"]?.jsonObject?.get("jvm")?.jsonArray ?: return emptySet()
+    private fun collectModulePathEntries(roots: List<JsonObject>, context: LaunchContext): Set<String> {
         val rawArgs = mutableListOf<String>()
-        jvmArgs.forEach { arg ->
-            when (arg) {
-                is JsonPrimitive -> rawArgs.add(arg.content)
-                is JsonObject -> {
-                    val rules = arg["rules"]?.jsonArray
-                    if (rules == null || isRuleAllowed(rules)) {
-                        when (val value = arg["value"]) {
-                            is JsonPrimitive -> rawArgs.add(value.content)
-                            is JsonArray -> value.forEach { if (it is JsonPrimitive) rawArgs.add(it.content) }
-                            else -> Unit
+        roots.forEach { node ->
+            val jvmArgs = node["arguments"]?.jsonObject?.get("jvm")?.jsonArray ?: return@forEach
+            jvmArgs.forEach { arg ->
+                when (arg) {
+                    is JsonPrimitive -> rawArgs.add(arg.content)
+                    is JsonObject -> {
+                        val rules = arg["rules"]?.jsonArray
+                        if (rules == null || isRuleAllowed(rules)) {
+                            when (val value = arg["value"]) {
+                                is JsonPrimitive -> rawArgs.add(value.content)
+                                is JsonArray -> value.forEach { if (it is JsonPrimitive) rawArgs.add(it.content) }
+                                else -> Unit
+                            }
                         }
                     }
+                    else -> Unit
                 }
-                else -> Unit
             }
         }
         val result = mutableSetOf<String>()
@@ -265,10 +361,17 @@ class JavaLaunchEngine : ILaunchEngine {
     }
 
     private fun findNeoForgePatchedJar(root: JsonObject, context: LaunchContext): File? {
+        val requiresPatched = root["md3lRequiresPatchedClient"]?.jsonPrimitive?.contentOrNull
+            ?.toBooleanStrictOrNull() ?: false
         val neoForgeVersion = findFmlArg(root, "--fml.neoForgeVersion") ?: return null
         val patched = File(context.librariesDir, "net/neoforged/minecraft-client-patched/$neoForgeVersion/minecraft-client-patched-$neoForgeVersion.jar")
-        val file = patched.takeIf { it.isFile && it.length() > 0 }
-            ?: throw RuntimeException("NeoForge 安装不完整：缺少 $patched\n请删除该 NeoForge 版本后重新安装，或在版本详情中重新安装 NeoForge。")
+        if (!patched.isFile || patched.length() <= 0L) {
+            if (!requiresPatched) {
+                return null
+            }
+            throw RuntimeException("NeoForge 安装不完整：缺少 $patched\n请删除该 NeoForge 版本后重新安装，或在版本详情中重新安装 NeoForge。")
+        }
+        val file = patched
         ensureJarManifestAttribute(file, "Minecraft-Dists", "client")
         return file
     }
@@ -320,6 +423,7 @@ class JavaLaunchEngine : ILaunchEngine {
             seen.add("META-INF/MANIFEST.MF") // already written by JarOutputStream constructor
             for (entry in jarF.entries()) {
                 if (entry.name.equals("META-INF/MANIFEST.MF", ignoreCase = true)) continue
+                if (isJarSignatureEntry(entry.name)) continue
                 if (!seen.add(entry.name)) continue
                 // Preserve the original compression method and sizes for STORED entries
                 val newEntry = java.util.zip.ZipEntry(entry.name)
@@ -357,6 +461,94 @@ class JavaLaunchEngine : ILaunchEngine {
             backupFile.delete()
             println("[JavaLaunch] Injected $key=$value into ${jarFile.name} via copy (${jarFile.length()} bytes)")
         }
+    }
+
+    private fun ensureClientJarIntegrityIfNeeded(metaRoot: JsonObject, jarFile: File, versionIdForLog: String) {
+        val client = metaRoot["downloads"]?.jsonObject?.get("client")?.jsonObject ?: return
+        val expectedSha1 = client["sha1"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+        if (expectedSha1.isBlank()) return
+
+        val currentOk = jarFile.isFile && jarFile.length() > 0L && sha1Hex(jarFile).equals(expectedSha1, ignoreCase = true)
+        if (currentOk) return
+
+        val rawUrl = client["url"]?.jsonPrimitive?.contentOrNull.orEmpty().trim()
+        val candidates = linkedSetOf<String>()
+        if (rawUrl.isNotBlank()) {
+            candidates.add(DownloadManager.mirrorUrl(rawUrl))
+            candidates.add(rawUrl)
+        }
+        if (candidates.isEmpty()) return
+
+        println("[Launch] 客户端 JAR 校验失败，尝试修复: $versionIdForLog -> ${jarFile.absolutePath}")
+        val tempFile = File(jarFile.parentFile, "${jarFile.name}.md3l.download")
+        tempFile.delete()
+
+        for (url in candidates) {
+            if (!downloadBinary(url, tempFile)) {
+                tempFile.delete()
+                continue
+            }
+            val ok = tempFile.isFile && tempFile.length() > 0L && sha1Hex(tempFile).equals(expectedSha1, ignoreCase = true)
+            if (!ok) {
+                tempFile.delete()
+                continue
+            }
+
+            runCatching {
+                if (jarFile.exists()) jarFile.delete()
+                if (!tempFile.renameTo(jarFile)) {
+                    tempFile.copyTo(jarFile, overwrite = true)
+                    tempFile.delete()
+                }
+            }.onSuccess {
+                println("[Launch] 客户端 JAR 修复成功: ${jarFile.absolutePath}")
+                return
+            }.onFailure {
+                tempFile.delete()
+            }
+        }
+
+        println("[Launch] 客户端 JAR 修复失败，继续使用现有文件: ${jarFile.absolutePath}")
+    }
+
+    private fun downloadBinary(url: String, dest: File): Boolean {
+        return try {
+            dest.parentFile?.mkdirs()
+            val conn = java.net.URI(url).toURL().openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 20_000
+            conn.readTimeout = 120_000
+            conn.setRequestProperty("User-Agent", "MD3L/1.1")
+            val code = conn.responseCode
+            if (code != 200) {
+                conn.disconnect()
+                return false
+            }
+            conn.inputStream.use { input ->
+                dest.outputStream().use { output -> input.copyTo(output) }
+            }
+            conn.disconnect()
+            dest.isFile && dest.length() > 0L
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun sha1Hex(file: File): String {
+        val md = MessageDigest.getInstance("SHA-1")
+        file.inputStream().use { input ->
+            val buf = ByteArray(8192)
+            var n: Int
+            while (input.read(buf).also { n = it } != -1) {
+                md.update(buf, 0, n)
+            }
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun isJarSignatureEntry(entryName: String): Boolean {
+        val n = entryName.replace('\\', '/').uppercase()
+        if (!n.startsWith("META-INF/")) return false
+        return n.endsWith(".SF") || n.endsWith(".RSA") || n.endsWith(".DSA") || n.endsWith(".EC")
     }
 
     private fun normalizePath(path: String): String =
@@ -427,7 +619,7 @@ class JavaLaunchEngine : ILaunchEngine {
         root: JsonObject,
         context: LaunchContext,
         classPath: String,
-        parentRoot: JsonObject?,
+        inheritanceRoots: List<JsonObject>,
     ): List<String> {
         val args = mutableListOf<String>()
         val nativesDir = context.nativesDir.absolutePath
@@ -475,13 +667,13 @@ class JavaLaunchEngine : ILaunchEngine {
         // 注意：Forge/NeoForge 的 JVM 参数包含模块路径(-p)、--add-modules 等，
         // 如果同时加入父版本的 -cp（全量 classpath），会导致 Java 模块系统冲突。
         // 因此仅在没有 inheritsFrom（纯原版）时继承父版本 JVM 参数。
-        if (parentRoot != null && !root.containsKey("arguments")) {
+        if (inheritanceRoots.isNotEmpty() && !root.containsKey("arguments")) {
             // 父版本有 arguments 但当前版本没有（极少见的旧 Forge），才继承
-            collectJvmArgs(parentRoot)
+            collectJvmArgs(inheritanceRoots.last())
         }
         collectJvmArgs(root)
 
-        if (!root.containsKey("arguments") && parentRoot == null) {
+        if (!root.containsKey("arguments") && inheritanceRoots.isEmpty()) {
             args.add("-cp")
             args.add(classPath)
         }
@@ -493,7 +685,7 @@ class JavaLaunchEngine : ILaunchEngine {
         return args
     }
 
-    private fun buildGameArguments(root: JsonObject, context: LaunchContext, parentRoot: JsonObject?): List<String> {
+    private fun buildGameArguments(root: JsonObject, context: LaunchContext, inheritanceRoots: List<JsonObject>): List<String> {
         val args = mutableListOf<String>()
         val nativesDir = context.nativesDir.absolutePath
 
@@ -520,12 +712,14 @@ class JavaLaunchEngine : ILaunchEngine {
             }
         }
 
-        if (parentRoot != null) collectGameArgs(parentRoot)
+        inheritanceRoots.forEach { collectGameArgs(it) }
         collectGameArgs(root)
 
         // Legacy minecraftArguments（旧版 1.12.2 及以下）
         val legacySrc = root["minecraftArguments"]?.jsonPrimitive?.contentOrNull
-            ?: parentRoot?.get("minecraftArguments")?.jsonPrimitive?.contentOrNull
+            ?: inheritanceRoots.asReversed().firstNotNullOfOrNull {
+                it["minecraftArguments"]?.jsonPrimitive?.contentOrNull
+            }
         legacySrc?.split(" ")?.forEach { token ->
             args.add(resolveArgTemplate(token, context, "", nativesDir))
         }
@@ -578,6 +772,144 @@ class JavaLaunchEngine : ILaunchEngine {
     private fun maskSensitiveArg(arg: String, context: LaunchContext): String {
         if (context.accessToken.isNotBlank() && arg == context.accessToken) return "********"
         return arg
+    }
+
+    private fun resolveInheritanceRoots(root: JsonObject, minecraftDir: String): List<JsonObject> {
+        val result = mutableListOf<JsonObject>()
+        val visited = mutableSetOf<String>()
+        val currentVersionId = root["id"]?.jsonPrimitive?.contentOrNull
+
+        fun walk(versionId: String) {
+            val key = versionId.lowercase()
+            if (!visited.add(key)) return
+
+            var file = File(minecraftDir, "versions/$versionId/$versionId.json")
+
+            // 兜底：继承目标不存在时，尝试从当前版本目录恢复原版 JSON/jar
+            if (!file.isFile && !currentVersionId.isNullOrBlank() && currentVersionId != versionId) {
+                repairMissingVanillaVersion(minecraftDir, versionId, currentVersionId)
+                file = File(minecraftDir, "versions/$versionId/$versionId.json")
+            }
+
+            if (!file.isFile) return
+            val obj = runCatching {
+                json.parseToJsonElement(file.readText(Charsets.UTF_8)).jsonObject
+            }.getOrNull() ?: return
+
+            val parentId = obj["inheritsFrom"]?.jsonPrimitive?.contentOrNull
+            if (!parentId.isNullOrBlank()) {
+                walk(parentId)
+            }
+            result.add(obj)
+        }
+
+        val directParent = root["inheritsFrom"]?.jsonPrimitive?.contentOrNull
+        if (!directParent.isNullOrBlank()) {
+            walk(directParent)
+        }
+        return result
+    }
+
+    /**
+     * 当 inheritsFrom 指向的原版目录不存在时，尝试恢复。
+     * 策略1：本地扫描（找 id==mcVersion 且 libraries 含 lwjgl 的 JSON）
+     * 策略2：从 VersionManifest 缓存/在线获取原版 JSON
+     * 策略3：兜底仅复制 donor jar
+     */
+    private fun repairMissingVanillaVersion(minecraftDir: String, mcVersion: String, donorVersionId: String) {
+        val vanillaDir = File(minecraftDir, "versions/$mcVersion")
+        val vanillaJson = File(vanillaDir, "$mcVersion.json")
+        val vanillaJar = File(vanillaDir, "$mcVersion.jar")
+        if (vanillaJson.isFile) return
+
+        println("[Launch] inheritsFrom=$mcVersion 对应的原版 JSON 不存在，尝试恢复…")
+
+        // 策略1：本地扫描已有版本目录
+        val versionsRoot = File(minecraftDir, "versions")
+        if (versionsRoot.isDirectory) {
+            versionsRoot.listFiles()?.filter { it.isDirectory }?.forEach { dir ->
+                val candidate = File(dir, "${dir.name}.json")
+                if (!candidate.isFile) return@forEach
+                val text = runCatching { candidate.readText(Charsets.UTF_8) }.getOrNull() ?: return@forEach
+                if (!text.contains("lwjgl", ignoreCase = true)) return@forEach
+                val obj = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return@forEach
+                val id = obj["id"]?.jsonPrimitive?.contentOrNull
+                val inherits = obj["inheritsFrom"]?.jsonPrimitive?.contentOrNull
+                if (id == mcVersion && inherits.isNullOrBlank()) {
+                    vanillaDir.mkdirs()
+                    candidate.copyTo(vanillaJson, overwrite = true)
+                    println("[Launch] 策略1：从 ${candidate.absolutePath} 恢复原版 $mcVersion JSON")
+                    val candidateJar = File(dir, "${dir.name}.jar")
+                    if (candidateJar.isFile && candidateJar.length() > 0L && (!vanillaJar.isFile || vanillaJar.length() <= 0L)) {
+                        candidateJar.copyTo(vanillaJar, overwrite = true)
+                    }
+                    return
+                }
+            }
+        }
+
+        // 策略2：从在线版本清单获取原版 JSON
+        if (fetchAndSaveVanillaJson(mcVersion, vanillaDir, vanillaJson)) {
+            println("[Launch] 策略2：在线获取原版 $mcVersion JSON 成功")
+        }
+
+        // 策略3：兜底复制 donor jar（原版 jar 通常与 modpack jar 相同）
+        val donorJar = File(minecraftDir, "versions/$donorVersionId/$donorVersionId.jar")
+        if (donorJar.isFile && donorJar.length() > 0L && (!vanillaJar.isFile || vanillaJar.length() <= 0L)) {
+            vanillaDir.mkdirs()
+            donorJar.copyTo(vanillaJar, overwrite = true)
+            println("[Launch] 策略3：复制 donor JAR 作为原版 $mcVersion JAR")
+        }
+    }
+
+    private fun fetchAndSaveVanillaJson(mcVersion: String, vanillaDir: File, vanillaJson: File): Boolean {
+        // 先尝试读取本地缓存的 manifest
+        val manifestCache = File(System.getProperty("user.home"), ".craftlauncher/cache/version_manifest.json")
+        val manifestUrls = listOf(
+            "https://bmclapi2.bangbang93.com/mc/game/version_manifest_v2.json",
+            "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json",
+        )
+
+        val versionUrl = findVersionUrl(mcVersion, manifestCache)
+            ?: manifestUrls.firstNotNullOfOrNull { manifestUrl ->
+                val text = curlGet(manifestUrl) ?: return@firstNotNullOfOrNull null
+                runCatching { manifestCache.also { it.parentFile?.mkdirs() }.writeText(text) }
+                findVersionUrlFromText(mcVersion, text)
+            }
+            ?: return false
+
+        val vJsonText = curlGet(versionUrl) ?: return false
+        if (vJsonText.length < 500 || !vJsonText.contains("libraries", ignoreCase = true)) return false
+        vanillaDir.mkdirs()
+        vanillaJson.writeText(vJsonText, Charsets.UTF_8)
+        return true
+    }
+
+    private fun findVersionUrl(mcVersion: String, cacheFile: File): String? {
+        if (!cacheFile.isFile) return null
+        return runCatching { findVersionUrlFromText(mcVersion, cacheFile.readText(Charsets.UTF_8)) }.getOrNull()
+    }
+
+    private fun findVersionUrlFromText(mcVersion: String, text: String): String? {
+        val root = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return null
+        val versions = root["versions"]?.jsonArray ?: return null
+        for (v in versions) {
+            val obj = v.jsonObject
+            if (obj["id"]?.jsonPrimitive?.contentOrNull == mcVersion) {
+                return obj["url"]?.jsonPrimitive?.contentOrNull
+            }
+        }
+        return null
+    }
+
+    private fun curlGet(url: String): String? {
+        return runCatching {
+            val proc = ProcessBuilder("curl.exe", "-sL", "--connect-timeout", "10", "--max-time", "30", url)
+                .redirectErrorStream(true).start()
+            val text = proc.inputStream.bufferedReader().readText()
+            val ok = proc.waitFor(35, java.util.concurrent.TimeUnit.SECONDS)
+            if (ok && proc.exitValue() == 0 && text.isNotBlank()) text else null
+        }.getOrNull()
     }
 
 }

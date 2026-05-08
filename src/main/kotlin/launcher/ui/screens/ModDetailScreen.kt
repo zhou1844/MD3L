@@ -19,11 +19,13 @@ import androidx.compose.ui.unit.dp
 import io.kamel.image.KamelImage
 import io.kamel.image.asyncPainterResource
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import launcher.core.*
 import launcher.ui.layout.Navigator
 import java.awt.Desktop
 import java.io.File
 import java.net.URI
+import javax.swing.JFileChooser
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -386,7 +388,25 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                                                     downloadingId = null
                                                     return@launch
                                                 }
-                                                val settings = AppSettings.load()
+                                                var settings = AppSettings.load()
+                                                if (settings.minecraftDir.isBlank()) {
+                                                    val chosen = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                        val chooser = JFileChooser(defaultMinecraftDir())
+                                                        chooser.dialogTitle = "选择游戏主目录 (.minecraft)"
+                                                        chooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+                                                        chooser.approveButtonText = "确认"
+                                                        if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION)
+                                                            chooser.selectedFile.absolutePath else null
+                                                    }
+                                                    if (chosen == null) {
+                                                        statusMessage = "未选择游戏目录，已取消下载"
+                                                        downloadingId = null
+                                                        return@launch
+                                                    }
+                                                    settings = settings.copy(minecraftDir = chosen)
+                                                    AppSettings.save(settings)
+                                                }
+
                                                 val baseDir = selectedTargetVersion?.versionDir ?: settings.minecraftDir
                                                 val isJavaModpack = isJavaModpackPage
                                                 val targetDir = when {

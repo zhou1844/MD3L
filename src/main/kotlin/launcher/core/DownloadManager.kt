@@ -129,6 +129,50 @@ object DownloadManager {
         _progress.value = _progress.value.copy(isRunning = false)
     }
 
+    /**
+     * 独立下载：不影响全局 downloadJob/progress 状态，适用于加载器安装等并行场景。
+     * 会抛异常如果有文件下载失败。
+     */
+    suspend fun downloadAllIsolated(
+        tasks: List<DownloadTask>,
+        maxConcurrency: Int = 64,
+        onFileComplete: ((completed: Int, total: Int, currentFile: String) -> Unit)? = null,
+    ) = withContext(Dispatchers.IO) {
+        if (tasks.isEmpty()) return@withContext
+        val semaphore = Semaphore(maxConcurrency)
+        var completedFiles = 0
+        val total = tasks.size
+        var remaining = tasks.toList()
+
+        // 最多重试 2 轮
+        for (round in 1..2) {
+            val failed = mutableListOf<DownloadTask>()
+            coroutineScope {
+                remaining.map { task ->
+                    launch {
+                        semaphore.withPermit {
+                            val ok = downloadSingleFile(task) { }
+                            if (ok) {
+                                completedFiles++
+                                onFileComplete?.invoke(completedFiles, total, task.dest.name)
+                            } else {
+                                synchronized(failed) { failed.add(task) }
+                            }
+                        }
+                    }
+                }.joinAll()
+            }
+            if (failed.isEmpty()) return@withContext
+            if (round < 2) {
+                remaining = failed
+                println("[DL] 第 $round 轮有 ${failed.size} 个文件失败，重试...")
+                delay(1000)
+            } else {
+                throw RuntimeException("下载失败 ${failed.size}/${tasks.size} 个文件")
+            }
+        }
+    }
+
     suspend fun downloadSingle(
         task: DownloadTask,
         onProgress: (downloaded: Long, total: Long, speedBytesPerSec: Long) -> Unit,

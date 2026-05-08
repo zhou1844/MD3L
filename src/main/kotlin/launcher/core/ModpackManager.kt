@@ -13,6 +13,8 @@ import java.security.MessageDigest
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicInteger
+import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
@@ -88,10 +90,14 @@ object ModpackManager {
         }
         report("检查整合包文件", 0.02f)
 
+        val effectivePackFile = resolveEffectivePackFile(packFile, logger)
+
         try {
-            ZipFile(packFile).use { zip ->
+            try {
                 println("[ModpackImport] 步骤1: 解析整合包定义...")
-                val definition = parsePackDefinition(zip, packFile, logger)
+                val definition = openZipWithFallbackEncoding(effectivePackFile).use { zip ->
+                    parsePackDefinition(zip, packFile, logger)
+                }
                 logger.info("识别整合包类型=${definition.kind}, mc=${definition.mcVersion}, loader=${definition.loaderType}:${definition.loaderVersion}")
                 println("[ModpackImport] 解析完成: kind=${definition.kind}, mc=${definition.mcVersion}, loader=${definition.loaderType}:${definition.loaderVersion}")
                 val versionId = uniqueVersionId(minecraftDir, definition.displayName.sanitizeVersionName())
@@ -150,14 +156,7 @@ object ModpackManager {
                 instanceDir.mkdirs()
                 report("释放整合包文件", 0.62f)
                 println("[ModpackImport] 步骤4: 释放整合包文件到 ${instanceDir.absolutePath}")
-                when (definition.kind) {
-                    PackKind.Modrinth, PackKind.CurseForge -> {
-                        extractOverridesByRoots(zip, instanceDir, definition.overridesRoots, logger)
-                    }
-                    PackKind.GenericZip -> {
-                        extractGenericZip(zip, instanceDir, logger)
-                    }
-                }
+                extractPackFilesWithRetry(effectivePackFile, definition, instanceDir, logger)
 
                 println("[ModpackImport] 步骤4完成: 文件释放完毕")
                 if (definition.kind == PackKind.Modrinth && definition.modrinthIndex != null) {
@@ -178,12 +177,16 @@ object ModpackManager {
                 logger.info("导入成功: $versionId")
                 println("[ModpackImport] ====== 导入成功: $versionId ======")
                 "整合包导入成功: $versionId$warning\n日志: ${logger.path}"
+            } catch (e: Exception) {
+                logger.error("导入失败: ${e.message}", e)
+                println("[ModpackImport] ====== 导入失败: ${e.message} ======")
+                e.printStackTrace()
+                "整合包导入失败: ${e.message}\n日志: ${logger.path}"
             }
-        } catch (e: Exception) {
-            logger.error("导入失败: ${e.message}", e)
-            println("[ModpackImport] ====== 导入失败: ${e.message} ======")
-            e.printStackTrace()
-            "整合包导入失败: ${e.message}\n日志: ${logger.path}"
+        } finally {
+            if (effectivePackFile.absolutePath != packFile.absolutePath) {
+                runCatching { effectivePackFile.delete() }
+            }
         }
     }
 
@@ -197,7 +200,7 @@ object ModpackManager {
     }
 
     private fun parsePackDefinition(zip: ZipFile, packFile: File, logger: ImportLogger): PackDefinition {
-        zip.getEntry("modrinth.index.json")?.let { indexEntry ->
+        findEntryAtRootOrFirstLevel(zip, "modrinth.index.json")?.let { (indexEntry, baseFolder) ->
             val text = zip.getInputStream(indexEntry).bufferedReader().readText()
             val index = json.parseToJsonElement(text).jsonObject
             val dependencies = index["dependencies"]?.jsonObject ?: JsonObject(emptyMap())
@@ -212,15 +215,14 @@ object ModpackManager {
                 mcVersion = mcVersion,
                 loaderType = loaderType,
                 loaderVersion = loaderVersion,
-                overridesRoots = listOf("overrides/", "client-overrides/"),
+                overridesRoots = listOf("${baseFolder}overrides/", "${baseFolder}client-overrides/"),
                 modrinthIndex = index,
             )
         }
 
-        val manifestEntry = zip.entries().asSequence()
-            .filter { !it.isDirectory && it.name.replace('\\', '/').endsWith("manifest.json", ignoreCase = true) }
-            .minByOrNull { it.name.count { ch -> ch == '/' || ch == '\\' } }
-        if (manifestEntry != null) {
+        val manifestPair = findEntryAtRootOrFirstLevel(zip, "manifest.json")
+        if (manifestPair != null) {
+            val (manifestEntry, baseFolder) = manifestPair
             val text = zip.getInputStream(manifestEntry).bufferedReader().readText()
             val manifest = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull()
             if (manifest != null && manifest["minecraft"] is JsonObject) {
@@ -237,7 +239,7 @@ object ModpackManager {
                     mcVersion = mcVersion,
                     loaderType = loaderType,
                     loaderVersion = loaderVersion,
-                    overridesRoots = listOf(overrides),
+                    overridesRoots = listOf("$baseFolder$overrides"),
                 )
             }
             logger.warn("检测到 manifest.json 但结构不是 CurseForge，回退通用 ZIP 解析")
@@ -245,13 +247,68 @@ object ModpackManager {
 
         val mcVersion = detectMcVersionForGenericZip(zip, packFile)
             ?: throw RuntimeException("ZIP 整合包缺少可识别的 Minecraft 版本")
+        val (loaderType, loaderVersion) = detectLoaderForGenericZip(zip, packFile, mcVersion)
+        if (!loaderType.isNullOrBlank() && !loaderVersion.isNullOrBlank()) {
+            logger.info("通用 ZIP 推断加载器: $loaderType $loaderVersion")
+        }
         val name = packFile.nameWithoutExtension
         return PackDefinition(
             kind = PackKind.GenericZip,
             displayName = name,
             mcVersion = mcVersion,
+            loaderType = loaderType,
+            loaderVersion = loaderVersion,
             overridesRoots = listOf("overrides/", ".minecraft/", "minecraft/"),
         )
+    }
+
+    private fun resolveEffectivePackFile(packFile: File, logger: ImportLogger): File {
+        if (!packFile.extension.equals("zip", ignoreCase = true)) return packFile
+        return runCatching {
+            openZipWithFallbackEncoding(packFile).use { outerZip ->
+                val hasDirectDefinition =
+                    findEntryAtRootOrFirstLevel(outerZip, "modrinth.index.json") != null ||
+                        findEntryAtRootOrFirstLevel(outerZip, "manifest.json") != null
+                if (hasDirectDefinition) return@use packFile
+
+                val nestedMrpack = findNestedMrpackEntry(outerZip) ?: return@use packFile
+                val cacheDir = File(System.getProperty("java.io.tmpdir"), "md3l-pack-cache")
+                cacheDir.mkdirs()
+                val extracted = File.createTempFile("md3l-inner-", ".mrpack", cacheDir)
+                outerZip.getInputStream(nestedMrpack).use { input ->
+                    extracted.outputStream().use { input.copyTo(it) }
+                }
+
+                val valid = runCatching {
+                    openZipWithFallbackEncoding(extracted).use { innerZip ->
+                        findEntryAtRootOrFirstLevel(innerZip, "modrinth.index.json") != null
+                    }
+                }.getOrDefault(false)
+                if (!valid) {
+                    extracted.delete()
+                    return@use packFile
+                }
+
+                logger.info("检测到外层 ZIP 内嵌 mrpack: ${nestedMrpack.name}，切换为 mrpack 导入")
+                println("[ModpackImport] 检测到内嵌 mrpack: ${nestedMrpack.name}，切换为 mrpack 导入")
+                extracted
+            }
+        }.getOrElse { ex ->
+            logger.warn("内嵌 mrpack 检测失败，按原始 ZIP 继续导入: ${ex.message}")
+            packFile
+        }
+    }
+
+    private fun findNestedMrpackEntry(zip: ZipFile): ZipEntry? {
+        findEntryAtRootOrFirstLevel(zip, "modpack.mrpack")?.let { return it.first }
+        return zip.entries().asSequence()
+            .filter { !it.isDirectory && it.name.endsWith(".mrpack", ignoreCase = true) }
+            .filter {
+                val normalized = it.name.replace('\\', '/').trim('/').trim()
+                normalized.count { ch -> ch == '/' } <= 1
+            }
+            .sortedBy { it.name.length }
+            .firstOrNull()
     }
 
     private fun parseLoaderFromModrinthDependencies(dependencies: JsonObject): Pair<String?, String?> {
@@ -302,6 +359,82 @@ object ModpackManager {
         return Regex("""(?<!\d)(1\.\d+(?:\.\d+)?|2\d\.\d+(?:\.\d+)?)(?!\d)""")
             .find(packFile.name)
             ?.value
+    }
+
+    private fun detectLoaderForGenericZip(zip: ZipFile, packFile: File, mcVersion: String): Pair<String?, String?> {
+        detectLoaderFromText(packFile.nameWithoutExtension, mcVersion)?.let { return it }
+
+        zip.entries().asSequence()
+            .filter { !it.isDirectory }
+            .take(120)
+            .forEach { entry ->
+                detectLoaderFromText(entry.name, mcVersion)?.let { return it }
+            }
+
+        zip.entries().asSequence()
+            .filter { !it.isDirectory && it.name.endsWith(".json", ignoreCase = true) }
+            .take(50)
+            .forEach { entry ->
+                val text = runCatching { zip.getInputStream(entry).bufferedReader().readText() }.getOrNull() ?: return@forEach
+                detectLoaderFromText(text, mcVersion)?.let { return it }
+            }
+
+        return null to null
+    }
+
+    private fun detectLoaderFromText(text: String, mcVersion: String): Pair<String, String>? {
+        fun cleanVersion(loader: String, raw: String): String {
+            var value = raw.trim().trim('"', '\'', ' ', '-', '_')
+            if (loader == "Forge") {
+                value = value
+                    .removePrefix("$mcVersion-")
+                    .removePrefix("${mcVersion}_")
+                    .removePrefix(mcVersion)
+                    .trimStart('-', '_')
+            }
+            return value
+        }
+
+        val neoPatterns = listOf(
+            Regex("""(?i)neoforge[_\-\s]*([0-9][0-9a-zA-Z._+\-]*)"""),
+            Regex("""(?i)--fml\.neoForgeVersion[^0-9a-zA-Z]+([0-9][0-9a-zA-Z._+\-]*)"""),
+            Regex("""(?i)net\.neoforged:neoforge:([0-9][0-9a-zA-Z._+\-]*)"""),
+        )
+        neoPatterns.firstNotNullOfOrNull { it.find(text)?.groupValues?.getOrNull(1) }
+            ?.let { raw ->
+                val ver = cleanVersion("NeoForge", raw)
+                if (ver.isNotBlank()) return "NeoForge" to ver
+            }
+
+        val forgePatterns = listOf(
+            Regex("""(?i)net\.minecraftforge:forge:[0-9.]+-([0-9][0-9a-zA-Z._+\-]*)"""),
+            Regex("""(?i)(?:^|[^a-z])forge[_\-\s]*([0-9][0-9a-zA-Z._+\-]*)"""),
+        )
+        forgePatterns.firstNotNullOfOrNull { it.find(text)?.groupValues?.getOrNull(1) }
+            ?.let { raw ->
+                val ver = cleanVersion("Forge", raw)
+                if (ver.isNotBlank()) return "Forge" to ver
+            }
+
+        val fabric = Regex("""(?i)fabric(?:-loader)?[_\-\s:]*([0-9][0-9a-zA-Z._+\-]*)""")
+            .find(text)
+            ?.groupValues
+            ?.getOrNull(1)
+        if (!fabric.isNullOrBlank()) {
+            val ver = cleanVersion("Fabric", fabric)
+            if (ver.isNotBlank()) return "Fabric" to ver
+        }
+
+        val quilt = Regex("""(?i)quilt(?:-loader)?[_\-\s:]*([0-9][0-9a-zA-Z._+\-]*)""")
+            .find(text)
+            ?.groupValues
+            ?.getOrNull(1)
+        if (!quilt.isNullOrBlank()) {
+            val ver = cleanVersion("Quilt", quilt)
+            if (ver.isNotBlank()) return "Quilt" to ver
+        }
+
+        return null
     }
 
     suspend fun exportMrpack(version: LocalVersion, targetFile: File): String = withContext(Dispatchers.IO) {
@@ -373,6 +506,14 @@ object ModpackManager {
                     false
                 }
                 if (ok) return true
+            }
+
+            if (ensureVanillaAliasFromImportedVersions(remote.id, minecraftDir, logger) &&
+                deriveVersionFromInstalledVanilla(remote.id, minecraftDir, versionId, logger)
+            ) {
+                logger.info("已通过非标准原版目录兜底构建导入版本: $versionId <- ${remote.id}")
+                onProgress("已识别本地原版并完成兜底", 0.46f)
+                return true
             }
 
             if (deriveVersionFromInstalledVanilla(remote.id, minecraftDir, versionId, logger)) {
@@ -449,6 +590,52 @@ object ModpackManager {
         }.getOrDefault(false)
     }
 
+    private fun ensureVanillaAliasFromImportedVersions(
+        mcVersion: String,
+        minecraftDir: String,
+        logger: ImportLogger,
+    ): Boolean {
+        val standardDir = File(minecraftDir, "versions/$mcVersion")
+        val standardJson = File(standardDir, "$mcVersion.json")
+        val standardJar = File(standardDir, "$mcVersion.jar")
+        if (standardJson.isFile && standardJar.isFile && standardJar.length() > 0L) return true
+
+        val versionsDir = File(minecraftDir, "versions")
+        if (!versionsDir.isDirectory) return false
+
+        val candidate = versionsDir.listFiles()
+            ?.asSequence()
+            ?.filter { it.isDirectory }
+            ?.mapNotNull { dir ->
+                val jsonFile = File(dir, "${dir.name}.json").takeIf { it.isFile }
+                    ?: dir.listFiles()?.firstOrNull { it.isFile && it.extension.equals("json", ignoreCase = true) }
+                    ?: return@mapNotNull null
+                val root = runCatching { json.parseToJsonElement(jsonFile.readText(Charsets.UTF_8)).jsonObject }.getOrNull()
+                    ?: return@mapNotNull null
+                val id = root["id"]?.jsonPrimitive?.contentOrNull ?: dir.name
+                if (id != mcVersion) return@mapNotNull null
+                val jar = listOf(
+                    File(dir, "$mcVersion.jar"),
+                    File(dir, "${dir.name}.jar"),
+                ).firstOrNull { it.isFile && it.length() > 0L }
+                    ?: dir.listFiles()?.firstOrNull { it.isFile && it.extension.equals("jar", ignoreCase = true) && it.length() > 0L }
+                    ?: return@mapNotNull null
+                Triple(dir, jsonFile, jar)
+            }
+            ?.firstOrNull()
+            ?: return false
+
+        return runCatching {
+            standardDir.mkdirs()
+            candidate.second.copyTo(standardJson, overwrite = true)
+            candidate.third.copyTo(standardJar, overwrite = true)
+            logger.info("已建立原版别名: ${candidate.first.name} -> $mcVersion")
+            true
+        }.onFailure {
+            logger.warn("建立原版别名失败: ${it.message}")
+        }.getOrDefault(false)
+    }
+
     private fun findExistingLoaderVersionId(
         loaderType: String,
         mcVersion: String,
@@ -481,7 +668,15 @@ object ModpackManager {
                         if (uniJar.isFile && uniJar.length() > 0) dir.name else null
                     }
                     "Forge" -> {
-                        if (("net.minecraftforge" in text || "forge" in dir.name.lowercase()) && loaderVersion in text && mcVersion in text) dir.name else null
+                        val nameMatch = ("net.minecraftforge" in text || "forge" in dir.name.lowercase()) && loaderVersion in text && mcVersion in text
+                        if (!nameMatch) return@mapNotNull null
+                        // 验证 Forge 核心 JAR 存在，防止复用残缺安装
+                        val forgeJarCandidates = listOf(
+                            File(minecraftDir, "libraries/net/minecraftforge/forge/$mcVersion-$loaderVersion/forge-$mcVersion-$loaderVersion-universal.jar"),
+                            File(minecraftDir, "libraries/net/minecraftforge/forge/$mcVersion-$loaderVersion/forge-$mcVersion-$loaderVersion-client.jar"),
+                            File(minecraftDir, "libraries/net/minecraftforge/forge/$mcVersion-$loaderVersion/forge-$mcVersion-$loaderVersion.jar"),
+                        )
+                        if (forgeJarCandidates.any { it.isFile && it.length() > 0 }) dir.name else null
                     }
                     "Quilt" -> {
                         if (("org.quiltmc" in text || "quilt" in dir.name.lowercase()) && loaderVersion in text) dir.name else null
@@ -513,6 +708,14 @@ object ModpackManager {
         findExistingLoaderVersionId(loaderType, mcVersion, loaderVersion, minecraftDir)?.let { existingId ->
             logger.info("复用已安装加载器: $loaderType $loaderVersion -> $existingId")
             println("[ModpackImport] installLoaderIfNeeded: 复用已安装 $existingId")
+            ensureForgeLikeLoaderReadyDuringImport(
+                loaderType = loaderType,
+                installedVersionId = existingId,
+                minecraftDir = minecraftDir,
+                javaPath = javaPath,
+                logger = logger,
+                onLoaderProgress = onLoaderProgress,
+            )
             return LoaderInstallOutcome(installedVersionId = existingId)
         }
 
@@ -556,12 +759,44 @@ object ModpackManager {
                                 ?.also { logger.warn("NeoForge 安装异常，回收已存在加载器: ${error.message}") }
                                 ?: throw error
                         }
+                        ensureForgeLikeLoaderReadyDuringImport(
+                            loaderType = loaderType,
+                            installedVersionId = id,
+                            minecraftDir = minecraftDir,
+                            javaPath = javaPath,
+                            logger = logger,
+                            onLoaderProgress = onLoaderProgress,
+                        )
                         println("[ModpackImport] NeoForge 安装完成, id=$id")
                         LoaderInstallOutcome(installedVersionId = id)
                     }
                     "Forge" -> {
-                        logger.warn("Forge 自动安装在整合包导入中仍不稳定，跳过自动安装")
-                        LoaderInstallOutcome(warning = "提示：该整合包声明 Forge $loaderVersion，已完成文件导入；请在版本详情中安装对应 Forge。")
+                        println("[ModpackImport] 调用 LoaderInstaller.installForge($mcVersion, $loaderVersion)")
+                        val id = runCatching {
+                            LoaderInstaller.installForge(
+                                mcVersion = mcVersion,
+                                loaderVersion = loaderVersion,
+                                forgeBuild = 0,
+                                minecraftDir = minecraftDir,
+                                baseVersionId = baseVersionId,
+                                javaPath = javaPath,
+                            )
+                        }.getOrElse { error ->
+                            println("[ModpackImport] Forge 安装异常: ${error.message}")
+                            findExistingLoaderVersionId(loaderType, mcVersion, loaderVersion, minecraftDir)
+                                ?.also { logger.warn("Forge 安装异常，回收已存在加载器: ${error.message}") }
+                                ?: throw error
+                        }
+                        ensureForgeLikeLoaderReadyDuringImport(
+                            loaderType = loaderType,
+                            installedVersionId = id,
+                            minecraftDir = minecraftDir,
+                            javaPath = javaPath,
+                            logger = logger,
+                            onLoaderProgress = onLoaderProgress,
+                        )
+                        println("[ModpackImport] Forge 安装完成, id=$id")
+                        LoaderInstallOutcome(installedVersionId = id)
                     }
                     "Quilt" -> {
                         logger.warn("Quilt 自动安装尚未实现，跳过")
@@ -578,6 +813,38 @@ object ModpackManager {
         }
     }
 
+    private suspend fun ensureForgeLikeLoaderReadyDuringImport(
+        loaderType: String,
+        installedVersionId: String,
+        minecraftDir: String,
+        javaPath: String,
+        logger: ImportLogger,
+        onLoaderProgress: (String, Float) -> Unit,
+    ) {
+        if (loaderType != "Forge" && loaderType != "NeoForge") return
+
+        val versionJsonFile = File(minecraftDir, "versions/$installedVersionId/$installedVersionId.json")
+        if (!versionJsonFile.isFile) {
+            throw RuntimeException("$loaderType 安装不完整：缺少 ${versionJsonFile.absolutePath}")
+        }
+
+        logger.info("导入阶段校验 $loaderType 完整性: $installedVersionId")
+        onLoaderProgress("校验 $loaderType 安装完整性", 0.92f)
+        val repaired = LoaderInstaller.repairForgeIfNeeded(
+            versionJsonFile = versionJsonFile,
+            minecraftDir = minecraftDir,
+            javaPath = javaPath,
+            onProgress = { msg ->
+                logger.info(msg)
+                onLoaderProgress(msg, 0.95f)
+            },
+        )
+        if (!repaired) {
+            throw RuntimeException("$loaderType 安装不完整且修复失败，请在导入后重新安装该加载器")
+        }
+        onLoaderProgress("$loaderType 安装校验完成", 1f)
+    }
+
     private fun copyLoaderVersionAs(sourceId: String, targetId: String, minecraftDir: String, mcVersion: String) {
         val sourceDir = File(minecraftDir, "versions/$sourceId")
         val targetDir = File(minecraftDir, "versions/$targetId")
@@ -585,10 +852,77 @@ object ModpackManager {
         val sourceJson = File(sourceDir, "$sourceId.json")
         val targetJson = File(targetDir, "$targetId.json")
         if (!sourceJson.isFile) return
+
+        // 覆盖前：确保原版 mcVersion 目录存在，否则 inheritsFrom 链会断裂。
+        // 原版 JSON/jar 可能只存在于 targetId 目录下（installBaseVersionRobust 以 customName 安装），
+        // 需要在覆盖前将其复制到 versions/<mcVersion>/ 下。
+        ensureVanillaVersionExists(minecraftDir, mcVersion, targetId)
+
         val root = json.parseToJsonElement(sourceJson.readText(Charsets.UTF_8)).jsonObject.toMutableMap()
         root["id"] = JsonPrimitive(targetId)
         root["inheritsFrom"] = JsonPrimitive(mcVersion)
         targetJson.writeText(json.encodeToString(JsonObject.serializer(), JsonObject(root)), Charsets.UTF_8)
+    }
+
+    private fun ensureVanillaVersionExists(minecraftDir: String, mcVersion: String, donorVersionId: String) {
+        val vanillaDir = File(minecraftDir, "versions/$mcVersion")
+        val vanillaJson = File(vanillaDir, "$mcVersion.json")
+        val vanillaJar = File(vanillaDir, "$mcVersion.jar")
+
+        // 如果原版目录已完整则无需处理
+        if (vanillaJson.isFile && vanillaJar.isFile && vanillaJar.length() > 0L) return
+
+        val donorDir = File(minecraftDir, "versions/$donorVersionId")
+        val donorJson = File(donorDir, "$donorVersionId.json")
+        val donorJar = File(donorDir, "$donorVersionId.jar")
+
+        vanillaDir.mkdirs()
+
+        // 复制 JSON（改 id 为 mcVersion，去掉 inheritsFrom）
+        if (!vanillaJson.isFile && donorJson.isFile) {
+            runCatching {
+                val root = json.parseToJsonElement(donorJson.readText(Charsets.UTF_8)).jsonObject.toMutableMap()
+                root["id"] = JsonPrimitive(mcVersion)
+                root.remove("inheritsFrom")
+                vanillaJson.writeText(json.encodeToString(JsonObject.serializer(), JsonObject(root)), Charsets.UTF_8)
+                println("[ModpackImport] 创建原版 JSON: ${vanillaJson.absolutePath}")
+            }
+        }
+
+        // 复制或硬链接 jar
+        if ((!vanillaJar.isFile || vanillaJar.length() <= 0L) && donorJar.isFile && donorJar.length() > 0L) {
+            runCatching {
+                donorJar.copyTo(vanillaJar, overwrite = true)
+                println("[ModpackImport] 复制原版 JAR: ${vanillaJar.absolutePath}")
+            }
+        }
+    }
+
+    private fun extractPackFilesWithRetry(packFile: File, definition: PackDefinition, instanceDir: File, logger: ImportLogger) {
+        var retryCount = 1
+        while (true) {
+            runCatching {
+                openZipWithFallbackEncoding(packFile).use { zip ->
+                    when (definition.kind) {
+                        PackKind.Modrinth, PackKind.CurseForge -> {
+                            extractOverridesByRoots(zip, instanceDir, definition.overridesRoots, logger)
+                        }
+                        PackKind.GenericZip -> {
+                            extractGenericZip(zip, instanceDir, logger)
+                        }
+                    }
+                }
+            }.onSuccess {
+                return
+            }.onFailure { ex ->
+                logger.warn("第 $retryCount 次解压尝试失败: ${ex.message}")
+                if (retryCount >= 5) {
+                    throw RuntimeException("解压整合包文件失败", ex)
+                }
+                Thread.sleep(retryCount * 2000L)
+                retryCount++
+            }
+        }
     }
 
     private fun extractOverridesByRoots(zip: ZipFile, instanceDir: File, roots: List<String>, logger: ImportLogger) {
@@ -602,8 +936,7 @@ object ModpackManager {
             val rel = normalizedRoots.firstNotNullOfOrNull { root ->
                 if (normalized.startsWith(root, ignoreCase = true)) normalized.substring(root.length) else null
             } ?: return@forEach
-            if (!isSafeRelativePath(rel)) return@forEach
-            val out = File(instanceDir, rel)
+            val out = safeResolveOutputFile(instanceDir, rel) ?: return@forEach
             out.parentFile?.mkdirs()
             zip.getInputStream(entry).use { input -> out.outputStream().use { input.copyTo(it) } }
             extracted++
@@ -619,9 +952,8 @@ object ModpackManager {
             val rel = knownRoots.firstOrNull { normalized.startsWith(it, ignoreCase = true) }
                 ?.let { normalized.substring(it.length) }
                 ?: normalized
-            if (!isSafeRelativePath(rel)) return@forEach
+            val out = safeResolveOutputFile(instanceDir, rel) ?: return@forEach
             if (rel.equals("modrinth.index.json", true) || rel.endsWith(".json", true) && "/" !in rel) return@forEach
-            val out = File(instanceDir, rel)
             out.parentFile?.mkdirs()
             zip.getInputStream(entry).use { input -> out.outputStream().use { input.copyTo(it) } }
             extracted++
@@ -661,6 +993,7 @@ object ModpackManager {
         onProgress("并发下载整合包资源 0/${entries.size}", 0f)
         val total = entries.size
         val finished = AtomicInteger(0)
+        val failedEntries = java.util.concurrent.ConcurrentLinkedQueue<ModrinthRemoteFile>()
         val sem = kotlinx.coroutines.sync.Semaphore(8)
         coroutineScope {
             entries.map { entry ->
@@ -669,7 +1002,7 @@ object ModpackManager {
                     try {
                         val ok = downloadModrinthFile(entry, instanceDir, logger)
                         if (!ok) {
-                            throw RuntimeException("资源下载失败: ${entry.path}")
+                            failedEntries.add(entry)
                         }
                     } finally {
                         sem.release()
@@ -680,9 +1013,42 @@ object ModpackManager {
                 }
             }.joinAll()
         }
+
+        // 对失败的文件进行第二轮重试（降低并发，增加超时容忍）
+        if (failedEntries.isNotEmpty()) {
+            logger.warn("第一轮有 ${failedEntries.size} 个资源下载失败，进行重试...")
+            onProgress("第一轮完成，正在重试失败资源 0/${failedEntries.size}", 1f)
+            val retryList = failedEntries.toList()
+            val retryFailed = java.util.concurrent.ConcurrentLinkedQueue<String>()
+            val retryDone = AtomicInteger(0)
+            val retrySem = kotlinx.coroutines.sync.Semaphore(4)
+            coroutineScope {
+                retryList.map { entry ->
+                    launch {
+                        retrySem.acquire()
+                        try {
+                            val ok = downloadModrinthFile(entry, instanceDir, logger, timeoutMs = 120_000L)
+                            if (!ok) retryFailed.add(entry.path)
+                        } finally {
+                            retrySem.release()
+                            val done = retryDone.incrementAndGet()
+                            onProgress("重试失败资源 $done/${retryList.size}: ${entry.path.substringAfterLast('/')}", 1f)
+                        }
+                    }
+                }.joinAll()
+            }
+            if (retryFailed.isNotEmpty()) {
+                throw RuntimeException("资源下载失败 ${retryFailed.size} 个: ${retryFailed.joinToString(", ")}")
+            }
+        }
     }
 
-    private suspend fun downloadModrinthFile(entry: ModrinthRemoteFile, instanceDir: File, logger: ImportLogger): Boolean {
+    private suspend fun downloadModrinthFile(
+        entry: ModrinthRemoteFile,
+        instanceDir: File,
+        logger: ImportLogger,
+        timeoutMs: Long = 90_000L,
+    ): Boolean {
         if (!isSafeRelativePath(entry.path)) {
             logger.warn("检测到不安全路径，跳过: ${entry.path}")
             return true
@@ -694,23 +1060,57 @@ object ModpackManager {
             return true
         }
 
-        entry.urls.forEach { url ->
-            logger.info("下载资源: ${entry.path} <- $url")
-            dest.delete()
-            val ok = runCatching {
-                DownloadManager.downloadSingle(DownloadTask(url = url, dest = dest, size = entry.size)) { _, _, _ -> }
-            }.getOrElse {
-                logger.warn("下载异常: ${it.message}")
-                false
-            }
-            if (ok && verifyDownloadedFile(dest, entry)) {
-                return true
+        val allUrls = buildModrinthCandidateUrls(entry)
+
+        for (url in allUrls) {
+            for (attempt in 1..2) {
+                logger.info("下载资源(尝试 $attempt/2): ${entry.path} <- $url")
+                dest.delete()
+                val ok = runCatching {
+                    kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+                        DownloadManager.downloadSingle(DownloadTask(url = url, dest = dest, size = entry.size)) { _, _, _ -> }
+                    } ?: run {
+                        logger.warn("下载超时 (${timeoutMs / 1000}s): ${entry.path} <- $url")
+                        false
+                    }
+                }.getOrElse {
+                    logger.warn("下载异常: ${it.message}")
+                    false
+                }
+                if (ok && verifyDownloadedFile(dest, entry)) {
+                    return true
+                }
+                kotlinx.coroutines.delay(250L * attempt)
             }
         }
 
         dest.delete()
         logger.error("资源下载失败: ${entry.path}")
         return false
+    }
+
+    private fun buildModrinthCandidateUrls(entry: ModrinthRemoteFile): List<String> {
+        val candidates = linkedSetOf<String>()
+        entry.urls.forEach { raw ->
+            if (raw.isBlank()) return@forEach
+            candidates.add(raw)
+
+            if ("%2B" in raw || "%2b" in raw) {
+                candidates.add(raw.replace("%2B", "+").replace("%2b", "+"))
+            }
+
+            if (raw.contains("cdn.modrinth.com", ignoreCase = true)) {
+                val suffix = raw.substringAfter("https://cdn.modrinth.com")
+                candidates.add("https://bmclapi2.bangbang93.com/modrinth$suffix")
+            }
+        }
+
+        entry.sha1?.takeIf { it.isNotBlank() }?.let { sha1 ->
+            candidates.add("https://api.modrinth.com/v2/version_file/$sha1/download?algorithm=sha1")
+            candidates.add("https://bmclapi2.bangbang93.com/modrinth/v2/version_file/$sha1/download?algorithm=sha1")
+        }
+
+        return candidates.toList()
     }
 
     private fun verifyDownloadedFile(file: File, entry: ModrinthRemoteFile): Boolean {
@@ -796,6 +1196,37 @@ object ModpackManager {
         return if (clean.isBlank()) "" else "$clean/"
     }
 
+    private fun findEntryAtRootOrFirstLevel(zip: ZipFile, fileName: String): Pair<java.util.zip.ZipEntry, String>? {
+        val normalizedTarget = fileName.replace('\\', '/').trimStart('/').trimEnd('/')
+
+        zip.entries().asSequence().firstOrNull { entry ->
+            !entry.isDirectory && entry.name.replace('\\', '/').equals(normalizedTarget, ignoreCase = true)
+        }?.let { return it to "" }
+
+        zip.entries().asSequence().forEach { entry ->
+            if (entry.isDirectory) return@forEach
+            val normalized = entry.name.replace('\\', '/').trimStart('/').trimEnd('/')
+            val slashIndex = normalized.indexOf('/')
+            if (slashIndex <= 0) return@forEach
+            if (normalized.indexOf('/', slashIndex + 1) >= 0) return@forEach
+
+            val first = normalized.substring(0, slashIndex)
+            val child = normalized.substring(slashIndex + 1)
+            if (child.equals(normalizedTarget, ignoreCase = true)) {
+                return entry to "$first/"
+            }
+        }
+        return null
+    }
+
+    private fun safeResolveOutputFile(rootDir: File, relativePath: String): File? {
+        if (!isSafeRelativePath(relativePath)) return null
+        val normalizedRoot = rootDir.toPath().toAbsolutePath().normalize()
+        val normalizedTarget = normalizedRoot.resolve(relativePath).normalize()
+        if (!normalizedTarget.startsWith(normalizedRoot)) return null
+        return normalizedTarget.toFile()
+    }
+
     private fun isSafeRelativePath(rel: String): Boolean {
         val normalized = rel.replace('\\', '/').trim()
         if (normalized.isBlank()) return false
@@ -824,6 +1255,32 @@ object ModpackManager {
             zip.putNextEntry(ZipEntry("$basePath/$rel"))
             file.inputStream().use { it.copyTo(zip) }
             zip.closeEntry()
+        }
+    }
+
+    /**
+     * 打开 ZIP 文件，自动检测编码。
+     * 优先 UTF-8，失败后尝试 GB18030。
+     * 对齐 PCL 的整合包解压策略。
+     */
+    private fun openZipWithFallbackEncoding(file: File): ZipFile {
+        fun openAndScan(charset: Charset): ZipFile {
+            val zf = ZipFile(file, charset)
+            zf.entries().asSequence().forEach { _ -> }
+            return zf
+        }
+
+        return try {
+            openAndScan(StandardCharsets.UTF_8)
+        } catch (first: Exception) {
+            println("[ModpackImport] UTF-8 解压尝试失败，改用 GB18030 重试: ${first.message}")
+            val gb18030 = runCatching { Charset.forName("GB18030") }.getOrElse { throw first }
+            try {
+                openAndScan(gb18030)
+            } catch (second: Exception) {
+                second.addSuppressed(first)
+                throw second
+            }
         }
     }
 }

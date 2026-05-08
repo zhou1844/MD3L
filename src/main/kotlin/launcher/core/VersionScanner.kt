@@ -30,12 +30,20 @@ object VersionScanner {
         versionsDir.listFiles()
             ?.filter { it.isDirectory }
             ?.mapNotNull { dir ->
-                val jsonFile = File(dir, "${dir.name}.json")
-                if (!jsonFile.exists()) return@mapNotNull null
+                val jsonFile = findVersionJsonFile(dir) ?: return@mapNotNull null
                 parseVersionJson(jsonFile, dir.absolutePath)
             }
             ?.sortedByDescending { it.id }
             ?: emptyList()
+    }
+
+    private fun findVersionJsonFile(dir: File): File? {
+        val standard = File(dir, "${dir.name}.json")
+        if (standard.isFile) return standard
+        return dir.listFiles()
+            ?.asSequence()
+            ?.filter { it.isFile && it.extension.equals("json", ignoreCase = true) }
+            ?.minByOrNull { it.name.length }
     }
 
     private fun parseVersionJson(file: File, versionDir: String): LocalVersion? {
@@ -70,15 +78,21 @@ object VersionScanner {
 
     private fun isJavaVersionLaunchable(root: JsonObject, id: String, versionDir: String): Boolean {
         val versionFolder = File(versionDir)
-        val jarFile = File(versionFolder, "$id.jar")
+        val jarCandidates = linkedSetOf<File>().apply {
+            add(File(versionFolder, "$id.jar"))
+            add(File(versionFolder, "${versionFolder.name}.jar"))
+            versionFolder.listFiles()
+                ?.filter { it.isFile && it.extension.equals("jar", ignoreCase = true) }
+                ?.forEach { add(it) }
+        }.toList()
         val inheritsFrom = root["inheritsFrom"]?.jsonPrimitive?.contentOrNull
 
-        if (jarFile.exists()) {
+        if (jarCandidates.any { it.isFile && it.length() > 0L }) {
             val expectedClientSize = root["downloads"]?.jsonObject
                 ?.get("client")?.jsonObject
                 ?.get("size")?.jsonPrimitive?.longOrNull
-            if (expectedClientSize != null && expectedClientSize > 0 && jarFile.length() < expectedClientSize * 0.9) {
-                return false
+            if (expectedClientSize != null && expectedClientSize > 0) {
+                return jarCandidates.any { it.isFile && it.length() >= expectedClientSize * 0.9 }
             }
             return true
         }
@@ -88,8 +102,11 @@ object VersionScanner {
         }
 
         val minecraftDir = versionFolder.parentFile?.parentFile ?: return false
-        val parentJson = File(minecraftDir, "versions/$inheritsFrom/$inheritsFrom.json")
-        return parentJson.isFile
+        val parentDir = File(minecraftDir, "versions/$inheritsFrom")
+        if (!parentDir.isDirectory) return false
+        val parentStandard = File(parentDir, "$inheritsFrom.json")
+        if (parentStandard.isFile) return true
+        return parentDir.listFiles()?.any { it.isFile && it.extension.equals("json", ignoreCase = true) } == true
     }
 
     suspend fun scanBedrock(minecraftDir: String): List<LocalVersion> = withContext(Dispatchers.IO) {
