@@ -504,6 +504,7 @@ object LoaderInstaller {
                 add("https://bmclapi2.bangbang93.com/forge/download/$forgeBuild")
             }
             add("https://bmclapi2.bangbang93.com/maven/$mavenPath")
+            add("https://mirrors.cernet.edu.cn/bmclapi/$mavenPath")
             add("https://maven.minecraftforge.net/$mavenPath")
         }
         val cacheDir = File(minecraftDir, "cache")
@@ -587,7 +588,7 @@ object LoaderInstaller {
         // Step 5: 下载运行时 libraries（version.json 中的）
         emit("Forge", "正在分析依赖库...", 0.3f)
         val versionRoot = json.parseToJsonElement(versionJsonText).jsonObject
-        val tasks = mutableListOf<DownloadTask>()
+        val artifacts = linkedMapOf<String, ArtifactDownloadCandidate>()
 
         val runtimeLibs = versionRoot["libraries"]?.jsonArray ?: JsonArray(emptyList())
         for (libEl in runtimeLibs) {
@@ -595,20 +596,21 @@ object LoaderInstaller {
             val name = lib["name"]?.jsonPrimitive?.contentOrNull ?: continue
             val path = mavenToPath(name)
             val dest = File(librariesDir, path)
-            if (dest.exists() && dest.length() > 0) continue
+            val artifact = lib["downloads"]?.jsonObject?.get("artifact")?.jsonObject
+            val sha1 = artifact?.get("sha1")?.jsonPrimitive?.contentOrNull
+            if (dest.exists() && dest.length() > 0L && (sha1 == null || verifyFile(dest, sha1))) continue
 
             // 优先从 artifact downloads 获取 URL
-            val artUrl = lib["downloads"]?.jsonObject
-                ?.get("artifact")?.jsonObject
-                ?.get("url")?.jsonPrimitive?.contentOrNull
+            val artUrl = artifact?.get("url")?.jsonPrimitive?.contentOrNull
             val libUrl = lib["url"]?.jsonPrimitive?.contentOrNull
 
-            val downloadUrl = when {
-                artUrl != null && artUrl.isNotBlank() -> DownloadManager.mirrorUrl(artUrl)
-                libUrl != null -> DownloadManager.mirrorUrl("${libUrl.trimEnd('/')}/$path")
-                else -> DownloadManager.mirrorUrl("https://libraries.minecraft.net/$path")
+            val rawUrl = when {
+                artUrl != null && artUrl.isNotBlank() -> artUrl
+                libUrl != null && libUrl.isNotBlank() -> "${libUrl.trimEnd('/')}/$path"
+                else -> "https://libraries.minecraft.net/$path"
             }
-            tasks.add(DownloadTask(downloadUrl, dest))
+            val candidates = hmclCandidateUrls(rawUrl, path, preferNeoForge = false)
+            upsertArtifactCandidate(artifacts, dest, sha1, candidates, path)
         }
 
         // ── Step 6: 下载 install_profile libraries（新 Forge 处理器需要） ──
@@ -619,32 +621,35 @@ object LoaderInstaller {
                 val name = lib["name"]?.jsonPrimitive?.contentOrNull ?: continue
                 val path = mavenToPath(name)
                 val dest = File(librariesDir, path)
-                if (dest.exists() && dest.length() > 0) continue
+                val artifact = lib["downloads"]?.jsonObject?.get("artifact")?.jsonObject
+                val sha1 = artifact?.get("sha1")?.jsonPrimitive?.contentOrNull
+                if (dest.exists() && dest.length() > 0L && (sha1 == null || verifyFile(dest, sha1))) continue
 
-                val artUrl = lib["downloads"]?.jsonObject
-                    ?.get("artifact")?.jsonObject
-                    ?.get("url")?.jsonPrimitive?.contentOrNull
-                val downloadUrl = when {
-                    artUrl != null && artUrl.isNotBlank() -> DownloadManager.mirrorUrl(artUrl)
-                    else -> DownloadManager.mirrorUrl("https://libraries.minecraft.net/$path")
+                val artUrl = artifact?.get("url")?.jsonPrimitive?.contentOrNull
+                val rawUrl = when {
+                    artUrl != null && artUrl.isNotBlank() -> artUrl
+                    else -> "https://libraries.minecraft.net/$path"
                 }
-                tasks.add(DownloadTask(downloadUrl, dest))
+                val candidates = hmclCandidateUrls(rawUrl, path, preferNeoForge = false)
+                upsertArtifactCandidate(artifacts, dest, sha1, candidates, path)
             }
             addProcessorDownloadTasks(
                 installProfile,
-                tasks,
+                artifacts,
                 librariesDir,
-                listOf("https://bmclapi2.bangbang93.com/maven", "https://maven.minecraftforge.net", "https://libraries.minecraft.net"),
+                listOf(
+                    "https://bmclapi2.bangbang93.com/maven",
+                    "https://mirrors.cernet.edu.cn/bmclapi",
+                    "https://maven.minecraftforge.net",
+                    "https://libraries.minecraft.net",
+                ),
             )
         }
 
-        if (tasks.isNotEmpty()) {
-            emit("Forge", "正在下载 ${tasks.size} 个库文件...", 0.35f)
-            println("[LoaderInstaller] Forge: 下载 ${tasks.size} 个库文件")
-            DownloadManager.downloadAllIsolated(tasks, maxConcurrency = 64) { completed, total, file ->
-                val frac = 0.35f + 0.35f * (completed.toFloat() / total)
-                emit("Forge", "正在下载 $completed/$total 个库文件: $file", frac.coerceAtMost(0.69f))
-            }
+        if (artifacts.isNotEmpty()) {
+            emit("Forge", "正在下载 ${artifacts.size} 个库文件...", 0.35f)
+            println("[LoaderInstaller] Forge: 下载 ${artifacts.size} 个库文件 (多源回退)")
+            ensureArtifactsDownloaded("Forge", artifacts.values.toList(), 0.35f, 0.69f)
         }
 
         // ── Step 7: 运行 processors（新 Forge 才需要） ─────────────
@@ -977,7 +982,12 @@ object LoaderInstaller {
             installProfile,
             artifacts,
             librariesDir,
-            listOf("https://bmclapi2.bangbang93.com/maven", "https://maven.neoforged.net/releases", "https://maven.minecraftforge.net")
+            listOf(
+                "https://bmclapi2.bangbang93.com/maven",
+                "https://mirrors.cernet.edu.cn/bmclapi",
+                "https://maven.neoforged.net/releases",
+                "https://maven.minecraftforge.net",
+            )
         )
 
         if (artifacts.isNotEmpty()) {
@@ -1180,9 +1190,11 @@ object LoaderInstaller {
         if (preferNeoForge) {
             result.add("https://maven.neoforged.net/releases/$pathNormalized")
             result.add("https://bmclapi2.bangbang93.com/maven/$pathNormalized")
+            result.add("https://mirrors.cernet.edu.cn/bmclapi/$pathNormalized")
             result.add("https://maven.minecraftforge.net/$pathNormalized")
         } else {
             result.add("https://bmclapi2.bangbang93.com/maven/$pathNormalized")
+            result.add("https://mirrors.cernet.edu.cn/bmclapi/$pathNormalized")
             result.add("https://maven.minecraftforge.net/$pathNormalized")
             result.add("https://maven.neoforged.net/releases/$pathNormalized")
         }
@@ -1621,6 +1633,7 @@ object LoaderInstaller {
         val defaults = buildList {
             if (neoForgeFirst) {
                 add("https://bmclapi2.bangbang93.com/maven")
+                add("https://mirrors.cernet.edu.cn/bmclapi")
                 add("https://maven.neoforged.net/releases")
                 add("https://maven.minecraftforge.net")
                 add("https://repo.maven.apache.org/maven2")
@@ -1628,6 +1641,7 @@ object LoaderInstaller {
                 add("https://mirrors.cloud.tencent.com/nexus/repository/maven-public")
             } else {
                 add("https://bmclapi2.bangbang93.com/maven")
+                add("https://mirrors.cernet.edu.cn/bmclapi")
                 add("https://maven.minecraftforge.net")
                 add("https://maven.neoforged.net/releases")
                 add("https://repo.maven.apache.org/maven2")
