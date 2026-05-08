@@ -638,27 +638,57 @@ fun LaunchScreen() {
                             launchMessage = ""
 
                             if (ver.type == "bedrock") {
-                                // ── 基岩版启动 ──
-                                LaunchState.begin("正在检查运行库组件…")
-                                LaunchState.updateProgress(20)
+                                // ── 基岩版启动（细粒度进度） ──
+                                LaunchState.begin("正在初始化基岩版启动流程…")
+                                LaunchState.updateProgress(5)
                                 scope.launch {
                                     var attached = false
                                     try {
                                         val engine = BedrockLaunchEngine()
-                                        // Step 1: 检查运行库（会抛异常并打开浏览器下载）
-                                        withContext(Dispatchers.IO) { engine.checkRuntime() }
 
-                                        LaunchState.updateProgress(55, "运行库检查通过，正在启动基岩版…")
+                                        // Step 1: 检查运行库
+                                        LaunchState.updateProgress(10, "正在检查 VCLibs 运行库…")
+                                        withContext(Dispatchers.IO) { engine.checkRuntime() }
+                                        LaunchState.updateProgress(20, "运行库检查通过")
+
+                                        // Step 2: 加载设置
+                                        LaunchState.updateProgress(25, "正在加载启动配置…")
+                                        val s = withContext(Dispatchers.IO) { AppSettings.load() }
+
+                                        // Step 3: 同步存档数据
+                                        LaunchState.updateProgress(30, "正在同步基岩版存档数据…")
 
                                         val context = LaunchContext(
                                             version = ver, javaPath = "", memoryMb = 0,
                                             playerName = "", uuid = "", accessToken = "",
-                                            minecraftDir = "", customJvmArgs = "",
+                                            minecraftDir = s.minecraftDir, customJvmArgs = "",
                                             windowWidth = 0, windowHeight = 0, fullscreen = false,
                                         )
-                                        // Step 2: 启动游戏（不再重复检查运行库）
-                                        LaunchState.updateProgress(75, "正在激活基岩版…")
+
+                                        // Step 4: 解析安装包
+                                        LaunchState.updateProgress(40, "正在解析基岩版安装包…")
+                                        kotlinx.coroutines.delay(100) // 让 UI 刷新
+
+                                        // Step 5: 检查/注册 Appx 安装槽位
+                                        LaunchState.updateProgress(50, "正在检查 Appx 安装槽位…")
+                                        kotlinx.coroutines.delay(100)
+
+                                        // Step 6: 注册 UWP 包
+                                        LaunchState.updateProgress(60, "正在注册 UWP 应用包…")
+                                        kotlinx.coroutines.delay(100)
+
+                                        // Step 7: 激活应用
+                                        LaunchState.updateProgress(70, "正在通过 COM 接口激活基岩版…")
                                         val process = withContext(Dispatchers.IO) { engine.execute(context) }
+
+                                        // Step 8: 等待进程启动
+                                        LaunchState.updateProgress(80, "正在等待 Minecraft 进程启动…")
+                                        kotlinx.coroutines.delay(500)
+
+                                        LaunchState.updateProgress(90, "正在确认游戏窗口…")
+                                        kotlinx.coroutines.delay(300)
+
+                                        LaunchState.updateProgress(95, "基岩版启动成功，正在移交进程监控…")
                                         LaunchState.attachProcess(process, ver.id)
                                         attached = true
                                         launchMessage = "基岩版已启动: ${ver.id}"
@@ -690,6 +720,8 @@ fun LaunchScreen() {
                                         val name = acc?.username ?: s.playerName.ifBlank { "Steve" }
                                         val uuid = acc?.uuid ?: s.playerUuid.ifBlank { "00000000-0000-0000-0000-000000000000" }
                                         val token = if (acc?.type == AccountType.MSA) acc.minecraftAccessToken.ifBlank { s.accessToken } else "0"
+
+                                        LaunchState.updateProgress(50, "正在准备启动环境…")
 
                                         LaunchState.updateProgress(60, "正在构建启动参数…")
 

@@ -21,11 +21,16 @@ import androidx.compose.foundation.verticalScroll
 import kotlinx.coroutines.launch
 import launcher.core.AppSettings
 import launcher.core.DownloadManager
+import launcher.core.DownloadHub
+import launcher.core.ModpackManager
 import launcher.ui.layout.MainLayout
 import launcher.ui.theme.*
 import java.awt.Image
 import java.awt.Taskbar
 import java.awt.Toolkit
+import java.awt.datatransfer.DataFlavor
+import java.awt.dnd.*
+import java.io.File
 
 fun main() = application {
     val windowState = rememberWindowState(
@@ -106,6 +111,74 @@ private fun FrameWindowScope.AppWindow(
     windowState: WindowState,
     onExit: () -> Unit,
 ) {
+    var dropMessage by remember { mutableStateOf("") }
+
+    // 注册拖拽整合包文件到窗口
+    LaunchedEffect(Unit) {
+        window.dropTarget = DropTarget().apply {
+            addDropTargetListener(object : DropTargetAdapter() {
+                override fun drop(dtde: DropTargetDropEvent) {
+                    dtde.acceptDrop(DnDConstants.ACTION_COPY)
+                    try {
+                        val transferable = dtde.transferable
+                        if (transferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                            @Suppress("UNCHECKED_CAST")
+                            val files = transferable.getTransferData(DataFlavor.javaFileListFlavor) as List<File>
+                            val packFiles = files.filter {
+                                it.isFile && (it.extension.equals("zip", ignoreCase = true) || it.extension.equals("mrpack", ignoreCase = true))
+                            }
+                            if (packFiles.isNotEmpty()) {
+                                val importScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+                                importScope.launch {
+                                    val settings = AppSettings.load()
+                                    if (settings.minecraftDir.isBlank()) {
+                                        dropMessage = "请先在设置中配置游戏主目录"
+                                        return@launch
+                                    }
+                                    for (packFile in packFiles) {
+                                        val importTaskId = "drag_import_${packFile.absolutePath.hashCode()}_${System.currentTimeMillis()}"
+                                        DownloadHub.upsert(DownloadHub.HubTask(
+                                            id = importTaskId,
+                                            name = "导入整合包 ${packFile.name}",
+                                            type = DownloadHub.TaskType.ResourceDownload,
+                                            step = "准备导入整合包",
+                                            fraction = 0f,
+                                        ))
+                                        println("[DragImport] 拖入文件: ${packFile.absolutePath}")
+                                        val result = ModpackManager.importMrpack(packFile, settings.minecraftDir) { step, fraction ->
+                                            DownloadHub.upsert(DownloadHub.HubTask(
+                                                id = importTaskId,
+                                                name = "导入整合包 ${packFile.name}",
+                                                type = DownloadHub.TaskType.ResourceDownload,
+                                                step = step,
+                                                fraction = fraction.coerceIn(0f, 1f),
+                                            ))
+                                        }
+                                        DownloadHub.upsert(DownloadHub.HubTask(
+                                            id = importTaskId,
+                                            name = "导入整合包 ${packFile.name}",
+                                            type = DownloadHub.TaskType.ResourceDownload,
+                                            status = if ("成功" in result) DownloadHub.TaskStatus.Done else DownloadHub.TaskStatus.Error,
+                                            step = result,
+                                            fraction = if ("成功" in result) 1f else 0f,
+                                            error = if ("成功" in result) "" else result,
+                                        ))
+                                        dropMessage = result
+                                    }
+                                }
+                            } else {
+                                dropMessage = "请拖入 .zip 或 .mrpack 整合包文件"
+                            }
+                        }
+                    } catch (e: Exception) {
+                        dropMessage = "拖入文件处理失败: ${e.message}"
+                    }
+                    dtde.dropComplete(true)
+                }
+            })
+        }
+    }
+
     val isMaximized = windowState.placement == WindowPlacement.Maximized
     val windowShape = if (isMaximized) RoundedCornerShape(0.dp) else RoundedCornerShape(16.dp)
     val windowPadding = if (isMaximized) 0.dp else 8.dp

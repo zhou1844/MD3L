@@ -1,0 +1,14 @@
+--add-modules
+"java.base"
+--add-modules
+"java.desktop"
+--add-modules
+"java.logging"
+--add-modules
+"jdk.crypto.ec"
+--strip-debug
+--no-header-files
+--no-man-pages
+--strip-native-commands
+--output
+"D:\\MD3L1\\build\\compose\\tmp\\main\\runtime"
