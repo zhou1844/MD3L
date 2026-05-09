@@ -29,6 +29,7 @@ data class AppSettings(
     val eulaAccepted: Boolean = false,
     val lastVersionId: String = "",
     val lastVersionType: String = "",
+    val themeMode: String = "dark",
 ) {
     companion object {
         private val json = Json {

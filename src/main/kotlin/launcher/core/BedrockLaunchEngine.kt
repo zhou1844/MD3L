@@ -113,6 +113,120 @@ class BedrockLaunchEngine : ILaunchEngine {
         runtimeChecked = true
     }
 
+    private fun injectSkinAndUsername(context: LaunchContext) {
+        val packagesDir = File(System.getenv("LOCALAPPDATA") ?: return, "Packages")
+        if (!packagesDir.isDirectory) return
+        val packageRoots = packagesDir.listFiles { file ->
+            file.isDirectory && file.name.startsWith("Microsoft.MinecraftUWP", ignoreCase = true)
+        }.orEmpty()
+
+        packageRoots.forEach { root ->
+            val mojangDir = File(root, "LocalState/games/com.mojang")
+            if (!mojangDir.exists()) mojangDir.mkdirs()
+            
+            // 1. Inject Username
+            val optionsFile = File(mojangDir, "minecraftpe/options.txt")
+            if (optionsFile.exists()) {
+                val lines = optionsFile.readLines().toMutableList()
+                val idx = lines.indexOfFirst { it.startsWith("mp_username:") }
+                if (idx >= 0) {
+                    lines[idx] = "mp_username:${context.playerName}"
+                } else {
+                    lines.add("mp_username:${context.playerName}")
+                }
+                optionsFile.outputStream().use { fos ->
+                    fos.write((lines.joinToString("\n") + "\n").toByteArray(Charsets.UTF_8))
+                }
+            } else {
+                optionsFile.parentFile?.mkdirs()
+                optionsFile.outputStream().use { fos ->
+                    fos.write("mp_username:${context.playerName}\n".toByteArray(Charsets.UTF_8))
+                }
+            }
+
+            // 2. Inject Skin Pack if skinUri is valid
+            if (context.skinUri.isNotBlank()) {
+                val skinFile = File(context.skinUri)
+                if (skinFile.exists()) {
+                    val packDir = File(mojangDir, "development_resource_packs/MD3LSkinPack")
+                    packDir.mkdirs()
+                    val manifestObj = buildJsonObject {
+                        put("format_version", 2)
+                        put("header", buildJsonObject {
+                            put("description", "MD3L Auto-injected Skin Pack")
+                            put("name", "MD3L Skin Sync")
+                            put("uuid", "ee35fa32-0268-45e0-9bc7-60e0fb2eecbe")
+                            put("version", buildJsonArray { add(1); add(0); add(0) })
+                            put("min_engine_version", buildJsonArray { add(1); add(16); add(0) })
+                        })
+                        put("modules", buildJsonArray {
+                            add(buildJsonObject {
+                                put("description", "MD3L Auto-injected Skin Pack")
+                                put("type", "resources")
+                                put("uuid", "b6a84f3e-52f1-4328-9418-971ef28baeb1")
+                                put("version", buildJsonArray { add(1); add(0); add(0) })
+                            })
+                        })
+                    }
+                    val manifestStr = Json { prettyPrint = true }.encodeToString(JsonObject.serializer(), manifestObj)
+                    val manifestFile = File(packDir, "manifest.json")
+                    manifestFile.outputStream().use { fos ->
+                        // 绝对不能有 BOM (EF BB BF)
+                        fos.write(manifestStr.toByteArray(Charsets.UTF_8))
+                    }
+                    val texturesDir = File(packDir, "textures/entity")
+                    texturesDir.mkdirs()
+                    
+                    File(texturesDir, "steve.png").delete()
+                    File(texturesDir, "alex.png").delete()
+                    
+                    // 为了保证不论玩家默认是哪种，都能看到自定义皮肤，我们将 Steve 和 Alex 均替换
+                    skinFile.copyTo(File(texturesDir, "steve.png"), overwrite = true)
+                    skinFile.copyTo(File(texturesDir, "alex.png"), overwrite = true)
+
+                    val globalPacksFile = File(mojangDir, "minecraftpe/global_resource_packs.json")
+                    try {
+                        val packsArray = if (globalPacksFile.exists()) {
+                            Json.parseToJsonElement(globalPacksFile.readText()).jsonArray.toMutableList()
+                        } else {
+                            mutableListOf()
+                        }
+                        
+                        val exists = packsArray.any { it.jsonObject["pack_id"]?.jsonPrimitive?.content == "ee35fa32-0268-45e0-9bc7-60e0fb2eecbe" }
+                        if (!exists) {
+                            val newPack = buildJsonObject {
+                                put("pack_id", "ee35fa32-0268-45e0-9bc7-60e0fb2eecbe")
+                                put("version", buildJsonArray { add(1); add(0); add(0) })
+                                put("subpack", "")
+                            }
+                            packsArray.add(newPack)
+                            val newGlobalStr = Json { prettyPrint = true }.encodeToString(JsonArray.serializer(), JsonArray(packsArray))
+                            globalPacksFile.outputStream().use { fos ->
+                                fos.write(newGlobalStr.toByteArray(Charsets.UTF_8))
+                            }
+                        }
+                    } catch (e: Exception) {
+                        println("[Bedrock] 更新 global_resource_packs.json 失败: ${e.message}")
+                    }
+                }
+            } else {
+                val globalPacksFile = File(mojangDir, "minecraftpe/global_resource_packs.json")
+                if (globalPacksFile.exists()) {
+                    try {
+                        val packsArray = Json.parseToJsonElement(globalPacksFile.readText()).jsonArray
+                        val filtered = packsArray.filterNot { it.jsonObject["pack_id"]?.jsonPrimitive?.content == "ee35fa32-0268-45e0-9bc7-60e0fb2eecbe" }
+                        if (filtered.size != packsArray.size) {
+                            val filteredStr = Json { prettyPrint = true }.encodeToString(JsonArray.serializer(), JsonArray(filtered))
+                            globalPacksFile.outputStream().use { fos ->
+                                fos.write(filteredStr.toByteArray(Charsets.UTF_8))
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+    }
+
     override fun execute(context: LaunchContext): Process {
         if (!runtimeChecked) ensureVCLibsInstalled()
 
@@ -586,7 +700,7 @@ class BedrockLaunchEngine : ILaunchEngine {
     private fun detectInstalledMinecraft(): String? {
         return try {
             val script = """
-                ${'$'}pkg = Get-AppxPackage | Where-Object { ${'$'}_.Name -like '*Minecraft*' -and ${'$'}_.Name -notlike '*Education*' -and ${'$'}_.Name -notlike '*Creator*' -and ${'$'}_.InstallLocation -notlike '*WindowsApps*' } | Select-Object -First 1
+                ${'$'}pkg = Get-AppxPackage | Where-Object { ${'$'}_.Name -like '*Minecraft*' -and ${'$'}_.Name -notlike '*Education*' -and ${'$'}_.Name -notlike '*Creator*' } | Select-Object -First 1
                 if (${'$'}pkg) {
                     ${'$'}appId = (Get-AppxPackageManifest ${'$'}pkg).Package.Applications.Application.Id
                     Write-Output "${'$'}(${'$'}pkg.PackageFamilyName)!${'$'}appId"

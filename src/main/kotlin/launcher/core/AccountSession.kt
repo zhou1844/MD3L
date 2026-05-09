@@ -3,7 +3,7 @@ package launcher.core
 import kotlinx.serialization.Serializable
 
 @Serializable
-enum class AccountType { MSA, Offline }
+enum class AccountType { MSA, Offline, ThirdParty }
 
 /**
  * 持久化账号会话实体。
@@ -23,14 +23,19 @@ data class AccountSession(
     val userHash: String = "",
     val tokenExpiresAt: Long = 0L,
     val minecraftAccessToken: String = "",
+    // 第三方登录独有字段
+    val authServerUrl: String = "",
+    val serverName: String = "",
+    val thirdPartyEmail: String = "",
 ) {
     val isExpired: Boolean
-        get() = System.currentTimeMillis() > tokenExpiresAt
+        get() = if (type == AccountType.ThirdParty) false else System.currentTimeMillis() > tokenExpiresAt
 
     val displayType: String
         get() = when (type) {
             AccountType.MSA -> "微软正版"
             AccountType.Offline -> "离线模式"
+            AccountType.ThirdParty -> if (serverName.isNotBlank()) serverName else "第三方登录"
         }
 }
 

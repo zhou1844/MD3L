@@ -1,6 +1,14 @@
 package launcher.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -164,90 +173,98 @@ fun LocalVersionTreeSheetContent(
             }
         } else {
             LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp),
             ) {
                 categories.forEach { category ->
                     val catExpanded = expandedCategory == category.type
-                    item(key = "lcat_${category.type}") {
-                        ElevatedCard(
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.elevatedCardColors(
-                                containerColor = if (catExpanded)
-                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                                else MaterialTheme.colorScheme.surfaceContainerHigh
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable {
-                                    expandedCategory = if (catExpanded) null else category.type
-                                },
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(Icons.Filled.FolderOpen, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.width(12.dp))
-                                Text(
-                                    category.label,
-                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                    modifier = Modifier.weight(1f),
-                                )
-                                Text(
-                                    "${category.versions.size} 个",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Icon(
-                                    if (catExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
-                    if (catExpanded) {
-                        items(category.versions, key = { "lver_${it.id}" }) { version ->
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                                modifier = Modifier.fillMaxWidth()
-                                    .padding(start = 20.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable { onVersionSelected(version) },
+                    item(key = "lcat_group_${category.type}") {
+                        val containerColor by animateColorAsState(
+                            if (catExpanded) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                            else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                        )
+                        
+                        Column(modifier = Modifier.fillMaxWidth().animateContentSize(spring(stiffness = Spring.StiffnessMediumLow))) {
+                            ElevatedCard(
+                                onClick = { expandedCategory = if (catExpanded) null else category.type },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.elevatedCardColors(containerColor = containerColor),
+                                modifier = Modifier.fillMaxWidth(),
+                                elevation = CardDefaults.elevatedCardElevation(defaultElevation = if (catExpanded) 0.dp else 1.dp)
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(10.dp),
+                                    modifier = Modifier.padding(14.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    VersionIcon(
-                                        loaderType = version.loaderType,
-                                        versionType = version.type,
-                                        size = 24,
+                                    Icon(Icons.Filled.FolderOpen, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                                    Spacer(Modifier.width(12.dp))
+                                    Text(
+                                        category.label,
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        modifier = Modifier.weight(1f),
                                     )
-                                    Spacer(Modifier.width(10.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            version.id,
-                                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                        Text(
-                                            "${version.loaderType.name} · ${version.type}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                        )
-                                    }
+                                    Text(
+                                        "${category.versions.size} 个",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Spacer(Modifier.width(8.dp))
                                     Icon(
-                                        Icons.Filled.PlayArrow,
-                                        contentDescription = "选择",
-                                        modifier = Modifier.size(18.dp),
-                                        tint = MaterialTheme.colorScheme.primary,
+                                        if (catExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
+                                }
+                            }
+                            
+                            AnimatedVisibility(
+                                visible = catExpanded,
+                                enter = expandVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(),
+                                exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut(),
+                            ) {
+                                Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                                    category.versions.forEach { version ->
+                                        Surface(
+                                            onClick = { onVersionSelected(version) },
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                            modifier = Modifier.fillMaxWidth()
+                                                .padding(start = 20.dp, top = 2.dp, bottom = 2.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(10.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                VersionIcon(
+                                                    loaderType = version.loaderType,
+                                                    versionType = version.type,
+                                                    size = 24,
+                                                )
+                                                Spacer(Modifier.width(10.dp))
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        version.id,
+                                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                    )
+                                                    Text(
+                                                        "${version.loaderType.name} · ${version.type}",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                    )
+                                                }
+                                                Icon(
+                                                    Icons.Filled.PlayArrow,
+                                                    contentDescription = "选择",
+                                                    modifier = Modifier.size(18.dp),
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -287,26 +304,28 @@ fun VersionTreeSheetContent(
         Spacer(Modifier.height(16.dp))
 
         LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp),
         ) {
             // ── 一级节点 (Java / Bedrock) ────────────────────────────────
             tree.forEach { node ->
                 val nodeExpanded = expandedNode == node.label
                 item(key = "node_${node.label}") {
+                    val containerColor by animateColorAsState(
+                        if (nodeExpanded) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                        else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                    )
+                    
                     ElevatedCard(
+                        onClick = {
+                            expandedNode = if (nodeExpanded) null else node.label
+                            expandedCategory = null
+                        },
                         shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.elevatedCardColors(
-                            containerColor = if (nodeExpanded)
-                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                            else MaterialTheme.colorScheme.surfaceContainerHigh
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable {
-                                expandedNode = if (nodeExpanded) null else node.label
-                                expandedCategory = null
-                            },
+                        colors = CardDefaults.elevatedCardColors(containerColor = containerColor),
+                        modifier = Modifier.fillMaxWidth(),
+                        elevation = CardDefaults.elevatedCardElevation(defaultElevation = if (nodeExpanded) 0.dp else 1.dp)
                     ) {
                         Row(
                             modifier = Modifier.padding(14.dp),
@@ -342,94 +361,101 @@ fun VersionTreeSheetContent(
                         val catKey = "${node.label}_${category.label}"
                         val catExpanded = expandedCategory == catKey
 
-                        item(key = "cat_$catKey") {
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (catExpanded)
-                                    MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                        item(key = "cat_group_$catKey") {
+                            val catColor by animateColorAsState(
+                                if (catExpanded) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
                                 else MaterialTheme.colorScheme.surfaceContainer,
-                                modifier = Modifier.fillMaxWidth()
-                                    .padding(start = 20.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable {
-                                        expandedCategory = if (catExpanded) null else catKey
-                                    },
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Icon(
-                                        Icons.Filled.FolderOpen,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    Spacer(Modifier.width(10.dp))
-                                    Text(
-                                        category.label,
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    Text(
-                                        "${category.versions.size}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                    Icon(
-                                        if (catExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                        }
-
-                        // ── 三级版本列表 ─────────────────────────────────
-                        if (catExpanded) {
-                            val displayVersions = category.versions.take(100)
-                            items(displayVersions, key = { "ver_${it.id}" }) { version ->
+                                animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                            )
+                            
+                            Column(modifier = Modifier.fillMaxWidth().animateContentSize(spring(stiffness = Spring.StiffnessMediumLow))) {
                                 Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                    onClick = { expandedCategory = if (catExpanded) null else catKey },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = catColor,
                                     modifier = Modifier.fillMaxWidth()
-                                        .padding(start = 44.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable { onVersionSelected(version) },
+                                        .padding(start = 20.dp, top = 2.dp, bottom = 2.dp)
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(10.dp),
+                                        modifier = Modifier.padding(12.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        VersionIcon(
-                                            loaderType = launcher.core.LoaderType.Vanilla,
-                                            versionType = version.type,
-                                            size = 24,
+                                        Icon(
+                                            Icons.Filled.FolderOpen,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                         Spacer(Modifier.width(10.dp))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                version.id,
-                                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                            if (version.releaseTime.isNotBlank()) {
-                                                Text(
-                                                    version.releaseTime.take(10),
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                                )
+                                        Text(
+                                            category.label,
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        Text(
+                                            "${category.versions.size}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Icon(
+                                            if (catExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+
+                                AnimatedVisibility(
+                                    visible = catExpanded,
+                                    enter = expandVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(),
+                                    exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut(),
+                                ) {
+                                    Column(modifier = Modifier.fillMaxWidth().padding(top = 2.dp)) {
+                                        val displayVersions = category.versions.take(100)
+                                        displayVersions.forEach { version ->
+                                            Surface(
+                                                onClick = { onVersionSelected(version) },
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                                modifier = Modifier.fillMaxWidth()
+                                                    .padding(start = 44.dp, top = 2.dp, bottom = 2.dp)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(10.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                ) {
+                                                    VersionIcon(
+                                                        loaderType = launcher.core.LoaderType.Vanilla,
+                                                        versionType = version.type,
+                                                        size = 24,
+                                                    )
+                                                    Spacer(Modifier.width(10.dp))
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            version.id,
+                                                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                        )
+                                                        if (version.releaseTime.isNotBlank()) {
+                                                            Text(
+                                                                version.releaseTime.take(10),
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                            )
+                                                        }
+                                                    }
+                                                    Icon(
+                                                        Icons.Filled.Download,
+                                                        contentDescription = "安装",
+                                                        modifier = Modifier.size(18.dp),
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                    )
+                                                }
                                             }
                                         }
-                                        Icon(
-                                            Icons.Filled.Download,
-                                            contentDescription = "安装",
-                                            modifier = Modifier.size(18.dp),
-                                            tint = MaterialTheme.colorScheme.primary,
-                                        )
                                     }
                                 }
                             }

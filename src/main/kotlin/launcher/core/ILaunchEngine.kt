@@ -31,6 +31,7 @@ data class LaunchContext(
     val bedrockPackageId: String = "Microsoft.MinecraftUWP_8wekyb3d8bbwe!App",
     val skinUri: String = "",
     val skinModel: String = "classic",
+    val authServerUrl: String = "", // 第三方登录 Yggdrasil API URL
 ) {
     val gameDir: File
         get() {
