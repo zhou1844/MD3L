@@ -89,7 +89,7 @@ object DownloadManager {
                 launch {
                     semaphore.withPermit {
                         _progress.value = _progress.value.copy(currentFile = task.dest.name)
-                        val ok = downloadSingleFile(task) { bytes ->
+                        val ok = downloadSingleFile(task, null) { bytes ->
                             downloadedBytes += bytes
                             val elapsed = (System.currentTimeMillis() - startTime).coerceAtLeast(1)
                             val speed = downloadedBytes * 1000 / elapsed
@@ -151,7 +151,7 @@ object DownloadManager {
                 remaining.map { task ->
                     launch {
                         semaphore.withPermit {
-                            val ok = downloadSingleFile(task) { }
+                            val ok = downloadSingleFile(task, null) { }
                             if (ok) {
                                 completedFiles++
                                 onFileComplete?.invoke(completedFiles, total, task.dest.name)
@@ -179,15 +179,19 @@ object DownloadManager {
     ): Boolean = withContext(Dispatchers.IO) {
         val startedAt = System.currentTimeMillis()
         var downloaded = 0L
-        downloadSingleFile(task) { bytes ->
+        var total = task.size
+        downloadSingleFile(task, onStart = { contentLength ->
+            if (total <= 0 && contentLength > 0) total = contentLength
+        }) { bytes ->
             downloaded += bytes
             val elapsed = (System.currentTimeMillis() - startedAt).coerceAtLeast(1L)
-            onProgress(downloaded, task.size, downloaded * 1000L / elapsed)
+            onProgress(downloaded, total, downloaded * 1000L / elapsed)
         }
     }
 
     private suspend fun downloadSingleFile(
         task: DownloadTask,
+        onStart: ((Long) -> Unit)? = null,
         onBytesRead: (Long) -> Unit,
     ): Boolean = withContext(Dispatchers.IO) {
         val mirroredUrl = mirrorUrl(task.url)
@@ -233,6 +237,8 @@ object DownloadManager {
                     conn.disconnect()
                     return@repeat
                 }
+
+                onStart?.invoke(conn.contentLengthLong)
 
                 conn.inputStream.use { input ->
                     RandomAccessFile(task.dest, "rw").use { raf ->

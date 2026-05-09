@@ -133,14 +133,26 @@ fun MainLayout(modifier: Modifier = Modifier) {
                 .fillMaxSize()
                 .padding(16.dp)
                 .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .background(MaterialTheme.colorScheme.surfaceContainer),
         ) {
             AnimatedContent(
                 targetState = currentRoute,
                 transitionSpec = {
-                    val enter = fadeIn(spring(stiffness = Spring.StiffnessMediumLow)) +
-                            slideInVertically(spring(stiffness = Spring.StiffnessMediumLow)) { it / 20 }
-                    val exit = fadeOut(tween(150))
+                    val enter = fadeIn(spring(stiffness = Spring.StiffnessLow)) +
+                            scaleIn(
+                                initialScale = 0.96f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessLow
+                                )
+                            ) + slideInVertically(
+                                initialOffsetY = { it / 25 },
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessLow
+                                )
+                            )
+                    val exit = fadeOut(tween(150)) + scaleOut(targetScale = 0.98f, animationSpec = tween(150))
                     enter togetherWith exit
                 },
                 modifier = Modifier.fillMaxSize().padding(16.dp),

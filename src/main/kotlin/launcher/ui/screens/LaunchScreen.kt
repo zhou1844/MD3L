@@ -1,5 +1,14 @@
 ﻿package launcher.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -17,7 +26,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -33,6 +44,9 @@ import io.kamel.image.asyncPainterResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import launcher.core.*
 import launcher.ui.components.LocalVersionTreeSheetContent
 import launcher.ui.components.VersionIcon
@@ -91,8 +105,56 @@ fun LaunchScreen() {
     var errorStackTrace by remember { mutableStateOf("") }
     var errorLogPath by remember { mutableStateOf("") }
 
+    // 第三方登录状态
+    var showThirdPartyDialog by remember { mutableStateOf(false) }
+    var tpAuthServerUrl by remember { mutableStateOf("") }
+    var tpServerName by remember { mutableStateOf("") }
+    var tpEmail by remember { mutableStateOf("") }
+    var tpPassword by remember { mutableStateOf("") }
+    var tpError by remember { mutableStateOf("") }
+    var tpLoading by remember { mutableStateOf(false) }
+    
+    // 自动更新状态
+    val updateState by AutoUpdater.state.collectAsState()
+
+    // Authlib-Injector / Littleskin 拖拽配置解析
+    val tpDropTarget = remember {
+        object : java.awt.dnd.DropTarget() {
+            @Synchronized
+            override fun drop(evt: java.awt.dnd.DropTargetDropEvent) {
+                try {
+                    evt.acceptDrop(java.awt.dnd.DnDConstants.ACTION_COPY)
+                    val droppedFiles = evt.transferable.getTransferData(java.awt.datatransfer.DataFlavor.javaFileListFlavor) as? List<*>
+                    val file = droppedFiles?.firstOrNull() as? File
+                    if (file != null && file.isFile && file.extension.lowercase() == "json") {
+                        val text = file.readText(Charsets.UTF_8)
+                        val jsonRoot = kotlinx.serialization.json.Json.parseToJsonElement(text).jsonObject
+                        val authServerUrl = jsonRoot["authServerUrl"]?.jsonPrimitive?.contentOrNull
+                            ?: jsonRoot["authUrl"]?.jsonPrimitive?.contentOrNull
+                        val serverName = jsonRoot["serverName"]?.jsonPrimitive?.contentOrNull
+                            ?: jsonRoot["name"]?.jsonPrimitive?.contentOrNull
+                        
+                        if (authServerUrl != null) {
+                            tpAuthServerUrl = authServerUrl
+                            if (serverName != null) {
+                                tpServerName = serverName
+                            }
+                            showThirdPartyDialog = true
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
     // 版本树 Popup（悬浮选择器，绝不破坏底部布局流）
     var showVersionPopup by remember { mutableStateOf(false) }
+    val versionPopupVisible = remember { MutableTransitionState(false) }
+    LaunchedEffect(showVersionPopup) {
+        versionPopupVisible.targetState = showVersionPopup
+    }
 
     LaunchedEffect(Unit) {
         val loadedSettings = withContext(Dispatchers.IO) { AppSettings.load() }
@@ -584,20 +646,26 @@ fun LaunchScreen() {
                     Spacer(Modifier.height(8.dp))
                 }
 
-                ElevatedCard(
-                    modifier = Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .then(
-                            if (!uiLocked) Modifier.clickable { showVersionPopup = !showVersionPopup }
-                            else Modifier
-                        ),
-                    shape = RoundedCornerShape(12.dp),
-                    elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
-                    colors = CardDefaults.elevatedCardColors(
-                        containerColor = if (uiLocked)
-                            MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f)
-                        else MaterialTheme.colorScheme.surfaceContainerHigh
+                val unfoldRotation by animateFloatAsState(
+                    targetValue = if (showVersionPopup) 180f else 0f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow,
                     ),
+                    label = "version_popup_arrow_rotation",
+                )
+
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .then(if (!uiLocked) Modifier.clickable { showVersionPopup = !showVersionPopup } else Modifier),
+                    tonalElevation = 2.dp,
+                    shadowElevation = 2.dp,
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (uiLocked)
+                        MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f)
+                    else MaterialTheme.colorScheme.surfaceContainerHigh,
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp),
@@ -624,7 +692,12 @@ fun LaunchScreen() {
                             Spacer(Modifier.width(10.dp))
                             Text("选择版本", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                         }
-                        Icon(Icons.Filled.UnfoldMore, contentDescription = "选择版本", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(
+                            Icons.Filled.UnfoldMore,
+                            contentDescription = "选择版本",
+                            modifier = Modifier.size(20.dp).rotate(unfoldRotation),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
 
@@ -739,6 +812,7 @@ fun LaunchScreen() {
                                             fullscreen = s.fullscreen,
                                             skinUri = if (acc?.type == AccountType.Offline) acc.skinUri else "",
                                             skinModel = if (acc?.type == AccountType.Offline) acc.skinModel else "classic",
+                                            authServerUrl = acc?.authServerUrl ?: "",
                                         )
 
                                         val engine = JavaLaunchEngine()
@@ -769,11 +843,17 @@ fun LaunchScreen() {
                                 disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                                 disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                        } else ButtonDefaults.buttonColors(),
+                        } else {
+                            val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+                            ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = if (darkTheme) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimary,
+                            )
+                        },
                     ) {
                         when {
                             globalLaunching -> {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
                                 Spacer(Modifier.width(8.dp))
                                 Text("启动中…")
                             }
@@ -823,34 +903,54 @@ fun LaunchScreen() {
     // ══════════════════════════════════════════════════════════════════════════
     // 版本选择 Popup —— 悬浮于界面上方，绝对禁止破坏底部布局流
     // ══════════════════════════════════════════════════════════════════════════
-    if (showVersionPopup) {
+    if (versionPopupVisible.currentState || versionPopupVisible.targetState) {
         Popup(
             alignment = Alignment.BottomCenter,
             offset = androidx.compose.ui.unit.IntOffset(0, -120),
             onDismissRequest = { showVersionPopup = false },
             properties = PopupProperties(focusable = true),
         ) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                shadowElevation = 8.dp,
-                tonalElevation = 4.dp,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.widthIn(min = 300.dp, max = 500.dp).heightIn(max = 400.dp),
+            AnimatedVisibility(
+                visibleState = versionPopupVisible,
+                enter = fadeIn(spring(stiffness = Spring.StiffnessLow)) +
+                    scaleIn(
+                        initialScale = 0.94f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessLow,
+                        ),
+                    ),
+                exit = fadeOut(spring(stiffness = Spring.StiffnessMediumLow)) +
+                    scaleOut(
+                        targetScale = 0.97f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMediumLow,
+                        ),
+                    ),
             ) {
-                LocalVersionTreeSheetContent(
-                    localVersions = versions,
-                    onVersionSelected = { ver ->
-                        showVersionPopup = false
-                        selectedVersion = ver
-                        scope.launch {
-                            val s = AppSettings.load()
-                            val updated = s.copy(lastVersionId = ver.id, lastVersionType = ver.type)
-                            AppSettings.save(updated)
-                            settings = updated
-                        }
-                    },
-                    bedrockVersions = bedrockVersions,
-                )
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    shadowElevation = 8.dp,
+                    tonalElevation = 4.dp,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.widthIn(min = 300.dp, max = 500.dp).heightIn(max = 400.dp),
+                ) {
+                    LocalVersionTreeSheetContent(
+                        localVersions = versions,
+                        onVersionSelected = { ver ->
+                            showVersionPopup = false
+                            selectedVersion = ver
+                            scope.launch {
+                                val s = AppSettings.load()
+                                val updated = s.copy(lastVersionId = ver.id, lastVersionType = ver.type)
+                                AppSettings.save(updated)
+                                settings = updated
+                            }
+                        },
+                        bedrockVersions = bedrockVersions,
+                    )
+                }
             }
         }
     }
@@ -906,6 +1006,28 @@ fun LaunchScreen() {
                             Column {
                                 Text("离线模式", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
                                 Text("输入自定义玩家 ID", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    ElevatedCard(
+                        onClick = {
+                            showLoginDialog = false
+                            showThirdPartyDialog = true
+                            tpAuthServerUrl = ""
+                            tpServerName = ""
+                            tpEmail = ""
+                            tpPassword = ""
+                            tpError = ""
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                    ) {
+                        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.AccountCircle, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text("第三方登录", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                                Text("LittleSkin 或其他 Yggdrasil API", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -1029,6 +1151,115 @@ fun LaunchScreen() {
         )
     }
 
+    // ══════════════════════════════════════════════════════════════════════════
+    // 第三方登录 (Authlib Injector / LittleSkin) 验证弹窗
+    // ══════════════════════════════════════════════════════════════════════════
+    if (showThirdPartyDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!tpLoading) showThirdPartyDialog = false },
+            shape = RoundedCornerShape(20.dp),
+            title = { Text("添加第三方账号", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("请提供支持 Yggdrasil API 的认证服务器信息。支持拖入 authlib-injector 格式的 json 配置文件自动解析。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    
+                    OutlinedTextField(
+                        value = tpAuthServerUrl,
+                        onValueChange = { tpAuthServerUrl = it; tpError = "" },
+                        label = { Text("认证服务器 (必填)") },
+                        placeholder = { Text("如 https://littleskin.cn/api/yggdrasil") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = tpServerName,
+                        onValueChange = { tpServerName = it },
+                        label = { Text("服务器名称 (选填)") },
+                        placeholder = { Text("如 LittleSkin") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            tpAuthServerUrl = "https://littleskin.cn/api/yggdrasil"
+                            if (tpServerName.isBlank()) tpServerName = "LittleSkin"
+                            tpError = ""
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("快捷设置为 LittleSkin")
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = tpEmail,
+                        onValueChange = { tpEmail = it; tpError = "" },
+                        label = { Text("邮箱 / 账号") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = tpPassword,
+                        onValueChange = { tpPassword = it; tpError = "" },
+                        label = { Text("密码") },
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (tpLoading) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text("正在认证中…", style = MaterialTheme.typography.bodySmall)
+                        }
+                    } else if (tpError.isNotBlank()) {
+                        Text(tpError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (tpAuthServerUrl.isBlank() || tpEmail.isBlank() || tpPassword.isBlank()) {
+                            tpError = "请填写服务器地址、邮箱和密码"
+                            return@Button
+                        }
+                        tpLoading = true
+                        tpError = ""
+                        scope.launch {
+                            try {
+                                val session = AccountRepository.addThirdPartyAccount(
+                                    authServerUrl = tpAuthServerUrl,
+                                    serverName = tpServerName,
+                                    email = tpEmail,
+                                    password = tpPassword
+                                )
+                                settings = settings.copy(
+                                    playerName = session.username,
+                                    playerUuid = session.uuid,
+                                    accessToken = session.accessToken,
+                                    loginMode = "thirdparty"
+                                )
+                                AppSettings.save(settings)
+                                showThirdPartyDialog = false
+                            } catch (e: Exception) {
+                                tpError = e.message ?: "登录失败"
+                            } finally {
+                                tpLoading = false
+                            }
+                        }
+                    },
+                    enabled = !tpLoading,
+                    shape = RoundedCornerShape(10.dp)
+                ) { Text("完成登录") }
+            },
+            dismissButton = {
+                TextButton(onClick = { if (!tpLoading) showThirdPartyDialog = false }) { Text("取消") }
+            }
+        )
+    }
+
     skinModelDialogForUuid?.let { uuid ->
         AlertDialog(
             onDismissRequest = { skinModelDialogForUuid = null },
@@ -1040,32 +1271,38 @@ fun LaunchScreen() {
                     ElevatedCard(
                         onClick = {
                             skinModelDialogForUuid = null
-                            scope.launch { AccountRepository.pickOfflineSkin(uuid, "classic") }
+                            scope.launch {
+                                AccountRepository.pickOfflineSkin(uuid, "classic")
+                            }
                         },
                         shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
                     ) {
-                        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.AccessibilityNew, contentDescription = null)
+                        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             Spacer(Modifier.width(12.dp))
                             Column {
-                                Text("Steve", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
-                                Text("经典 4px 手臂", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Classic (Steve)", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                                Text("经典模型，手臂宽度 4 像素", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
                     ElevatedCard(
                         onClick = {
                             skinModelDialogForUuid = null
-                            scope.launch { AccountRepository.pickOfflineSkin(uuid, "slim") }
+                            scope.launch {
+                                AccountRepository.pickOfflineSkin(uuid, "slim")
+                            }
                         },
                         shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
                     ) {
-                        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.Accessibility, contentDescription = null)
+                        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.AccessibilityNew, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
                             Spacer(Modifier.width(12.dp))
                             Column {
-                                Text("Alex", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
-                                Text("纤细 3px 手臂", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Slim (Alex)", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                                Text("纤细模型，手臂宽度 3 像素", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -1074,6 +1311,81 @@ fun LaunchScreen() {
             confirmButton = {
                 TextButton(onClick = { skinModelDialogForUuid = null }) { Text("取消") }
             },
+        )
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 自动更新弹窗
+    // ══════════════════════════════════════════════════════════════════════════
+    if (updateState.hasUpdate && updateState.releaseInfo != null) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!updateState.isDownloading) {
+                    AutoUpdater.dismissUpdate()
+                }
+            },
+            shape = RoundedCornerShape(20.dp),
+            title = { Text("发现新版本: ${updateState.releaseInfo!!.tag_name}", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("更新内容:", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 200.dp)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(8.dp))
+                            .padding(8.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(updateState.releaseInfo!!.body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    
+                    if (updateState.isDownloading) {
+                        val totalMb = if (updateState.totalBytes > 0) updateState.totalBytes / 1024f / 1024f else -1f
+                        val downloadedMb = updateState.downloadedBytes / 1024f / 1024f
+                        val speedMb = updateState.speedBytesPerSec / 1024f / 1024f
+                        val progressText = if (updateState.totalBytes > 0) {
+                            "正在下载... ${"%.1f".format(downloadedMb)}MB / ${"%.1f".format(totalMb)}MB · ${"%.2f".format(speedMb)}MB/s · ${(updateState.downloadProgress * 100).toInt()}%"
+                        } else {
+                            "正在下载... ${"%.1f".format(downloadedMb)}MB · ${"%.2f".format(speedMb)}MB/s"
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+                        if (updateState.totalBytes > 0) {
+                            LinearProgressIndicator(
+                                progress = { updateState.downloadProgress },
+                                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        } else {
+                            LinearProgressIndicator(
+                                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        Text(progressText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    } else if (updateState.error.isNotBlank()) {
+                        Text("错误: ${updateState.error}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { AutoUpdater.startUpdate() },
+                    enabled = !updateState.isDownloading,
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(if (updateState.isDownloading) "正在更新..." else "立即更新")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { AutoUpdater.dismissUpdate() },
+                    enabled = !updateState.isDownloading
+                ) {
+                    Text("暂不更新")
+                }
+            }
         )
     }
 

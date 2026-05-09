@@ -23,6 +23,7 @@ import launcher.core.AppSettings
 import launcher.core.DownloadManager
 import launcher.core.DownloadHub
 import launcher.core.ModpackManager
+import launcher.core.WindowsElevation
 import launcher.ui.layout.MainLayout
 import launcher.ui.theme.*
 import java.awt.Image
@@ -32,7 +33,17 @@ import java.awt.datatransfer.DataFlavor
 import java.awt.dnd.*
 import java.io.File
 
-fun main() = application {
+fun main() {
+    val md3lDir = File(System.getProperty("user.home"), ".md3l")
+    if (File(md3lDir, "software_render").exists() || File(md3lDir, "software_render.txt").exists()) {
+        System.setProperty("skiko.renderApi", "SOFTWARE")
+    }
+
+    if (!WindowsElevation.ensureAdminOrRelaunch()) return
+    runLauncherApp()
+}
+
+private fun runLauncherApp() = application {
     val windowState = rememberWindowState(
         size = DpSize(916.dp, 716.dp),
         position = WindowPosition(Alignment.Center),
@@ -49,6 +60,7 @@ fun main() = application {
         val scope = rememberCoroutineScope()
         var eulaAccepted by remember { mutableStateOf<Boolean?>(null) } // null = loading
         var currentSettings by remember { mutableStateOf(AppSettings()) }
+        var showUpdateSuccess by remember { mutableStateOf<String?>(null) }
 
         LaunchedEffect(appIconImage) {
             appIconImage?.let { image ->
@@ -65,9 +77,18 @@ fun main() = application {
                 currentSettings = settings
                 val idx = settings.accentIndex.coerceIn(AllAccents.indices)
                 ThemeState.accent = AllAccents[idx]
+                ThemeState.isDark = settings.themeMode == "dark"
                 DownloadManager.activeMirror = settings.downloadMirror
                 eulaAccepted = settings.eulaAccepted
                 runCatching { launcher.core.BundledRuntimeInstaller.ensureInstalled() }
+
+                val updateFlag = File(System.getProperty("user.home"), ".md3l/update_success")
+                if (updateFlag.exists()) {
+                    showUpdateSuccess = runCatching { updateFlag.readText().trim() }.getOrNull()
+                    runCatching { updateFlag.delete() }
+                }
+
+                launcher.core.AutoUpdater.checkForUpdate()
             }
         }
 
@@ -94,7 +115,21 @@ fun main() = application {
                     )
                 }
                 true -> {
+                    // 主界面
                     AppWindow(windowState, ::exitApplication)
+                    
+                    if (showUpdateSuccess != null) {
+                        AlertDialog(
+                            onDismissRequest = { showUpdateSuccess = null },
+                            title = { Text("更新完成") },
+                            text = { Text("MD3L 已成功更新至版本: ${showUpdateSuccess}\n\n当前核心版本: ${launcher.core.AutoUpdater.CURRENT_VERSION}") },
+                            confirmButton = {
+                                TextButton(onClick = { showUpdateSuccess = null }) {
+                                    Text("好")
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }

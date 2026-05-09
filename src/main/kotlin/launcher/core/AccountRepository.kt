@@ -179,6 +179,91 @@ object AccountRepository {
         session
     }
 
+    suspend fun addThirdPartyAccount(
+        authServerUrl: String,
+        serverName: String,
+        email: String,
+        password: String
+    ): AccountSession = withContext(Dispatchers.IO) {
+        val serverUrl = authServerUrl.trimEnd('/')
+        val jsonBody = """
+            {
+                "agent": {
+                    "name": "Minecraft",
+                    "version": 1
+                },
+                "username": "$email",
+                "password": "$password"
+            }
+        """.trimIndent()
+
+        val resp = client.post("$serverUrl/authserver/authenticate") {
+            contentType(ContentType.Application.Json)
+            setBody(jsonBody)
+        }
+        
+        if (!resp.status.isSuccess()) {
+            val errorBody = try { json.parseToJsonElement(resp.bodyAsText()).jsonObject } catch (e: Exception) { null }
+            val errorMsg = errorBody?.get("errorMessage")?.jsonPrimitive?.contentOrNull ?: "HTTP ${resp.status.value}"
+            throw RuntimeException("第三方登录失败: $errorMsg")
+        }
+
+        val body = json.parseToJsonElement(resp.bodyAsText()).jsonObject
+        val accessToken = body["accessToken"]?.jsonPrimitive?.contentOrNull ?: throw RuntimeException("响应中缺少 accessToken")
+        val clientToken = body["clientToken"]?.jsonPrimitive?.contentOrNull ?: ""
+        
+        val selectedProfile = body["selectedProfile"]?.jsonObject 
+            ?: body["availableProfiles"]?.jsonArray?.firstOrNull()?.jsonObject
+            ?: throw RuntimeException("账号下没有可用的角色(Profile)")
+            
+        val uuid = selectedProfile["id"]?.jsonPrimitive?.contentOrNull ?: ""
+        val name = selectedProfile["name"]?.jsonPrimitive?.contentOrNull ?: ""
+
+        // 尝试获取皮肤 URL 用于显示头像
+        var skinUrl = ""
+        try {
+            val profileResp = client.get("$serverUrl/sessionserver/session/minecraft/profile/$uuid")
+            if (profileResp.status.isSuccess()) {
+                val profileBody = json.parseToJsonElement(profileResp.bodyAsText()).jsonObject
+                val properties = profileBody["properties"]?.jsonArray
+                val texturesProp = properties?.find { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull == "textures" }
+                val base64Value = texturesProp?.jsonObject?.get("value")?.jsonPrimitive?.contentOrNull
+                if (base64Value != null) {
+                    val decoded = String(java.util.Base64.getDecoder().decode(base64Value))
+                    val texturesJson = json.parseToJsonElement(decoded).jsonObject
+                    skinUrl = texturesJson["textures"]?.jsonObject?.get("SKIN")?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull ?: ""
+                }
+            }
+        } catch (e: Exception) {
+            println("[Auth] 获取第三方登录角色皮肤失败: ${e.message}")
+        }
+
+        val session = AccountSession(
+            uuid = uuid,
+            username = name,
+            accessToken = accessToken,
+            refreshToken = clientToken, // We can store clientToken in refreshToken field
+            type = AccountType.ThirdParty,
+            authServerUrl = serverUrl,
+            serverName = serverName.ifBlank { "第三方服务器" },
+            thirdPartyEmail = email,
+            minecraftAccessToken = accessToken,
+            avatarUri = skinUrl
+        )
+
+        val list = _accounts.value.toMutableList()
+        val existingIdx = list.indexOfFirst { it.uuid == session.uuid }
+        if (existingIdx >= 0) {
+            list[existingIdx] = session
+        } else {
+            list.add(session)
+        }
+        _accounts.value = list
+        _activeAccount.value = session
+        persistToDisk()
+        session
+    }
+
     suspend fun removeAccount(uuid: String) {
         val list = _accounts.value.toMutableList()
         list.removeAll { it.uuid == uuid }

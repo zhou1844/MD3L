@@ -323,21 +323,35 @@ object JavaManager {
             val javaDir = File(targetDir, "java-$majorVersion")
             javaDir.mkdirs()
             val candidates = javaDownloadCandidates(majorVersion, os, arch)
-            val archive = File(javaDir, if (os == "windows") "java.zip" else "java.tar.gz")
-            var downloaded = false
+            var downloadedArchive: File? = null
             candidates.forEachIndexed { index, url ->
-                if (!downloaded) {
+                if (downloadedArchive == null) {
+                    val cleanUrl = url.substringBefore('?')
+                    val defaultName = when {
+                        cleanUrl.endsWith(".exe", ignoreCase = true) -> "java.exe"
+                        os == "windows" -> "java.zip"
+                        else -> "java.tar.gz"
+                    }
+                    val fileName = cleanUrl.substringAfterLast('/').ifBlank { defaultName }
+                    val archive = File(javaDir, fileName)
+                    if (archive.exists()) archive.delete()
                     update("尝试下载 Java $majorVersion 源 ${index + 1}/${candidates.size}", 0.03f + index * 0.04f)
-                    downloaded = downloadJavaArchive(url, archive) { done, total, speed ->
+                    val ok = downloadJavaArchive(url, archive) { done, total, speed ->
                         val mb = done / 1_048_576.0
                         val totalText = if (total > 0) " / ${"%.1f".format(total / 1_048_576.0)} MB" else ""
                         val speedText = "${"%.1f".format(speed / 1_048_576.0)} MB/s"
                         val fraction = if (total > 0) 0.15f + 0.65f * done.toFloat() / total else 0.15f
                         update("下载 Java $majorVersion ${"%.1f".format(mb)} MB$totalText · $speedText", fraction)
                     }
+                    if (ok) {
+                        downloadedArchive = archive
+                    } else {
+                        archive.delete()
+                    }
                 }
             }
-            if (!downloaded) {
+            val archive = downloadedArchive
+            if (archive == null) {
                 DownloadHub.upsert(DownloadHub.HubTask(
                     id = taskId,
                     name = "Java $majorVersion 自动下载",
@@ -345,18 +359,32 @@ object JavaManager {
                     status = DownloadHub.TaskStatus.Error,
                     step = "Java $majorVersion 下载失败",
                     fraction = 0f,
-                    error = "Adoptium 未返回可用 JRE/JDK",
+                    error = "华为云镜像未返回可用安装包",
                 ))
                 return@withContext null
             }
 
-            update("正在解压 Java $majorVersion...", 0.86f)
-            if (archive.extension.equals("zip", ignoreCase = true)) {
-                unzip(archive, javaDir)
-            } else {
-                extractTarGz(archive, javaDir)
+            update("正在安装 Java $majorVersion...", 0.86f)
+            val installed = when {
+                archive.extension.equals("zip", ignoreCase = true) -> {
+                    unzip(archive, javaDir)
+                    true
+                }
+                archive.name.endsWith(".tar.gz", ignoreCase = true) ||
+                    archive.extension.equals("gz", ignoreCase = true) -> {
+                    extractTarGz(archive, javaDir)
+                    true
+                }
+                archive.extension.equals("exe", ignoreCase = true) -> {
+                    installWindowsJavaExe(archive, javaDir)
+                }
+                else -> false
             }
             archive.delete()
+            if (!installed) {
+                update("Java $majorVersion 安装失败: 不支持的安装包格式", 1f)
+                return@withContext null
+            }
 
             val javaExe = findJavaExeInDir(javaDir)
             if (javaExe != null) {
@@ -371,6 +399,20 @@ object JavaManager {
                 ))
                 javaExe
             } else {
+                val fallback = JavaScanner.findAll().firstOrNull { parseJavaMajor(it.version) == majorVersion }
+                if (fallback != null) {
+                    val exe = normalizeJavaExe(fallback.path)
+                    update("Java $majorVersion 安装完成（系统路径）✓", 1f)
+                    DownloadHub.upsert(DownloadHub.HubTask(
+                        id = taskId,
+                        name = "Java $majorVersion 自动下载",
+                        type = DownloadHub.TaskType.JavaVersion,
+                        status = DownloadHub.TaskStatus.Done,
+                        step = "Java $majorVersion 安装完成",
+                        fraction = 1f,
+                    ))
+                    return@withContext File(exe)
+                }
                 update("Java 安装失败: 未找到 java 可执行文件", 1f)
                 DownloadHub.upsert(DownloadHub.HubTask(
                     id = taskId,
@@ -398,30 +440,60 @@ object JavaManager {
     }
 
     private fun javaDownloadCandidates(majorVersion: Int, os: String, arch: String): List<String> {
-        val baseUrls = listOf(
-            "https://api.adoptium.net/v3/binary/latest/$majorVersion/ga/$os/$arch/jre/hotspot/normal/eclipse",
-            "https://api.adoptium.net/v3/binary/latest/$majorVersion/ga/$os/$arch/jdk/hotspot/normal/eclipse",
-            "https://api.adoptium.net/v3/binary/latest/$majorVersion/ea/$os/$arch/jre/hotspot/normal/eclipse",
-            "https://api.adoptium.net/v3/binary/latest/$majorVersion/ea/$os/$arch/jdk/hotspot/normal/eclipse",
-        )
-
-        val mirrorPrefixes = if (DownloadManager.activeMirror == "official") {
-            emptyList()
-        } else {
-            listOf(
-                "https://mirror.ghproxy.com/",
-                "https://ghproxy.com/",
-            )
+        val normalizedArch = when {
+            arch.contains("64") -> "x64"
+            else -> "x64"
         }
 
-        return buildList {
-            baseUrls.forEach { base ->
-                mirrorPrefixes.forEach { prefix ->
-                    add(prefix + base)
-                }
-                add(base)
+        if (majorVersion <= 8) {
+            return when (os) {
+                "windows" -> listOf("https://repo.huaweicloud.com/java/jdk/8u202-b08/jdk-8u202-windows-$normalizedArch.exe")
+                "linux" -> listOf("https://repo.huaweicloud.com/java/jdk/8u202-b08/jdk-8u202-linux-$normalizedArch.tar.gz")
+                else -> listOf("https://repo.huaweicloud.com/java/jdk/8u202-b08/jdk-8u202-macosx-x64.dmg")
             }
-        }.distinct()
+        }
+
+        val osPart = when (os) {
+            "windows" -> "windows"
+            "linux" -> "linux"
+            else -> if (majorVersion <= 16) "osx" else "macos"
+        }
+        val ext = if (os == "windows") "zip" else "tar.gz"
+        return listOf(
+            "https://repo.huaweicloud.com/openjdk/$majorVersion/openjdk-${majorVersion}_${osPart}-${normalizedArch}_bin.$ext",
+        )
+    }
+
+    private fun installWindowsJavaExe(installer: File, targetDir: File): Boolean {
+        if (!System.getProperty("os.name").lowercase().contains("win")) return false
+        val installHome = File(targetDir, "jdk")
+        installHome.mkdirs()
+
+        val argSets = listOf(
+            listOf("/s", "INSTALLDIR=${installHome.absolutePath}"),
+            listOf("/s", "/INSTALLDIR=${installHome.absolutePath}"),
+        )
+
+        argSets.forEach { args ->
+            runCatching {
+                val pb = ProcessBuilder(listOf(installer.absolutePath) + args)
+                pb.redirectErrorStream(true)
+                val proc = pb.start()
+                proc.inputStream.bufferedReader().use { reader ->
+                    while (reader.readLine() != null) {
+                        // consume installer output to avoid blocking
+                    }
+                }
+                if (!proc.waitFor(15, TimeUnit.MINUTES)) {
+                    proc.destroyForcibly()
+                    return@runCatching false
+                }
+                proc.exitValue() == 0 && findJavaExeInDir(targetDir) != null
+            }.getOrDefault(false).let { ok ->
+                if (ok) return true
+            }
+        }
+        return findJavaExeInDir(targetDir) != null
     }
 
     private fun downloadJavaArchive(

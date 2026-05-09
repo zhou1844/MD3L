@@ -641,6 +641,36 @@ class JavaLaunchEngine : ILaunchEngine {
                 .forEach { args.add(it) }
         }
 
+        // 如果是第三方登录，添加 authlib-injector
+        if (context.authServerUrl.isNotBlank()) {
+            val authlibInjectorPath = File(context.minecraftDir, "cache/authlib-injector.jar")
+            if (!authlibInjectorPath.exists() || authlibInjectorPath.length() == 0L) {
+                println("[Launch] Downloading authlib-injector...")
+                val url = "https://bmclapi2.bangbang93.com/mirrors/authlib-injector/artifact/latest.json"
+                try {
+                    val proc = ProcessBuilder("curl.exe", "-sL", url).start()
+                    val text = proc.inputStream.bufferedReader().readText()
+                    val latestJson = Json.parseToJsonElement(text).jsonObject
+                    val downloadUrl = latestJson["download_url"]?.jsonPrimitive?.contentOrNull
+                        ?: throw RuntimeException("authlib-injector download url not found")
+                    
+                    authlibInjectorPath.parentFile?.mkdirs()
+                    val downloadProc = ProcessBuilder(
+                        "curl.exe", "-sL", "-o", authlibInjectorPath.absolutePath, downloadUrl
+                    ).start()
+                    downloadProc.waitFor()
+                    println("[Launch] authlib-injector downloaded.")
+                } catch (e: Exception) {
+                    println("[Launch] Failed to download authlib-injector: ${e.message}")
+                }
+            }
+            if (authlibInjectorPath.exists() && authlibInjectorPath.length() > 0L) {
+                args.add("-javaagent:${authlibInjectorPath.absolutePath}=${context.authServerUrl}")
+            } else {
+                throw RuntimeException("authlib-injector.jar 不存在且下载失败，无法进行第三方登录")
+            }
+        }
+
         // 收集 JVM 参数（先读父版本、再读当前版本，保证 Forge/NeoForge 继承原版参数）
         fun collectJvmArgs(obj: JsonObject) {
             obj["arguments"]?.jsonObject?.get("jvm")?.jsonArray?.forEach { arg ->

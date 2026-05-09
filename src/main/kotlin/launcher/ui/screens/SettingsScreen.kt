@@ -63,8 +63,37 @@ fun SettingsScreen() {
         Text("所有修改即时生效，自动保存", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(16.dp))
 
-        // ── 主题色 ───────────────────────────────────────────────────────────
-        SettingsSection("主题", Icons.Filled.Palette) {
+        // ── 外观 ─────────────────────────────────────────────────────────────
+        SettingsSection("外观", Icons.Filled.Palette) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                    .clickable { 
+                        val newDark = !settings.themeMode.equals("dark")
+                        val newMode = if (newDark) "dark" else "light"
+                        ThemeState.isDark = newDark
+                        autoSave(settings.copy(themeMode = newMode)) 
+                    }
+                    .padding(vertical = 8.dp),
+            ) {
+                Switch(
+                    checked = settings.themeMode == "dark",
+                    onCheckedChange = { 
+                        val newMode = if (it) "dark" else "light"
+                        ThemeState.isDark = it
+                        autoSave(settings.copy(themeMode = newMode))
+                    },
+                )
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text("深色模式", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
+                    Text("切换亮色或暗色主题", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+            Spacer(Modifier.height(16.dp))
+
             Text("主题色", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -353,7 +382,7 @@ fun SettingsScreen() {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
             Text("MD3L", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black), color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(4.dp))
-            Text("v1.1.0 · Kotlin + Compose Desktop · Material Design 3", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+            Text("v${AutoUpdater.CURRENT_VERSION} · Kotlin + Compose Desktop · Material Design 3", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
             Spacer(Modifier.height(4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(

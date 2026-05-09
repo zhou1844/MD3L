@@ -189,6 +189,7 @@ val AccentNames = listOf(
 // ── Global accent state ─────────────────────────────────────────────────────
 object ThemeState {
     var accent by mutableStateOf(AccentMonetPurple)
+    var isDark by mutableStateOf(true)
 }
 
 // ── Build dark color scheme from accent ─────────────────────────────────────
@@ -223,6 +224,33 @@ private fun buildDarkScheme(accent: AccentPalette): ColorScheme = darkColorSchem
     surfaceTint = darkSurfaceTint,
 )
 
+// ── Build light color scheme from accent ────────────────────────────────────
+private fun buildLightScheme(accent: AccentPalette): ColorScheme = lightColorScheme(
+    primary = accent.inversePrimary, // Use darker inversePrimary for light mode
+    onPrimary = Color.White,
+    primaryContainer = accent.primaryContainer,
+    onPrimaryContainer = accent.onPrimaryContainer,
+    secondary = accent.secondaryContainer,
+    onSecondary = accent.onSecondaryContainer,
+    secondaryContainer = accent.secondary,
+    onSecondaryContainer = accent.onSecondary,
+    tertiary = accent.tertiaryContainer,
+    onTertiary = accent.onTertiaryContainer,
+    tertiaryContainer = accent.tertiary,
+    onTertiaryContainer = accent.onTertiary,
+    background = Color(0xFFFEFBFF),
+    onBackground = Color(0xFF1B1B1F),
+    surface = Color(0xFFFEFBFF),
+    onSurface = Color(0xFF1B1B1F),
+    surfaceVariant = Color(0xFFE3E2E6),
+    onSurfaceVariant = Color(0xFF44464F),
+    outline = Color(0xFF74777F),
+    outlineVariant = Color(0xFFC4C6CF),
+    inverseSurface = Color(0xFF303034),
+    inverseOnSurface = Color(0xFFF2F0F4),
+    inversePrimary = accent.primary,
+)
+
 // ── Smooth animated transitions ─────────────────────────────────────────────
 @Composable
 fun animateColorScheme(target: ColorScheme): ColorScheme {
@@ -254,7 +282,7 @@ fun animateColorScheme(target: ColorScheme): ColorScheme {
 // ── Main theme composable ───────────────────────────────────────────────────
 @Composable
 fun MD3LTheme(content: @Composable () -> Unit) {
-    val baseScheme = buildDarkScheme(ThemeState.accent)
+    val baseScheme = if (ThemeState.isDark) buildDarkScheme(ThemeState.accent) else buildLightScheme(ThemeState.accent)
     val animatedScheme = animateColorScheme(baseScheme)
 
     MaterialTheme(
