@@ -20,6 +20,11 @@ data class LocalVersion(
 )
 
 object VersionScanner {
+    val aprilFoolIds = setOf(
+        "1.RV-Pre1", "15w14a", "3D Shareware v1.34",
+        "20w14infinite", "22w13oneblockatatime", "23w13a_or_b",
+        "24w14potato",
+    )
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -49,6 +54,9 @@ object VersionScanner {
     private fun parseVersionJson(file: File, versionDir: String): LocalVersion? {
         return try {
             val root = json.parseToJsonElement(file.readText(Charsets.UTF_8)).jsonObject
+            if (root["md3l_hidden"]?.jsonPrimitive?.booleanOrNull == true) {
+                return null
+            }
             val id = root["id"]?.jsonPrimitive?.contentOrNull ?: file.parentFile.name
             val type = root["type"]?.jsonPrimitive?.contentOrNull ?: "release"
             val inheritsFrom = root["inheritsFrom"]?.jsonPrimitive?.contentOrNull
@@ -132,11 +140,15 @@ object VersionScanner {
         if (dir.walkTopDown().maxDepth(2).any { it.name == "AppxManifest.xml" }) return true
         val marker = File(dir, ".installed")
         if (!marker.exists()) return false
-        val source = marker.readLines().firstOrNull { it.startsWith("source=") }
+        val lines = runCatching { marker.readLines(Charsets.UTF_8) }.getOrDefault(emptyList())
+        val source = lines.firstOrNull { it.startsWith("source=") }
             ?.substringAfter("source=")
+            ?.takeIf { it.isNotBlank() }
             ?.let(::File)
-            ?: return false
-        return source.exists()
+        if (source?.exists() == true) return true
+        if (lines.any { it.startsWith("aumid=") && it.substringAfter("aumid=").isNotBlank() }) return true
+        if (lines.any { it.startsWith("packageFullName=") && it.substringAfter("packageFullName=").isNotBlank() }) return true
+        return true
     }
 
     private fun detectLoader(root: JsonObject, id: String): LoaderType {

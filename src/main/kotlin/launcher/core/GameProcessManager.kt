@@ -144,10 +144,15 @@ object GameProcessManager {
 
     /**
      * 强制销毁当前游戏进程。
-     * 调用 destroyForcibly() 抹杀ghost进程，并立即重置全部状态。
+     * 对 Bedrock 额外执行 taskkill 确保 Minecraft.Windows 真正被终结（sentinel 只是监控 shell）。
      */
     fun forceKill() {
         _activeProcess.value?.destroyForcibly()
+        // Bedrock sentinel 不等于游戏进程本体，额外强杀
+        try {
+            ProcessBuilder("taskkill", "/F", "/IM", "Minecraft.Windows.exe")
+                .redirectErrorStream(true).start()
+        } catch (_: Exception) {}
         monitorJob?.cancel()
         monitorJob = null
         _activeProcess.value = null

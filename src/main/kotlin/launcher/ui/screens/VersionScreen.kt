@@ -1,11 +1,14 @@
 package launcher.ui.screens
 
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -35,6 +38,8 @@ fun VersionScreen() {
     var filterBedrock by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var bedrockVersions by remember { mutableStateOf<List<LocalVersion>>(emptyList()) }
+    val bedrockDownloading by BedrockDownloadManager.downloadingVersions.collectAsState()
+    val bedrockDownloadResults by BedrockDownloadManager.downloadResults.collectAsState()
 
     // ── BottomSheet 状态 ─────────────────────────────────────────────────
     var selectedVersion by remember { mutableStateOf<LocalVersion?>(null) }
@@ -54,6 +59,10 @@ fun VersionScreen() {
     }
 
     LaunchedEffect(Unit) { refresh() }
+    LaunchedEffect(bedrockDownloading, bedrockDownloadResults) {
+        if (bedrockDownloading.isNotEmpty() || bedrockDownloadResults.isEmpty()) return@LaunchedEffect
+        refresh()
+    }
 
     // 全部 tab 时合并 Java + Bedrock
     val allVersions = when {
@@ -186,23 +195,31 @@ fun VersionScreen() {
                 }
             }
         } else {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 280.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                items(filteredVersions, key = { it.id }) { version ->
-                    VersionCard(
-                        version = version,
-                        onClick = {
-                            selectedVersion = version
-                            renameText = version.id
-                            sheetMessage = ""
-                            showSheet = true
-                        },
-                    )
+            val gridState = rememberLazyGridState()
+            Box(modifier = Modifier.fillMaxSize()) {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 280.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    state = gridState,
+                    modifier = Modifier.fillMaxSize().padding(end = 8.dp),
+                ) {
+                    items(filteredVersions, key = { it.id }) { version ->
+                        VersionCard(
+                            version = version,
+                            onClick = {
+                                selectedVersion = version
+                                renameText = version.id
+                                sheetMessage = ""
+                                showSheet = true
+                            },
+                        )
+                    }
                 }
+                VerticalScrollbar(
+                    adapter = rememberScrollbarAdapter(gridState),
+                    modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                )
             }
         }
     }
@@ -222,43 +239,45 @@ fun VersionScreen() {
                 Text("${ver.loaderType.name} · ${ver.type}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(20.dp))
 
-                // ── 重命名 ───────────────────────────────────────────────
-                Text("重命名版本", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = renameText,
-                        onValueChange = { renameText = it },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.weight(1f),
-                        label = { Text("新名称") },
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    FilledTonalButton(
-                        onClick = {
-                            if (renameText.isNotBlank() && renameText.trim() != ver.id) {
-                                scope.launch {
-                                    val settings = AppSettings.load()
-                                    sheetMessage = VersionRepository.atomicRename(ver, renameText.trim(), settings.minecraftDir)
-                                    if ("成功" in sheetMessage) {
-                                        showSheet = false
-                                        selectedVersion = null
-                                        refresh()
+                // ── 重命名（仅 Java 版支持）───────────────────────────────
+                if (ver.type != "bedrock") {
+                    Text("重命名版本", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = renameText,
+                            onValueChange = { renameText = it },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f),
+                            label = { Text("新名称") },
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        FilledTonalButton(
+                            onClick = {
+                                if (renameText.isNotBlank() && renameText.trim() != ver.id) {
+                                    scope.launch {
+                                        val settings = AppSettings.load()
+                                        sheetMessage = VersionRepository.atomicRename(ver, renameText.trim(), settings.minecraftDir)
+                                        if ("成功" in sheetMessage) {
+                                            showSheet = false
+                                            selectedVersion = null
+                                            refresh()
+                                        }
                                     }
+                                } else {
+                                    sheetMessage = "名称相同，无需重命名"
                                 }
-                            } else {
-                                sheetMessage = "名称相同，无需重命名"
-                            }
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                    ) {
-                        Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("确认")
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("确认")
+                        }
                     }
+                    Spacer(Modifier.height(16.dp))
                 }
-                Spacer(Modifier.height(16.dp))
 
                 // ── 操作按钮 ─────────────────────────────────────────────
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -332,7 +351,7 @@ fun VersionScreen() {
                         FilledTonalButton(
                             onClick = {
                                 scope.launch(Dispatchers.IO) {
-                                    sheetMessage = importBedrockPack(ver.versionDir, "behavior_packs", "mcpack", "行为包")
+                                    sheetMessage = importBedrockPack(ver.versionDir, ver.id, "behavior_packs", "mcpack", "行为包")
                                 }
                             },
                             shape = RoundedCornerShape(12.dp),
@@ -346,7 +365,7 @@ fun VersionScreen() {
                         FilledTonalButton(
                             onClick = {
                                 scope.launch(Dispatchers.IO) {
-                                    sheetMessage = importBedrockPack(ver.versionDir, "resource_packs", "mcpack", "资源包")
+                                    sheetMessage = importBedrockPack(ver.versionDir, ver.id, "resource_packs", "mcpack", "资源包")
                                 }
                             },
                             shape = RoundedCornerShape(12.dp),
@@ -360,7 +379,7 @@ fun VersionScreen() {
                         FilledTonalButton(
                             onClick = {
                                 scope.launch(Dispatchers.IO) {
-                                    sheetMessage = importBedrockPack(ver.versionDir, "addon", "mcaddon", "Addon")
+                                    sheetMessage = importBedrockPack(ver.versionDir, ver.id, "addon", "mcaddon", "Addon")
                                 }
                             },
                             shape = RoundedCornerShape(12.dp),
@@ -450,6 +469,7 @@ private fun VersionCard(version: LocalVersion, onClick: () -> Unit) {
  */
 private fun importBedrockPack(
     versionDir: String,
+    versionId: String,
     subFolder: String,
     extension: String,
     label: String,
@@ -470,27 +490,28 @@ private fun importBedrockPack(
         if (files.isNullOrEmpty()) return "未选择文件"
 
         val versionFolder = File(versionDir)
-        val minecraftDir = versionFolder.parentFile?.parentFile
+        val minecraftDir = versionFolder.parentFile?.parentFile?.absolutePath
             ?: throw RuntimeException("无法解析 Minecraft 根目录")
-        val bedrockDataDir = File(minecraftDir, "bedrock_data_backup/com.mojang")
-        bedrockDataDir.mkdirs()
 
         val engine = BedrockLaunchEngine()
+        // 通过引擎获取正确的 profile 路径（与 UWP 包同盘，避免跨盘 junction 配额问题）
+        val profileDir = engine.resolveVersionProfilePublic(minecraftDir, versionId)
         var success = 0
         val failed = mutableListOf<String>()
         for (f in files) {
-            val ok = runCatching {
-                engine.injectAddon(f.absolutePath, bedrockDataDir)
-            }.isSuccess
-            if (ok) {
+            val result = runCatching {
+                engine.injectAddon(f.absolutePath, profileDir)
+            }
+            if (result.isSuccess) {
                 success++
             } else {
                 failed.add(f.name)
+                println("[BedrockPackImport] 导入失败: ${f.name} - ${result.exceptionOrNull()?.message}")
             }
         }
 
         if (failed.isEmpty()) {
-            "成功导入 $success 个${label}到基岩数据目录（已解析并注入资源）"
+            "成功导入 $success 个${label}（已注入至版本存档目录）"
         } else {
             "部分导入成功：成功 $success 个，失败 ${failed.size} 个\n失败文件：${failed.take(3).joinToString("、")}" +
                 if (failed.size > 3) " 等" else ""

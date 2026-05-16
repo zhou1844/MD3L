@@ -1,0 +1,25 @@
+# Gradle
+.gradle/
+build/
+build_tmp/
+dist/
+dist-single/
+
+# IDE
+.idea/
+*.iml
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Build artifacts
+*.exe
+*.jar
+*.zip
+*.log
+
+# Temp files
+temp.json
+*.temp
+*.class

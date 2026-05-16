@@ -26,6 +26,40 @@ import java.util.zip.ZipFile
  */
 object BedrockDownloadManager {
 
+    enum class WUDownloadSource(val label: String) {
+        Auto("自动选择（推荐）"),
+        WuOfficial("Windows Update 官方源"),
+        McAppxMirror("MCAPPX 镜像源"),
+        XboxCnAssets1("assets1.xboxlive.cn"),
+        XboxCnAssets2("assets2.xboxlive.cn"),
+        XboxComAssets1("assets1.xboxlive.com"),
+        XboxComAssets2("assets2.xboxlive.com"),
+    }
+
+    data class WuDownloadTask(
+        val version: WUDownloadClient.WUVersion,
+        val source: WUDownloadSource = WUDownloadSource.Auto,
+        val installVersionName: String = version.name,
+    )
+
+    fun availableSources(ver: WUDownloadClient.WUVersion): List<WUDownloadSource> {
+        return if (ver.isGdk) {
+            listOf(
+                WUDownloadSource.Auto,
+                WUDownloadSource.XboxCnAssets1,
+                WUDownloadSource.XboxCnAssets2,
+                WUDownloadSource.XboxComAssets1,
+                WUDownloadSource.XboxComAssets2,
+            )
+        } else {
+            listOf(
+                WUDownloadSource.Auto,
+                WUDownloadSource.WuOfficial,
+                WUDownloadSource.McAppxMirror,
+            )
+        }
+    }
+
     data class InstallProgress(
         val phase: String = "",          // "downloading" | "installing" | "done" | "error"
         val message: String = "",        // 人类可读状态
@@ -51,7 +85,9 @@ object BedrockDownloadManager {
     private val pausedVersions = ConcurrentHashMap.newKeySet<String>()
     private val closedVersions = ConcurrentHashMap.newKeySet<String>()
     private val resumableEntries = ConcurrentHashMap<String, BedrockVersionCatalog.BedrockVersionEntry>()
-    private val resumableWuEntries = ConcurrentHashMap<String, WUDownloadClient.WUVersion>()
+    private val resumableWuEntries = ConcurrentHashMap<String, WuDownloadTask>()
+    private val lastEmitTimeMs = ConcurrentHashMap<String, Long>()
+    private val lastEmitProgress = ConcurrentHashMap<String, InstallProgress>()
 
     fun markDownloading(key: String) {
         closedVersions.remove(key)
@@ -67,6 +103,8 @@ object BedrockDownloadManager {
         _downloadingVersions.value = _downloadingVersions.value - key
         _downloadResults.value = _downloadResults.value + (key to result)
         activeJobs.remove(key)
+        lastEmitTimeMs.remove(key)
+        lastEmitProgress.remove(key)
     }
 
     /**
@@ -108,7 +146,7 @@ object BedrockDownloadManager {
             return
         }
         resumableWuEntries[versionKey]?.let {
-            launchDownloadWU(it)
+            launchDownloadWU(it.version, it.source, it.installVersionName)
         }
     }
 
@@ -160,8 +198,13 @@ object BedrockDownloadManager {
         activeJobs[versionKey] = job
     }
 
-    fun launchDownloadWU(ver: WUDownloadClient.WUVersion) {
-        val versionKey = bedrockVersionKey(ver)
+    fun launchDownloadWU(
+        ver: WUDownloadClient.WUVersion,
+        source: WUDownloadSource = WUDownloadSource.Auto,
+        installVersionName: String = ver.name,
+    ) {
+        val effectiveInstallName = installVersionName.trim().ifBlank { ver.name }
+        val versionKey = "${effectiveInstallName}_${ver.packageType}"
         if (_downloadingVersions.value.contains(versionKey)) return
         if (_downloadingVersions.value.isNotEmpty()) {
             _downloadResults.value = _downloadResults.value + (versionKey to "已有基岩下载任务进行中，请先完成或取消")
@@ -169,7 +212,7 @@ object BedrockDownloadManager {
         }
         closedVersions.remove(versionKey)
         pausedVersions.remove(versionKey)
-        resumableWuEntries[versionKey] = ver
+        resumableWuEntries[versionKey] = WuDownloadTask(ver, source, effectiveInstallName)
         markDownloading(versionKey)
         DownloadHub.registerControls(
             id = "bedrock_$versionKey",
@@ -179,7 +222,7 @@ object BedrockDownloadManager {
         )
         val job = globalScope.launch {
             try {
-                val msg = downloadWU(ver)
+                val msg = downloadWU(ver, source, effectiveInstallName)
                 markDone(versionKey, msg)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 if (!pausedVersions.contains(versionKey)) {
@@ -196,35 +239,85 @@ object BedrockDownloadManager {
 
     private fun bedrockVersionKey(ver: WUDownloadClient.WUVersion): String = "${ver.name}_${ver.packageType}"
 
-    suspend fun downloadWU(ver: WUDownloadClient.WUVersion): String = withContext(Dispatchers.IO) {
-        val versionKey = bedrockVersionKey(ver)
+    suspend fun downloadWU(
+        ver: WUDownloadClient.WUVersion,
+        source: WUDownloadSource = WUDownloadSource.Auto,
+        installVersionName: String = ver.name,
+    ): String = withContext(Dispatchers.IO) {
+        val effectiveInstallName = installVersionName.trim().ifBlank { ver.name }
+        val versionKey = "${effectiveInstallName}_${ver.packageType}"
         try {
             val settings = AppSettings.load()
             val cacheDir = File(settings.minecraftDir, "bedrock_versions/cache")
             cacheDir.mkdirs()
-            val targetFile = File(
-                cacheDir,
-                "Minecraft-${ver.name}-${ver.packageType}.${if (ver.isGdk) "msixvc" else "Appx"}",
-            )
+
+            var resolvedFileName = "Minecraft-${ver.name}-${ver.packageType}.${if (ver.isGdk) "msixvc" else "Appx"}"
+            var resolvedUrl = ""
+            var fileSize = -1L
+
+            if (ver.isGdk) {
+                emit(versionKey, "downloading", "正在选择 GDK 下载源...", 0.02f)
+                resolvedUrl = chooseGdkDownloadUrl(ver.downloadUrls, source)
+                    ?: run {
+                        // GdkLinks 数据库尚未收录此版本，尝试 Xbox 商店目录 API 动态解析
+                        emit(versionKey, "downloading", "GdkLinks 未收录，正在查询 Xbox 商店...", 0.03f)
+                        resolveGdkUrlFromXboxCatalog(ver.name, ver.isPreview)
+                    }
+                    ?: return@withContext "下载失败: GDK 无下载链接（GdkLinks 和 Xbox 商店均未找到 ${ver.name}）"
+            } else {
+                when (source) {
+                    WUDownloadSource.Auto,
+                    WUDownloadSource.McAppxMirror -> {
+                        emit(versionKey, "downloading", "正在解析 MCAPPX 镜像链接...", 0.02f)
+                        val mcResolved = resolveWuVersionFromMcAppx(ver)
+                        if (mcResolved != null) {
+                            resolvedUrl = mcResolved.downloadUrl
+                            fileSize = mcResolved.fileSize
+                            resolvedFileName = mcResolved.fileName.ifBlank { resolvedFileName }
+                        } else {
+                            emit(versionKey, "downloading", "MCAPPX 无匹配，回退官方源...", 0.04f)
+                        }
+                    }
+                    else -> Unit
+                }
+
+                if (resolvedUrl.isBlank()) {
+                    if (ver.uuid.isBlank()) {
+                        emit(versionKey, "error", "该版本未提供 WU UUID，且镜像源未命中，请切换下载源或刷新版本库", 0f)
+                        return@withContext "下载失败: 缺少 WU UUID"
+                    }
+                    emit(versionKey, "downloading", "正在解析 Appx/UWP 下载链接...", 0.02f)
+                    val resolved = WUDownloadClient.resolveDownloadUrl(ver.uuid)
+                    resolvedUrl = resolved.first
+                    fileSize = resolved.second
+                }
+            }
+
+            val targetFile = File(cacheDir, resolvedFileName)
 
             if (targetFile.exists() && targetFile.length() > 10_000_000) {
                 emit(versionKey, "downloading", "缓存命中", 0.95f)
             } else {
-                val (downloadUrl, fileSize) = if (ver.isGdk) {
-                    emit(versionKey, "downloading", "正在使用 GDK 直链...", 0.02f)
-                    val url = chooseGdkDownloadUrl(ver.downloadUrls) ?: return@withContext "下载失败: GDK 无下载链接"
-                    url to -1L
-                } else {
-                    emit(versionKey, "downloading", "正在解析 Appx/UWP 下载链接...", 0.02f)
-                    WUDownloadClient.resolveDownloadUrl(ver.uuid)
-                }
                 emit(versionKey, "downloading", "正在下载 ${ver.name}...", 0.05f)
-                val ok = WUDownloadClient.downloadFile(downloadUrl, targetFile, fileSize) { downloaded, total, speedBps ->
+                var ok = WUDownloadClient.downloadFile(resolvedUrl, targetFile, fileSize) { downloaded, total, speedBps ->
                     val frac = if (total > 0) (downloaded.toFloat() / total).coerceIn(0f, 0.95f) else 0.05f
                     val mb = downloaded / (1024.0 * 1024.0)
                     val totalMb = if (total > 0) " / ${"%.0f".format(total / (1024.0 * 1024.0))} MB" else ""
                     val speed = "${"%.1f".format(speedBps / (1024.0 * 1024.0))} MB/s"
                     emit(versionKey, "downloading", "下载中 ${"%.1f".format(mb)} MB$totalMb · $speed", frac)
+                }
+                if (!ok && ver.isGdk && source != WUDownloadSource.Auto) {
+                    val autoUrl = chooseGdkDownloadUrl(ver.downloadUrls, WUDownloadSource.Auto)
+                    if (!autoUrl.isNullOrBlank() && autoUrl != resolvedUrl) {
+                        emit(versionKey, "downloading", "当前源不可用，回退自动源重试...", 0.08f)
+                        ok = WUDownloadClient.downloadFile(autoUrl, targetFile, fileSize) { downloaded, total, speedBps ->
+                            val frac = if (total > 0) (downloaded.toFloat() / total).coerceIn(0f, 0.95f) else 0.05f
+                            val mb = downloaded / (1024.0 * 1024.0)
+                            val totalMb = if (total > 0) " / ${"%.0f".format(total / (1024.0 * 1024.0))} MB" else ""
+                            val speed = "${"%.1f".format(speedBps / (1024.0 * 1024.0))} MB/s"
+                            emit(versionKey, "downloading", "重试下载 ${"%.1f".format(mb)} MB$totalMb · $speed", frac)
+                        }
+                    }
                 }
                 if (!isActive) throw CancellationException("基岩版下载已暂停")
                 if (!ok) {
@@ -234,11 +327,10 @@ object BedrockDownloadManager {
             }
 
             if (ver.isGdk) {
-                emit(versionKey, "done", "GDK/MSIXVC 已下载: ${targetFile.name}", 1f)
-                return@withContext "GDK/MSIXVC 已下载，尚未安装"
+                return@withContext installGdk(targetFile, effectiveInstallName, versionKey, settings)
             }
 
-            installLocalFile(targetFile, ver.name, versionKey, settings)
+            installLocalFile(targetFile, effectiveInstallName, versionKey, settings)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -248,12 +340,116 @@ object BedrockDownloadManager {
         }
     }
 
-    private fun chooseGdkDownloadUrl(urls: List<String>): String? {
-        return urls.firstOrNull { "assets1.xboxlive.com" in it || "assets2.xboxlive.com" in it }
-            ?: urls.firstOrNull { "assets1.xboxlive.cn" in it || "assets2.xboxlive.cn" in it }
-            ?: urls.firstOrNull { "xboxlive.com" in it }
-            ?: urls.firstOrNull { "xboxlive.cn" in it }
-            ?: urls.firstOrNull()
+    private suspend fun resolveWuVersionFromMcAppx(ver: WUDownloadClient.WUVersion): McAppxClient.BedrockVersion? {
+        return runCatching {
+            val list = McAppxClient.fetchVersions()
+            val matched = list.firstOrNull { it.version == ver.name && it.isPreview == ver.isPreview }
+                ?: list.firstOrNull { it.version == ver.name }
+                ?: return null
+            McAppxClient.resolveDownloadUrl(matched)
+        }.getOrNull()
+    }
+
+    private fun chooseGdkDownloadUrl(urls: List<String>, source: WUDownloadSource): String? {
+        fun pickByHost(host: String): String? {
+            val exact = urls.firstOrNull { host in it }
+            if (exact != null) return exact
+            val seed = urls.firstOrNull { "xboxlive." in it } ?: return null
+            return runCatching {
+                val uri = URI(seed)
+                URI(uri.scheme, uri.userInfo, host, uri.port, uri.path, uri.query, uri.fragment).toString()
+            }.getOrNull() ?: urls.firstOrNull()
+        }
+
+        return when (source) {
+            WUDownloadSource.XboxCnAssets1 -> pickByHost("assets1.xboxlive.cn")
+            WUDownloadSource.XboxCnAssets2 -> pickByHost("assets2.xboxlive.cn")
+            WUDownloadSource.XboxComAssets1 -> pickByHost("assets1.xboxlive.com")
+            WUDownloadSource.XboxComAssets2 -> pickByHost("assets2.xboxlive.com")
+            WUDownloadSource.WuOfficial,
+            WUDownloadSource.McAppxMirror,
+            WUDownloadSource.Auto -> pickFastestGdkUrl(urls)
+        }
+    }
+
+    /**
+     * 并行探测所有候选 URL 的响应延迟，返回最快的。
+     * 优先 .cn 源，同等延迟时 cn 优先。
+     */
+    private fun pickFastestGdkUrl(urls: List<String>): String? {
+        if (urls.isEmpty()) return null
+        if (urls.size == 1) return urls.first()
+
+        // 构造候选：先 cn 后 com，去重
+        val candidates = (
+            urls.filter { "xboxlive.cn" in it } +
+            urls.filter { "xboxlive.com" in it } +
+            urls
+        ).distinct().take(4)
+
+        data class Probe(val url: String, val ms: Long)
+        val results = java.util.concurrent.CopyOnWriteArrayList<Probe>()
+        val threads = candidates.map { url ->
+            Thread {
+                val start = System.currentTimeMillis()
+                runCatching {
+                    val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "HEAD"
+                    conn.connectTimeout = 5_000
+                    conn.readTimeout = 5_000
+                    conn.instanceFollowRedirects = true
+                    val code = conn.responseCode
+                    conn.disconnect()
+                    if (code in 200..299 || code == 206) {
+                        results.add(Probe(url, System.currentTimeMillis() - start))
+                    }
+                }
+            }.also { it.isDaemon = true; it.start() }
+        }
+        threads.forEach { it.join(6_000) }
+
+        return results.minByOrNull { it.ms }?.url
+            ?: candidates.firstOrNull { "xboxlive.cn" in it }
+            ?: candidates.firstOrNull()
+    }
+
+    /**
+     * 通过 Xbox Marketplace 目录 API 动态解析 GDK msixvc 下载链接。
+     * 用于 GdkLinks 数据库尚未收录的新版本（如刚发布的 26.x）。
+     */
+    private suspend fun resolveGdkUrlFromXboxCatalog(versionName: String, isPreview: Boolean): String? = withContext(Dispatchers.IO) {
+        // Minecraft Windows (GDK) 的商店 product ID
+        val productId = if (isPreview) "9p5x4qvlc2xr" else "9nblggh2jhxj"
+        val candidates = listOf(
+            "https://displaycatalog.mp.microsoft.com/v7.0/products/$productId?ms-cv=0&fieldsTemplate=Details&market=US&languages=en-US",
+            "https://displaycatalog.mp.microsoft.com/v7.0/products/$productId?ms-cv=0&fieldsTemplate=Details&market=CN&languages=zh-CN",
+        )
+        for (apiUrl in candidates) {
+            runCatching {
+                val proc = ProcessBuilder(
+                    "curl.exe", "-sL",
+                    "--connect-timeout", "15", "--max-time", "30",
+                    "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                    apiUrl,
+                ).redirectErrorStream(true).start()
+                val json = proc.inputStream.bufferedReader().readText()
+                proc.waitFor(35, java.util.concurrent.TimeUnit.SECONDS)
+                if (json.length < 100) return@runCatching null
+
+                // 从 JSON 里找 PackageDownloadUris 下的 msixvc/msixbundle URL
+                // 优先匹配版本号，再 fallback 到任意 msixvc
+                val urlRegex = Regex(""""Uri"\s*:\s*"(https?://[^"]+\.msixvc[^"]*)"""", RegexOption.IGNORE_CASE)
+                val allUrls = urlRegex.findAll(json).map { it.groupValues[1] }.toList()
+                // 尝试精确匹配版本号
+                val versionMatch = allUrls.firstOrNull { versionName in it }
+                if (versionMatch != null) return@withContext versionMatch
+                // fallback: 任意 msixvc，优先 cn 源
+                allUrls.firstOrNull { "xboxlive.cn" in it }
+                    ?: allUrls.firstOrNull { "xboxlive.com" in it }
+                    ?: allUrls.firstOrNull()
+            }.getOrNull()?.let { return@withContext it }
+        }
+        null
     }
 
     suspend fun download(entry: BedrockVersionCatalog.BedrockVersionEntry): String = withContext(Dispatchers.IO) {
@@ -332,9 +528,190 @@ object BedrockDownloadManager {
     }
 
     /**
-     * 安装 .appx:
-     *   1. 先尝试 Add-AppxPackage -Path（直接安装微软签名包）
-     *   2. 失败则解压 + 尝试 Register
+     * GDK (MSIXVC) 安装流程：
+     *
+     *  优先路径（无需 Store 授权）：
+     *    内置 GdkExtractor.exe（打包在 resources/runtime/）基于 BedrockLauncher.Core (MIT)，
+     *    使用纯 C# 实现的 XTS-AES 解密器直接解密解压 MSIXVC，
+     *    无需系统已安装游戏，无需 Xbox DRM license。
+     *
+     *  回退路径（需要 Store 已安装过一次）：
+     *    Add-AppxPackage 让系统解密安装到 C:\XboxGames，再 robocopy 复制。
+     */
+    private fun installGdk(
+        file: File, version: String, versionKey: String, settings: AppSettings,
+    ): String {
+        val versionDir = File(settings.minecraftDir, "bedrock_versions/$version")
+
+        // ── 优先：用内置 GdkExtractor.exe 直接解密解压（无需 Store 授权）────────
+        emit(versionKey, "installing", "正在查找解压组件...", 0.52f)
+        val gdkExe = findGdkExtractorExe()
+        if (gdkExe != null) {
+            println("[BDM-GDK] 找到 GdkExtractor.exe: ${gdkExe.absolutePath}")
+            emit(versionKey, "installing", "正在解密解压 GDK 包（直接模式）...", 0.55f)
+
+            if (versionDir.exists()) versionDir.deleteRecursively()
+            versionDir.mkdirs()
+
+            val rc = callGdkExtractor(gdkExe, file.absolutePath, versionDir.absolutePath, version, versionKey)
+            if (rc == 0) {
+                File(versionDir, "AppxSignature.p7x").takeIf { it.exists() }?.delete()
+                val manifest = File(versionDir, "AppxManifest.xml")
+                val exe = File(versionDir, "Minecraft.Windows.exe")
+                if (manifest.exists() && exe.exists()) {
+                    emit(versionKey, "installing", "正在安装基岩运行依赖...", 0.95f)
+                    ensureFrameworkDeps(versionKey)
+                    markInstalledVersion(settings, version, file)
+                    emit(versionKey, "done", "GDK 安装完成: $version", 1f)
+                    return "安装完成: $version"
+                }
+                println("[BDM-GDK] GdkExtractor 解压后目录不完整，回退到 Add-AppxPackage")
+            } else {
+                println("[BDM-GDK] GdkExtractor.exe 返回 rc=$rc，回退到 Add-AppxPackage")
+            }
+            versionDir.deleteRecursively()
+            versionDir.mkdirs()
+        }
+
+        // ── 回退：Add-AppxPackage（需要系统已有 Xbox DRM license）──────────────
+        emit(versionKey, "installing", "正在通过系统安装 GDK 包（需要 Xbox 授权）...", 0.58f)
+        val filePath = file.absolutePath.replace("'", "''")
+
+        val installScript = """
+            ${'$'}ErrorActionPreference = 'Stop'
+            try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
+            try {
+                Add-AppxPackage -Path '$filePath' -ForceApplicationShutdown -ForceUpdateFromAnyVersion -ErrorAction Stop
+                Write-Output 'INSTALL_OK'
+            } catch {
+                Write-Output "INSTALL_FAIL: ${'$'}(${'$'}_.Exception.Message)"
+                exit 1
+            }
+        """.trimIndent()
+
+        val proc = ProcessBuilder("powershell", "-NoProfile", "-Command", installScript)
+            .redirectErrorStream(true).start()
+        val installOut = proc.inputStream.bufferedReader().readText().trim()
+        proc.waitFor()
+        println("[BDM-GDK] Add-AppxPackage exit=${proc.exitValue()}: $installOut")
+
+        if (proc.exitValue() != 0) {
+            val hint = "\n\n提示：GDK 版本安装需要 Xbox 解密授权。\n" +
+                "方案A：安装 LeviLauncher（免费开源）后重试，本启动器会自动借用其解压组件。\n" +
+                "方案B：先从 Microsoft Store 安装一次正版 Minecraft，再重试。"
+            emit(versionKey, "error", "GDK 安装失败: ${installOut.take(150)}$hint", 0f)
+            return "安装失败: ${installOut.take(150)}$hint"
+        }
+
+        // 从系统安装位置复制到版本目录
+        emit(versionKey, "installing", "正在查找并复制游戏文件...", 0.75f)
+        val locScript = """
+            ${'$'}pkg = Get-AppxPackage | Where-Object { ${'$'}_.Name -like '*Minecraft*' -and ${'$'}_.Name -notlike '*Education*' -and ${'$'}_.Name -notlike '*Creator*' } | Sort-Object -Property Version -Descending | Select-Object -First 1
+            if (${'$'}pkg) { Write-Output ${'$'}pkg.InstallLocation }
+        """.trimIndent()
+        val locProc = ProcessBuilder("powershell", "-NoProfile", "-Command", locScript)
+            .redirectErrorStream(true).start()
+        val locOut = locProc.inputStream.bufferedReader().readText().trim()
+        locProc.waitFor()
+
+        val installLocation = listOf(
+            "C:\\XboxGames\\Minecraft Bedrock Edition\\Content",
+            "C:\\XboxGames\\Minecraft\\Content",
+            "C:\\XboxGames\\Minecraft",
+        ).firstOrNull { File(it, "Minecraft.Windows.exe").exists() }
+            ?: locOut.lines().firstOrNull { it.isNotBlank() && File(it.trim(), "Minecraft.Windows.exe").exists() }?.trim()
+
+        if (installLocation == null) {
+            emit(versionKey, "error", "GDK 安装完成但未找到游戏目录（$locOut）", 0f)
+            return "安装失败: 找不到游戏目录"
+        }
+
+        val copyProc = ProcessBuilder(
+            "robocopy", installLocation, versionDir.absolutePath,
+            "/E", "/R:0", "/W:0", "/MT:16", "/NFL", "/NDL", "/NJH", "/NJS", "/NP"
+        ).redirectErrorStream(true).start()
+        copyProc.inputStream.bufferedReader().readText()
+        copyProc.waitFor()
+        if (copyProc.exitValue() > 7) {
+            emit(versionKey, "error", "GDK 文件复制失败 (robocopy exit=${copyProc.exitValue()})", 0f)
+            return "安装失败: 文件复制失败"
+        }
+
+        val manifest = File(versionDir, "AppxManifest.xml")
+        val exe = File(versionDir, "Minecraft.Windows.exe")
+        if (!manifest.exists() || !exe.exists()) {
+            emit(versionKey, "error", "版本目录不完整", 0f)
+            return "安装失败: 版本目录不完整"
+        }
+
+        emit(versionKey, "installing", "正在安装基岩运行依赖...", 0.95f)
+        ensureFrameworkDeps(versionKey)
+        markInstalledVersion(settings, version, file)
+        emit(versionKey, "done", "GDK 安装完成: $version", 1f)
+        return "安装完成: $version"
+    }
+
+    /**
+     * 查找内置的 GdkExtractor.exe（打包在 resources/runtime/ 里）。
+     * 运行时从 jar 解压到临时目录使用。
+     */
+    private fun findGdkExtractorExe(): File? {
+        // 先看是否已解压到缓存目录
+        val cacheDir = File(System.getProperty("java.io.tmpdir"), "md3l1_runtime")
+        val cached = File(cacheDir, "GdkExtractor.exe")
+        if (cached.isFile && cached.length() > 1_000_000) return cached
+
+        // 从 classpath 资源解压
+        val stream = javaClass.classLoader.getResourceAsStream("runtime/GdkExtractor.exe") ?: return null
+        cacheDir.mkdirs()
+        try {
+            stream.use { s -> cached.outputStream().use { s.copyTo(it) } }
+        } catch (e: Exception) {
+            println("[BDM-GDK] 解压 GdkExtractor.exe 失败: ${e.message}")
+            return null
+        }
+        return if (cached.isFile && cached.length() > 1_000_000) cached else null
+    }
+
+    /**
+     * 调用 GdkExtractor.exe 解密解压 MSIXVC。
+     * 返回 exit code（0 = 成功）。
+     * GdkExtractor.exe 使用 BedrockLauncher.Core（MIT）内置 XTS-AES 解密，无需 Store 授权。
+     */
+    private fun callGdkExtractor(
+        exe: File, msixvcPath: String, outDir: String, version: String, versionKey: String,
+    ): Int {
+        val gameType = if (version.contains("preview", ignoreCase = true) ||
+            version.contains("beta", ignoreCase = true)) "preview" else "release"
+        return try {
+            val proc = ProcessBuilder(exe.absolutePath, msixvcPath, outDir, gameType)
+                .redirectErrorStream(true).start()
+
+            // 实时读输出并更新进度
+            val reader = proc.inputStream.bufferedReader()
+            var lastLine = ""
+            reader.forEachLine { line ->
+                lastLine = line
+                println("[GdkExtractor] $line")
+                if (line.startsWith("PROGRESS:")) {
+                    val pct = line.removePrefix("PROGRESS:").trim().toFloatOrNull()
+                    if (pct != null) emit(versionKey, "installing", "解压中 ${pct.toInt()}%...", 0.55f + pct / 100f * 0.35f)
+                } else if (line.startsWith("STATE:")) {
+                    emit(versionKey, "installing", "${line.removePrefix("STATE:")}", 0.8f)
+                }
+            }
+            proc.waitFor(15 * 60, java.util.concurrent.TimeUnit.SECONDS)
+            val exit = proc.exitValue()
+            println("[BDM-GDK] GdkExtractor exit=$exit, last=$lastLine")
+            exit
+        } catch (e: Exception) {
+            println("[BDM-GDK] GdkExtractor 调用异常: ${e.message}")
+            1
+        }
+    }
+
+    /**
+     * 安装 .appx / .msixbundle（UWP 非加密包）：直接解压到版本目录。
      */
     private fun installAppx(
         file: File, version: String, versionKey: String, settings: AppSettings,
@@ -376,6 +753,9 @@ object BedrockDownloadManager {
             emit(versionKey, "error", "安装包不是完整基岩版 Appx，缺少 $missing", 0f)
             return "安装失败: 安装包不完整，无法启动"
         }
+
+        emit(versionKey, "installing", "正在安装基岩运行依赖...", 0.9f)
+        ensureFrameworkDeps(versionKey)
 
         markInstalledVersion(settings, version, file)
         emit(versionKey, "done", "安装完成，启动时将注册隔离版本: $version", 1f)
@@ -501,7 +881,7 @@ object BedrockDownloadManager {
     ): String {
         val ext = file.extension.lowercase()
         when (ext) {
-            "appx", "msixbundle", "appxbundle", "msix" -> {
+            "appx", "msixbundle", "appxbundle", "msix", "msixvc" -> {
                 return installAppx(file, version, versionKey, settings)
             }
             "exe" -> {
@@ -872,7 +1252,22 @@ object BedrockDownloadManager {
 
     private fun emit(versionKey: String, phase: String, message: String, fraction: Float) {
         if (versionKey in closedVersions) return
-        _installProgress.value = InstallProgress(phase, message, fraction, versionKey)
+        val normalizedFraction = fraction.coerceIn(0f, 1f)
+        val current = InstallProgress(phase, message, normalizedFraction, versionKey)
+        val now = System.currentTimeMillis()
+        val last = lastEmitProgress[versionKey]
+        val lastTs = lastEmitTimeMs[versionKey] ?: 0L
+        val force = phase == "done" || phase == "error" || phase == "installing" || phase == "extracting"
+        val shouldEmit = force ||
+            last == null ||
+            phase != last.phase ||
+            now - lastTs >= 110L ||
+            kotlin.math.abs(normalizedFraction - last.fraction) >= 0.004f
+        if (!shouldEmit) return
+
+        lastEmitProgress[versionKey] = current
+        lastEmitTimeMs[versionKey] = now
+        _installProgress.value = current
         val status = when (phase) {
             "done" -> DownloadHub.TaskStatus.Done
             "error" -> DownloadHub.TaskStatus.Error
@@ -881,7 +1276,7 @@ object BedrockDownloadManager {
         DownloadHub.upsert(DownloadHub.HubTask(
             id = "bedrock_$versionKey", name = "基岩版 $versionKey",
             type = DownloadHub.TaskType.BedrockVersion,
-            status = status, step = message, fraction = fraction,
+            status = status, step = message, fraction = normalizedFraction,
             error = if (phase == "error") message else "",
         ))
     }

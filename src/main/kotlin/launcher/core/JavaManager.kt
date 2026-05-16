@@ -22,6 +22,7 @@ object JavaManager {
     }
     private val resolvedJavaCache = ConcurrentHashMap<String, String>()
     private val javaMajorCache = ConcurrentHashMap<String, Int>()
+    private val javaModuleCache = ConcurrentHashMap<String, Set<String>>()
 
     /**
      * 根据 Minecraft 版本号判断所需的 Java 大版本。
@@ -108,10 +109,13 @@ object JavaManager {
         // 检查用户手动设置的 Java 是否版本匹配
         val userMajor = probeJavaMajor(userJavaPath)
         if (userMajor == required || (required >= 17 && userMajor > required)) {
-            onProgress("用户 Java ($userJavaPath) 版本匹配 ✓")
             val exe = normalizeJavaExe(userJavaPath)
-            resolvedJavaCache[cacheKey] = exe
-            return@withContext exe
+            if (isRuntimeUsable(exe, required)) {
+                onProgress("用户 Java ($exe) 版本匹配 ✓")
+                resolvedJavaCache[cacheKey] = exe
+                return@withContext exe
+            }
+            onProgress("用户 Java 缺少完整运行时模块，已跳过")
         }
 
         // 扫描全局 Java
@@ -120,25 +124,37 @@ object JavaManager {
         val match = findLocalJava(required, allJavas)
         if (match != null) {
             val exe = normalizeJavaExe(match.path)
-            onProgress("找到本地 Java $required: $exe ✓")
-            resolvedJavaCache[cacheKey] = exe
-            return@withContext exe
+            if (isRuntimeUsable(exe, required)) {
+                onProgress("找到本地 Java $required: $exe ✓")
+                resolvedJavaCache[cacheKey] = exe
+                return@withContext exe
+            }
+            onProgress("本地 Java $required 运行时不完整，尝试其他来源")
         }
 
         // 检查之前下载的
         val md3lDir = File(System.getProperty("user.home"), ".md3l")
         val cachedExe = findJavaExeInDir(File(md3lDir, "java-$required"))
         if (cachedExe != null && cachedExe.exists()) {
-            onProgress("使用已缓存的 Java $required ✓")
-            resolvedJavaCache[cacheKey] = cachedExe.absolutePath
-            return@withContext cachedExe.absolutePath
+            val exe = cachedExe.absolutePath
+            if (isRuntimeUsable(exe, required)) {
+                onProgress("使用已缓存的 Java $required ✓")
+                resolvedJavaCache[cacheKey] = exe
+                return@withContext exe
+            }
+            onProgress("缓存 Java $required 运行时不完整，重新下载")
         }
 
         // 下载
         onProgress("本地未找到 Java $required，正在自动下载...")
         val downloaded = downloadJre(required, md3lDir, onProgress)
-        downloaded?.absolutePath?.also { resolvedJavaCache[cacheKey] = it }
+        val downloadedPath = downloaded?.absolutePath
             ?: throw Exception("无法下载 Java $required，请手动安装后重试")
+        if (!isRuntimeUsable(downloadedPath, required)) {
+            throw Exception("自动下载的 Java 运行时不完整（缺少 java.instrument），请手动安装标准 JDK/JRE")
+        }
+        resolvedJavaCache[cacheKey] = downloadedPath
+        downloadedPath
     }
 
     suspend fun resolveJavaForVersion(
@@ -168,53 +184,77 @@ object JavaManager {
 
         val userMajor = probeJavaMajor(userJavaPath)
         if (userMajor == required || (required >= 17 && userMajor > required)) {
-            onProgress("用户 Java ($userJavaPath) 版本匹配 ✓")
             val exe = normalizeJavaExe(userJavaPath)
-            resolvedJavaCache[cacheKey] = exe
-            return@withContext exe
+            if (isRuntimeUsable(exe, required)) {
+                onProgress("用户 Java ($exe) 版本匹配 ✓")
+                resolvedJavaCache[cacheKey] = exe
+                return@withContext exe
+            }
+            onProgress("用户 Java 缺少完整运行时模块，已跳过")
         }
 
         onProgress("扫描本地 Java $required ...")
         val match = findLocalJava(required, JavaScanner.findAll())
         if (match != null) {
             val exe = normalizeJavaExe(match.path)
-            onProgress("找到本地 Java $required: $exe ✓")
-            resolvedJavaCache[cacheKey] = exe
-            return@withContext exe
+            if (isRuntimeUsable(exe, required)) {
+                onProgress("找到本地 Java $required: $exe ✓")
+                resolvedJavaCache[cacheKey] = exe
+                return@withContext exe
+            }
+            onProgress("本地 Java $required 运行时不完整，尝试其他来源")
         }
 
         val md3lDir = File(System.getProperty("user.home"), ".md3l")
         val cachedExe = findJavaExeInDir(File(md3lDir, "java-$required"))
         if (cachedExe != null && cachedExe.exists()) {
-            onProgress("使用已缓存的 Java $required ✓")
-            resolvedJavaCache[cacheKey] = cachedExe.absolutePath
-            return@withContext cachedExe.absolutePath
+            val exe = cachedExe.absolutePath
+            if (isRuntimeUsable(exe, required)) {
+                onProgress("使用已缓存的 Java $required ✓")
+                resolvedJavaCache[cacheKey] = exe
+                return@withContext exe
+            }
+            onProgress("缓存 Java $required 运行时不完整，重新下载")
         }
 
         onProgress("本地未找到 Java $required，正在自动下载...")
         val downloaded = downloadJre(required, md3lDir, onProgress)
-        downloaded?.absolutePath?.also { resolvedJavaCache[cacheKey] = it }
+        val downloadedPath = downloaded?.absolutePath
             ?: throw Exception("无法下载 Java $required，请手动安装后重试")
+        if (!isRuntimeUsable(downloadedPath, required)) {
+            throw Exception("自动下载的 Java 运行时不完整（缺少 java.instrument），请手动安装标准 JDK/JRE")
+        }
+        resolvedJavaCache[cacheKey] = downloadedPath
+        downloadedPath
     }
 
     fun resolveRequiredJavaMajor(version: LocalVersion): Int {
-        readVersionJson(version)?.let { root ->
-            root["javaVersion"]?.jsonObject?.get("majorVersion")?.jsonPrimitive?.intOrNull?.let { return it }
-            root["releaseTarget"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }?.let {
-                return requiredJavaMajor(it)
+        var currentId: String? = version.id
+        val visited = mutableSetOf<String>()
+
+        while (currentId != null && currentId !in visited) {
+            visited.add(currentId)
+
+            val jsonObject = if (currentId == version.id) {
+                readVersionJson(version)
+            } else {
+                readVersionJsonById(version, currentId)
             }
-            root["inheritsFrom"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }?.let {
-                readVersionJsonById(version, it)?.let { parent ->
-                    parent["javaVersion"]?.jsonObject?.get("majorVersion")?.jsonPrimitive?.intOrNull?.let { major -> return major }
-                    parent["releaseTarget"]?.jsonPrimitive?.contentOrNull?.takeIf { target -> target.isNotBlank() }?.let { target ->
-                        return requiredJavaMajor(target)
-                    }
+
+            if (jsonObject != null) {
+                jsonObject["javaVersion"]?.jsonObject?.get("majorVersion")?.jsonPrimitive?.intOrNull?.let { return it }
+                jsonObject["releaseTarget"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }?.let { return requiredJavaMajor(it) }
+                
+                val parentId = jsonObject["inheritsFrom"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                if (parentId != null) {
+                    currentId = parentId
+                    continue
                 }
-                return requiredJavaMajor(it)
             }
+            break
         }
-        version.inheritsFrom?.takeIf { it.isNotBlank() }?.let { return requiredJavaMajor(it) }
-        return requiredJavaMajor(version.id)
+        
+        return requiredJavaMajor(currentId ?: version.id)
     }
 
     private fun readVersionJson(version: LocalVersion): JsonObject? {
@@ -267,7 +307,12 @@ object JavaManager {
     }
 
     private fun normalizeJavaExe(path: String): String {
+        if (path.isBlank()) return "java"
         val isWin = System.getProperty("os.name").lowercase().contains("win")
+        if (path == "java" || path == "java.exe") {
+            resolveJavaExeFromPathAlias(isWin)?.let { return it }
+            return path
+        }
         val f = File(path)
         if (f.isFile && (f.name == "java" || f.name == "java.exe")) return f.absolutePath
         val bin = File(path, "bin")
@@ -275,6 +320,48 @@ object JavaManager {
         if (exe.exists()) return exe.absolutePath
         return if (path.endsWith("java") || path.endsWith("java.exe")) path
         else "${path}${File.separator}bin${File.separator}${if (isWin) "java.exe" else "java"}"
+    }
+
+    private fun resolveJavaExeFromPathAlias(isWin: Boolean): String? {
+        val command = if (isWin) "where" else "which"
+        return runCatching {
+            val proc = ProcessBuilder(command, "java")
+                .redirectErrorStream(true)
+                .start()
+            val out = proc.inputStream.bufferedReader().readText()
+            proc.waitFor(2, TimeUnit.SECONDS)
+            out.lineSequence()
+                .map { it.trim() }
+                .firstOrNull { it.isNotBlank() && File(it).isFile }
+        }.getOrNull()
+    }
+
+    private fun isRuntimeUsable(javaExe: String, requiredMajor: Int): Boolean {
+        if (requiredMajor < 9) return true
+        return hasJavaModule(javaExe, "java.instrument")
+    }
+
+    private fun hasJavaModule(javaPath: String, module: String): Boolean {
+        val exe = normalizeJavaExe(javaPath)
+        val modules = javaModuleCache[exe] ?: run {
+            val detected = runCatching {
+                val proc = ProcessBuilder(exe, "--list-modules")
+                    .redirectErrorStream(true)
+                    .start()
+                val out = proc.inputStream.bufferedReader().readText()
+                if (!proc.waitFor(3, TimeUnit.SECONDS) || proc.exitValue() != 0) {
+                    proc.destroyForcibly()
+                    return@runCatching emptySet<String>()
+                }
+                out.lineSequence()
+                    .map { it.substringBefore('@').trim() }
+                    .filter { it.isNotBlank() }
+                    .toSet()
+            }.getOrDefault(emptySet())
+            javaModuleCache[exe] = detected
+            detected
+        }
+        return module in modules
     }
 
     private fun parseJavaMajor(version: String): Int {

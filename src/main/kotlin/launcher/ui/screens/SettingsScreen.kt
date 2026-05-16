@@ -1,10 +1,12 @@
 package launcher.ui.screens
 
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -57,7 +59,8 @@ fun SettingsScreen() {
 
     val scrollState = rememberScrollState()
 
-    Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
+    Box(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState).padding(end = 8.dp)) {
         Text("设置", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.height(2.dp))
         Text("所有修改即时生效，自动保存", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -401,6 +404,11 @@ fun SettingsScreen() {
             }
         }
         Spacer(Modifier.height(24.dp))
+    }
+    VerticalScrollbar(
+        adapter = rememberScrollbarAdapter(scrollState),
+        modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+    )
     }
 }
 

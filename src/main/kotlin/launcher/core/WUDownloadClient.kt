@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.RandomAccessFile
@@ -12,8 +13,10 @@ import java.net.URL
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
+import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.CopyOnWriteArrayList
 
 object WUDownloadClient {
 
@@ -32,8 +35,21 @@ object WUDownloadClient {
         }
         val isRelease: Boolean get() = type == 0
         val isPreview: Boolean get() = type != 0
-        val isGdk: Boolean get() = packageType.equals("GDK", ignoreCase = true)
-        val isUwp: Boolean get() = packageType.equals("UWP", ignoreCase = true)
+        val isGdk: Boolean get() = packageType.equals("GDK", ignoreCase = true) || isGdkByVersion
+        val isUwp: Boolean get() = !isGdk
+        /** 版本号 >= 1.21.120.21 判定为 GDK（无 UWP 包） */
+        val isGdkByVersion: Boolean get() {
+            val threshold = listOf(1, 21, 120, 21)
+            val parts = name.trim().split(".").mapNotNull { it.toIntOrNull() }
+            if (parts.isEmpty()) return false
+            val len = maxOf(parts.size, threshold.size)
+            for (i in 0 until len) {
+                val a = parts.getOrElse(i) { 0 }
+                val b = threshold.getOrElse(i) { 0 }
+                if (a != b) return a > b
+            }
+            return true
+        }
         val displayLabel: String get() = "$typeName · ${if (isGdk) "GDK / MSIXVC" else "Appx / UWP"} · MCMrARM"
     }
 
@@ -42,30 +58,56 @@ object WUDownloadClient {
         "https://raw.githubusercontent.com/MCMrARM/mc-w10-versiondb/master/versions.json.min",
         "https://raw.githubusercontent.com/ddf8196/mc-w10-versiondb-auto-update/master/versions.json.min",
     )
+    // LeviLauncher 版本数据库（主力源，覆盖 1.21.120+ 全部 GDK 版本）
+    private val LEVI_GDK_URLS = listOf(
+        "https://raw.githubusercontent.com/LiteLDev/minecraft-windows-gdk-version-db/main/historical_versions.json",
+        "https://cdn.jsdelivr.net/gh/LiteLDev/minecraft-windows-gdk-version-db@main/historical_versions.json",
+    )
+    // MinecraftBedrockArchiver/GdkLinks（备用源，覆盖部分 1.21.120+ 版本）
     private val GDK_VERSION_URLS = listOf(
         "https://raw.githubusercontent.com/MinecraftBedrockArchiver/GdkLinks/refs/heads/master/urls.min.json",
         "https://cdn.jsdelivr.net/gh/MinecraftBedrockArchiver/GdkLinks@master/urls.min.json",
         "https://github.bibk.top/MinecraftBedrockArchiver/GdkLinks/raw/refs/heads/master/urls.min.json",
     )
     private const val WU_URL = "https://fe3.delivery.mp.microsoft.com/ClientWebService/client.asmx/secured"
-    private const val CHUNK_SIZE = 8L * 1024L * 1024L
-    private const val MAX_THREADS = 16
+    private const val CHUNK_SIZE = 512L * 1024L
+    private const val MAX_THREADS = 8
+    private const val CHUNK_STALL_TIMEOUT_MS = 15_000L
+    private const val SPEED_WINDOW_MS = 3000L
+    private const val NETWORK_LIST_TTL_MS = 5 * 60 * 1000L
 
     @Volatile
     private var cachedList: List<WUVersion> = emptyList()
+    @Volatile
+    private var networkRefreshedAt = 0L
 
     var onVersionsUpdated: ((List<WUVersion>) -> Unit)? = null
 
     suspend fun fetchVersions(forceNetwork: Boolean = false): List<WUVersion> = withContext(Dispatchers.IO) {
-        if (cachedList.isNotEmpty() && !forceNetwork) return@withContext cachedList
-        if (forceNetwork) {
-            refreshFromNetwork()
-            if (cachedList.isNotEmpty()) return@withContext cachedList
+        val now = System.currentTimeMillis()
+        if (!forceNetwork && cachedList.isNotEmpty() && now - networkRefreshedAt < NETWORK_LIST_TTL_MS) {
+            return@withContext cachedList
         }
+
+        if (forceNetwork) {
+            val strict = refreshFromNetwork(strict = true)
+            if (strict.isEmpty()) {
+                throw RuntimeException("网络版本库刷新失败，请检查网络后重试")
+            }
+            return@withContext strict
+        }
+
+        val network = runCatching { refreshFromNetwork(strict = false) }.getOrDefault(emptyList())
+        if (network.isNotEmpty()) return@withContext network
+
         val local = loadLocal()
-        if (local.isNotEmpty()) cachedList = local
-        if (cachedList.isEmpty()) throw RuntimeException("版本库为空")
-        cachedList
+        if (local.isNotEmpty()) {
+            cachedList = local
+            return@withContext local
+        }
+
+        if (cachedList.isNotEmpty()) return@withContext cachedList
+        throw RuntimeException("版本库为空")
     }
 
     private fun cacheDir(): File {
@@ -78,8 +120,19 @@ object WUDownloadClient {
         val dir = cacheDir()
         val uwpCache = File(dir, "wu_versions.json")
         val gdkCache = File(dir, "gdk_versions.json")
+        val leviCache = File(dir, "levi_versions.json")
         val result = mutableListOf<WUVersion>()
         val seen = mutableSetOf<String>()
+
+        // LeviLauncher DB（最新版本最全）
+        val leviCandidates = listOfNotNull(
+            if (leviCache.exists() && leviCache.length() > 50) leviCache.readText() else null,
+        )
+        for (json in leviCandidates) {
+            for (version in parseLeviVersions(json)) {
+                if (seen.add("${version.name}_${version.packageType}")) result += version
+            }
+        }
 
         val gdkCandidates = listOfNotNull(
             if (gdkCache.exists() && gdkCache.length() > 50) gdkCache.readText() else null,
@@ -101,15 +154,25 @@ object WUDownloadClient {
             }
         }
 
-        return result.sortedByDescending { versionSortKey(it.name) }
+        return deduplicateGdkUwp(result).sortedByDescending { versionSortKey(it.name) }
     }
 
-    private fun refreshFromNetwork() {
+    private suspend fun refreshFromNetwork(strict: Boolean): List<WUVersion> {
         val dir = cacheDir()
-        val result = loadLocal().toMutableList()
+        val result = if (strict) mutableListOf() else loadLocal().toMutableList()
         val seen = result.mapTo(mutableSetOf()) { "${it.name}_${it.packageType}" }
 
-        val gdkText = GDK_VERSION_URLS.firstNotNullOfOrNull { curlFetch(it) }
+        // 优先 LeviLauncher 数据库（含 26.x 全部版本）
+        val leviText = LEVI_GDK_URLS.firstNotNullOfOrNull { fetchText(it) }
+        if (leviText != null) {
+            val list = parseLeviVersions(leviText)
+            if (list.isNotEmpty()) {
+                File(dir, "levi_versions.json").writeText(leviText)
+                for (version in list) if (seen.add("${version.name}_${version.packageType}")) result += version
+            }
+        }
+        // 备用：MinecraftBedrockArchiver/GdkLinks
+        val gdkText = GDK_VERSION_URLS.firstNotNullOfOrNull { fetchText(it) }
         if (gdkText != null) {
             val list = parseGdkVersions(gdkText)
             if (list.isNotEmpty()) {
@@ -118,7 +181,7 @@ object WUDownloadClient {
             }
         }
 
-        val uwpText = UWP_VERSION_URLS.firstNotNullOfOrNull { curlFetch(it) }
+        val uwpText = UWP_VERSION_URLS.firstNotNullOfOrNull { fetchText(it) }
         if (uwpText != null) {
             val list = parseUwpVersions(uwpText)
             if (list.isNotEmpty()) {
@@ -127,9 +190,39 @@ object WUDownloadClient {
             }
         }
 
+        val mcAppx = runCatching { McAppxClient.fetchVersions() }.getOrDefault(emptyList())
+        for (entry in mcAppx) {
+            val synthetic = WUVersion(
+                name = entry.version,
+                uuid = "",
+                type = if (entry.isPreview) 2 else 0,
+                packageType = "UWP",
+            )
+            if (seen.add("${synthetic.name}_${synthetic.packageType}")) result += synthetic
+        }
+
         if (result.isNotEmpty()) {
-            cachedList = result.sortedByDescending { versionSortKey(it.name) }
+            cachedList = deduplicateGdkUwp(result).sortedByDescending { versionSortKey(it.name) }
+            networkRefreshedAt = System.currentTimeMillis()
             onVersionsUpdated?.invoke(cachedList)
+        }
+        return cachedList
+    }
+
+    /**
+     * 对于版本号 >= 1.21.120.21（即 isGdkByVersion=true）的版本：
+     * - 若同时存在 GDK 和 UWP 条目，丢弃 UWP 条目（UWP 包不存在）
+     * - 若只有 UWP 条目，将其升级为 GDK（packageType 改为 GDK），downloadUrls 保持空，
+     *   下游 chooseGdkDownloadUrl 返回 null 后走 Xbox catalog fallback
+     */
+    private fun deduplicateGdkUwp(list: List<WUVersion>): List<WUVersion> {
+        val gdkNames = list.filter { it.packageType.equals("GDK", ignoreCase = true) }.map { it.name }.toSet()
+        return list.filter { it.name.startsWith("1.") }.mapNotNull { ver ->
+            if (!ver.isGdkByVersion) return@mapNotNull ver          // 真 UWP 版本，保留
+            if (ver.packageType.equals("GDK", ignoreCase = true)) return@mapNotNull ver  // 已是 GDK，保留
+            // UWP 条目但版本号属于 GDK 时代
+            if (ver.name in gdkNames) null   // 已有对应 GDK 条目，丢弃此 UWP 副本
+            else ver.copy(packageType = "GDK")  // 升级为 GDK，让下游走正确路径
         }
     }
 
@@ -140,6 +233,41 @@ object WUDownloadClient {
             .distinctBy { "${it.name}_${it.packageType}" }
             .sortedByDescending { versionSortKey(it.name) }
             .toList()
+    }
+
+    /**
+     * 解析 LiteLDev/minecraft-windows-gdk-version-db 格式：
+     * { "releaseVersions": [ { "version": "Release 1.26.13.01", "urls": [...] }, ... ],
+     *   "previewVersions": [ { "version": "Preview 1.26.40.05", "urls": [...] }, ... ] }
+     */
+    private fun parseLeviVersions(json: String): List<WUVersion> {
+        val result = mutableListOf<WUVersion>()
+        fun parseSection(sectionKey: String, type: Int) {
+            val sectionStart = json.indexOf("\"$sectionKey\"")
+            if (sectionStart < 0) return
+            val arrStart = json.indexOf('[', sectionStart)
+            if (arrStart < 0) return
+            // 找匹配的 ]
+            var depth = 0; var end = arrStart
+            while (end < json.length) {
+                when (json[end]) { '[' -> depth++; ']' -> { depth--; if (depth == 0) break } }
+                end++
+            }
+            val section = json.substring(arrStart + 1, end)
+            // 逐个对象解析 "version" 和 "urls"
+            val objRegex = Regex("""\{[^{}]*"version"\s*:\s*"([^"]+)"[^{}]*"urls"\s*:\s*\[(.*?)]""", RegexOption.DOT_MATCHES_ALL)
+            for (m in objRegex.findAll(section)) {
+                val rawVersion = m.groupValues[1]  // e.g. "Release 1.26.13.01"
+                val name = rawVersion.removePrefix("Release ").removePrefix("Preview ").trim()
+                if (name.isBlank()) continue
+                val urls = Regex(""""(https?://[^"]+)"""").findAll(m.groupValues[2]).map { it.groupValues[1] }.toList()
+                result += WUVersion(name, "", type, "GDK", urls)
+            }
+        }
+        parseSection("releaseVersions", 0)
+        parseSection("previewVersions", 2)
+        return result.distinctBy { "${it.name}_${it.packageType}" }
+            .sortedByDescending { versionSortKey(it.name) }
     }
 
     private fun parseGdkVersions(json: String): List<WUVersion> {
@@ -182,6 +310,10 @@ object WUDownloadClient {
         return version.split(".").joinToString(".") { it.toIntOrNull()?.toString()?.padStart(6, '0') ?: it }
     }
 
+    private fun fetchText(url: String): String? {
+        return curlFetch(url) ?: httpFetch(url)
+    }
+
     private fun curlFetch(url: String): String? {
         return try {
             val proc = ProcessBuilder("curl.exe", "-sL", "--connect-timeout", "10", "--max-time", "30", url)
@@ -190,6 +322,26 @@ object WUDownloadClient {
             val output = proc.inputStream.bufferedReader().readText()
             val done = proc.waitFor(35, java.util.concurrent.TimeUnit.SECONDS)
             if (done && proc.exitValue() == 0 && output.length > 50) output else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun httpFetch(url: String): String? {
+        return try {
+            val conn = URL(url).openConnection() as HttpURLConnection
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 30_000
+            conn.instanceFollowRedirects = true
+            conn.setRequestProperty("User-Agent", "MD3L/1.1")
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                conn.disconnect()
+                return null
+            }
+            val text = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            conn.disconnect()
+            text.takeIf { it.length > 50 }
         } catch (_: Exception) {
             null
         }
@@ -355,21 +507,90 @@ object WUDownloadClient {
             start = end + 1
         }
         onProgress(downloaded.get(), total, 0L)
+
+        // 滑动窗口测速：记录 (时间戳, 累计字节) 样本
+        val speedSamples = CopyOnWriteArrayList<Pair<Long, Long>>()
+        speedSamples.add(System.currentTimeMillis() to downloaded.get())
+
+        // 活跃chunk的临时文件集合，用于实时进度轮询
+        val activeTmps = CopyOnWriteArrayList<File>()
+
+        // 进度上报协程：每300ms轮询一次
+        val failedRanges = CopyOnWriteArrayList<LongRange>()
+        val semaphore = Semaphore(MAX_THREADS)
         kotlinx.coroutines.coroutineScope {
-            ranges.chunked(MAX_THREADS).forEach { batch ->
-                val jobs = batch.map { range ->
-                    this.async(Dispatchers.IO) {
-                        val success = downloadRange(url, part, range, total, downloaded, started, onProgress) { !isActive }
-                        if (success) synchronized(completed) {
+            // 实时进度轮询 job
+            val progressJob = launch(Dispatchers.IO) {
+                var highWater = downloaded.get()
+                while (isActive) {
+                    Thread.sleep(300)
+                    // 累计已完成 + 所有活跃tmp文件当前大小
+                    val inFlight = activeTmps.sumOf { if (it.exists()) it.length() else 0L }
+                    val raw = (downloaded.get() + inFlight).coerceAtMost(total)
+                    val current = maxOf(raw, highWater)
+                    if (current != highWater) {
+                        highWater = current
+                        val lastReported = current
+                        val now = System.currentTimeMillis()
+                        speedSamples.add(now to current)
+                        // 保留窗口内的样本
+                        val cutoff = now - SPEED_WINDOW_MS
+                        while (speedSamples.size > 2 && speedSamples[0].first < cutoff) speedSamples.removeAt(0)
+                        val speed = if (speedSamples.size >= 2) {
+                            val dt = (speedSamples.last().first - speedSamples.first().first).coerceAtLeast(1L)
+                            val db = speedSamples.last().second - speedSamples.first().second
+                            (db * 1000L / dt).coerceAtLeast(0L)
+                        } else 0L
+                        onProgress(current, total, speed)
+                    }
+                }
+            }
+
+            val jobs = ranges.map { range ->
+                async(Dispatchers.IO) {
+                    semaphore.acquire()
+                    try {
+                        val tmp = File(part.parentFile, "${part.name}.${range.first}-${range.last}.chunk")
+                        activeTmps.add(tmp)
+                        try {
+                            val success = downloadRange(url, part, range, total, downloaded, started, onProgress, activeTmps) { !isActive }
+                            if (success) synchronized(completed) {
+                                completed += range
+                                partsFile.writeText(completed.joinToString("\n") { "${it.first}-${it.last}" })
+                            } else {
+                                failedRanges.add(range)
+                                ok.set(false)
+                            }
+                        } finally {
+                            activeTmps.remove(tmp)
+                        }
+                    } finally {
+                        semaphore.release()
+                    }
+                }
+            }
+            jobs.awaitAll()
+            progressJob.cancel()
+        }
+
+        if (failedRanges.isNotEmpty() && isActive) {
+            val pending = failedRanges.distinct().toMutableList()
+            repeat(2) {
+                if (pending.isEmpty() || !isActive) return@repeat
+                val iter = pending.iterator()
+                while (iter.hasNext()) {
+                    val range = iter.next()
+                    val success = downloadRange(url, part, range, total, downloaded, started, onProgress, activeTmps) { !isActive }
+                    if (success) {
+                        synchronized(completed) {
                             completed += range
                             partsFile.writeText(completed.joinToString("\n") { "${it.first}-${it.last}" })
                         }
-                        success
+                        iter.remove()
                     }
                 }
-                if (jobs.awaitAll().any { !it }) ok.set(false)
-                if (!ok.get()) return@coroutineScope
             }
+            if (pending.isEmpty()) ok.set(true)
         }
         if (ok.get() && downloaded.get() >= total) {
             finishPart(part, dest, partsFile)
@@ -429,10 +650,12 @@ object WUDownloadClient {
         downloaded: AtomicLong,
         started: Long,
         onProgress: (Long, Long, Long) -> Unit,
+        activeTmps: CopyOnWriteArrayList<File> = CopyOnWriteArrayList(),
         isCancelled: () -> Boolean,
     ): Boolean {
         repeat(3) {
             val tmp = File(part.parentFile, "${part.name}.${range.first}-${range.last}.chunk")
+            if (!activeTmps.contains(tmp)) activeTmps.add(tmp)
             try {
                 if (isCancelled()) return false
                 if (tmp.exists()) tmp.delete()
@@ -442,6 +665,8 @@ object WUDownloadClient {
                     "-fL",
                     "--connect-timeout", "15",
                     "--max-time", "180",
+                    "--speed-time", "20",
+                    "--speed-limit", "1024",
                     "--retry", "2",
                     "--retry-delay", "1",
                     "-H", "User-Agent: Windows-Update-Agent/10.0",
@@ -451,11 +676,22 @@ object WUDownloadClient {
                 ).redirectErrorStream(true).start()
                 val outputReader = proc.inputStream.bufferedReader()
                 val startedAt = System.currentTimeMillis()
+                var lastChunkSize = -1L
+                var lastChunkProgressAt = startedAt
                 while (true) {
                     if (isCancelled()) {
                         proc.destroyForcibly()
                         tmp.delete()
                         return false
+                    }
+                    val currentChunkSize = if (tmp.exists()) tmp.length() else 0L
+                    if (currentChunkSize != lastChunkSize) {
+                        lastChunkSize = currentChunkSize
+                        lastChunkProgressAt = System.currentTimeMillis()
+                    } else if (System.currentTimeMillis() - lastChunkProgressAt > CHUNK_STALL_TIMEOUT_MS) {
+                        proc.destroyForcibly()
+                        tmp.delete()
+                        return@repeat
                     }
                     if (proc.waitFor(500, java.util.concurrent.TimeUnit.MILLISECONDS)) break
                     if (System.currentTimeMillis() - startedAt > 190_000L) {

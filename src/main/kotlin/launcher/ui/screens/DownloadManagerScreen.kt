@@ -178,23 +178,9 @@ private fun TaskCard(task: DownloadHub.HubTask) {
                     Spacer(Modifier.width(8.dp))
                 }
 
-                if (isRunning) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { DownloadHub.pause(task.id) }, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Filled.Pause, contentDescription = "暂停", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.tertiary)
-                        }
-                        IconButton(onClick = { DownloadHub.close(task.id) }, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Filled.Close, contentDescription = "关闭", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                } else if (isPaused) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { DownloadHub.resume(task.id) }, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Filled.PlayArrow, contentDescription = "继续", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                        }
-                        IconButton(onClick = { DownloadHub.close(task.id) }, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Filled.Close, contentDescription = "关闭", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
-                        }
+                if (isRunning || isPaused) {
+                    IconButton(onClick = { DownloadHub.close(task.id) }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Filled.Close, contentDescription = "关闭", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
                     }
                 } else if (isDone) {
                     Row(verticalAlignment = Alignment.CenterVertically) {

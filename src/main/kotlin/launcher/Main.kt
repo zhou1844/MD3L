@@ -23,15 +23,23 @@ import launcher.core.AppSettings
 import launcher.core.DownloadManager
 import launcher.core.DownloadHub
 import launcher.core.ModpackManager
-import launcher.core.WindowsElevation
 import launcher.ui.layout.MainLayout
 import launcher.ui.theme.*
 import java.awt.Image
 import java.awt.Taskbar
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
+import java.awt.datatransfer.Transferable
 import java.awt.dnd.*
 import java.io.File
+import androidx.compose.ui.DragData
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.onExternalDrag
+import com.sun.jna.Function
+import com.sun.jna.Native
+import com.sun.jna.NativeLibrary
+import com.sun.jna.platform.win32.WinDef
+import java.net.URI
 
 fun main() {
     val md3lDir = File(System.getProperty("user.home"), ".md3l")
@@ -39,7 +47,6 @@ fun main() {
         System.setProperty("skiko.renderApi", "SOFTWARE")
     }
 
-    if (!WindowsElevation.ensureAdminOrRelaunch()) return
     runLauncherApp()
 }
 
@@ -53,12 +60,14 @@ private fun runLauncherApp() = application {
     Window(
         onCloseRequest = ::exitApplication,
         state = windowState,
+        title = "MD3L",
         undecorated = true,
         transparent = true,
-        title = "MD3L",
+        visible = true,
     ) {
         val scope = rememberCoroutineScope()
-        var eulaAccepted by remember { mutableStateOf<Boolean?>(null) } // null = loading
+        // 默认 true 让窗口立即可见，后台加载完后若需要 EULA 再切换
+        var eulaAccepted by remember { mutableStateOf<Boolean?>(true) }
         var currentSettings by remember { mutableStateOf(AppSettings()) }
         var showUpdateSuccess by remember { mutableStateOf<String?>(null) }
 
@@ -72,20 +81,28 @@ private fun runLauncherApp() = application {
         }
 
         LaunchedEffect(Unit) {
-            scope.launch {
-                val settings = AppSettings.load()
-                currentSettings = settings
-                val idx = settings.accentIndex.coerceIn(AllAccents.indices)
-                ThemeState.accent = AllAccents[idx]
-                ThemeState.isDark = settings.themeMode == "dark"
-                DownloadManager.activeMirror = settings.downloadMirror
-                eulaAccepted = settings.eulaAccepted
+            // 立即在后台加载设置，不阻塞 UI 线程
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val settings = runCatching { AppSettings.load() }.getOrDefault(AppSettings())
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    currentSettings = settings
+                    val idx = settings.accentIndex.coerceIn(AllAccents.indices)
+                    ThemeState.accent = AllAccents[idx]
+                    ThemeState.isDark = settings.themeMode == "dark"
+                    DownloadManager.activeMirror = settings.downloadMirror
+                    // 若首次启动需要 EULA，切换到 EULA 界面
+                    if (!settings.eulaAccepted) eulaAccepted = false
+                }
+
                 runCatching { launcher.core.BundledRuntimeInstaller.ensureInstalled() }
 
                 val updateFlag = File(System.getProperty("user.home"), ".md3l/update_success")
                 if (updateFlag.exists()) {
-                    showUpdateSuccess = runCatching { updateFlag.readText().trim() }.getOrNull()
+                    val tag = runCatching { updateFlag.readText().trim() }.getOrNull()
                     runCatching { updateFlag.delete() }
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        showUpdateSuccess = tag
+                    }
                 }
 
                 launcher.core.AutoUpdater.checkForUpdate()
@@ -95,7 +112,6 @@ private fun runLauncherApp() = application {
         MD3LTheme {
             when (eulaAccepted) {
                 null -> {
-                    // 加载中
                     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
@@ -117,7 +133,7 @@ private fun runLauncherApp() = application {
                 true -> {
                     // 主界面
                     AppWindow(windowState, ::exitApplication)
-                    
+
                     if (showUpdateSuccess != null) {
                         AlertDialog(
                             onDismissRequest = { showUpdateSuccess = null },
@@ -141,96 +157,198 @@ private fun loadTaskbarIconImage(): Image? {
     return Toolkit.getDefaultToolkit().createImage(url)
 }
 
+private fun allowElevatedWindowDrop(window: java.awt.Window) {
+    if (!System.getProperty("os.name").contains("Windows", ignoreCase = true)) return
+    runCatching {
+        val hwndPtr = Native.getComponentPointer(window) ?: return
+        val hwnd = WinDef.HWND(hwndPtr)
+        val msgfltAllow = 1
+        val dropMessages = intArrayOf(0x0233, 0x004A, 0x0049)
+        val changeFilterEx: Function = NativeLibrary.getInstance("user32").getFunction("ChangeWindowMessageFilterEx")
+        dropMessages.forEach { msg ->
+            runCatching {
+                changeFilterEx.invokeInt(arrayOf(hwnd, msg, msgfltAllow, null))
+            }
+        }
+    }.onFailure {
+        println("[DragImport] 启用管理员窗口拖拽兼容失败: ${it.message}")
+    }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun FrameWindowScope.AppWindow(
     windowState: WindowState,
     onExit: () -> Unit,
 ) {
     var dropMessage by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
 
-    // 注册拖拽整合包文件到窗口
-    LaunchedEffect(Unit) {
-        window.dropTarget = DropTarget().apply {
-            addDropTargetListener(object : DropTargetAdapter() {
-                override fun drop(dtde: DropTargetDropEvent) {
-                    dtde.acceptDrop(DnDConstants.ACTION_COPY)
-                    try {
-                        val transferable = dtde.transferable
-                        if (transferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
-                            @Suppress("UNCHECKED_CAST")
-                            val files = transferable.getTransferData(DataFlavor.javaFileListFlavor) as List<File>
-                            val packFiles = files.filter {
-                                it.isFile && (it.extension.equals("zip", ignoreCase = true) || it.extension.equals("mrpack", ignoreCase = true))
-                            }
-                            if (packFiles.isNotEmpty()) {
-                                val importScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
-                                importScope.launch {
-                                    val settings = AppSettings.load()
-                                    if (settings.minecraftDir.isBlank()) {
-                                        dropMessage = "请先在设置中配置游戏主目录"
-                                        return@launch
-                                    }
-                                    for (packFile in packFiles) {
-                                        val importTaskId = "drag_import_${packFile.absolutePath.hashCode()}_${System.currentTimeMillis()}"
-                                        DownloadHub.upsert(DownloadHub.HubTask(
-                                            id = importTaskId,
-                                            name = "导入整合包 ${packFile.name}",
-                                            type = DownloadHub.TaskType.ResourceDownload,
-                                            step = "准备导入整合包",
-                                            fraction = 0f,
-                                        ))
-                                        println("[DragImport] 拖入文件: ${packFile.absolutePath}")
-                                        val result = ModpackManager.importMrpack(packFile, settings.minecraftDir) { step, fraction ->
-                                            DownloadHub.upsert(DownloadHub.HubTask(
-                                                id = importTaskId,
-                                                name = "导入整合包 ${packFile.name}",
-                                                type = DownloadHub.TaskType.ResourceDownload,
-                                                step = step,
-                                                fraction = fraction.coerceIn(0f, 1f),
-                                            ))
-                                        }
-                                        DownloadHub.upsert(DownloadHub.HubTask(
-                                            id = importTaskId,
-                                            name = "导入整合包 ${packFile.name}",
-                                            type = DownloadHub.TaskType.ResourceDownload,
-                                            status = if ("成功" in result) DownloadHub.TaskStatus.Done else DownloadHub.TaskStatus.Error,
-                                            step = result,
-                                            fraction = if ("成功" in result) 1f else 0f,
-                                            error = if ("成功" in result) "" else result,
-                                        ))
-                                        dropMessage = result
-                                    }
-                                }
-                            } else {
-                                dropMessage = "请拖入 .zip 或 .mrpack 整合包文件"
-                            }
-                        }
-                    } catch (e: Exception) {
-                        dropMessage = "拖入文件处理失败: ${e.message}"
-                    }
-                    dtde.dropComplete(true)
+    fun launchModpackImport(files: List<File>) {
+        val packFiles = files.filter {
+            it.isFile && (it.extension.equals("zip", ignoreCase = true) || it.extension.equals("mrpack", ignoreCase = true))
+        }
+        if (packFiles.isEmpty()) {
+            dropMessage = "请拖入 .zip 或 .mrpack 整合包文件"
+            return
+        }
+
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val settings = AppSettings.load()
+            if (settings.minecraftDir.isBlank()) {
+                dropMessage = "请先在设置中配置游戏主目录"
+                return@launch
+            }
+            for (packFile in packFiles) {
+                val importTaskId = "drag_import_${packFile.absolutePath.hashCode()}_${System.currentTimeMillis()}"
+                DownloadHub.upsert(DownloadHub.HubTask(
+                    id = importTaskId,
+                    name = "导入整合包 ${packFile.name}",
+                    type = DownloadHub.TaskType.ResourceDownload,
+                    step = "准备导入整合包",
+                    fraction = 0f,
+                ))
+                println("[DragImport] 拖入文件: ${packFile.absolutePath}")
+                val result = ModpackManager.importMrpack(packFile, settings.minecraftDir) { step, fraction ->
+                    DownloadHub.upsert(DownloadHub.HubTask(
+                        id = importTaskId,
+                        name = "导入整合包 ${packFile.name}",
+                        type = DownloadHub.TaskType.ResourceDownload,
+                        step = step,
+                        fraction = fraction.coerceIn(0f, 1f),
+                    ))
                 }
-            })
+                DownloadHub.upsert(DownloadHub.HubTask(
+                    id = importTaskId,
+                    name = "导入整合包 ${packFile.name}",
+                    type = DownloadHub.TaskType.ResourceDownload,
+                    status = if ("成功" in result) DownloadHub.TaskStatus.Done else DownloadHub.TaskStatus.Error,
+                    step = result,
+                    fraction = if ("成功" in result) 1f else 0f,
+                    error = if ("成功" in result) "" else result,
+                ))
+                dropMessage = result
+            }
+        }
+    }
+
+    // Windows 下部分环境 Compose 外部拖拽回调不稳定，增加 AWT 原生兜底。
+    DisposableEffect(window) {
+        fun droppedFiles(transferable: Transferable?): List<File> {
+            if (transferable == null || !transferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) return emptyList()
+            @Suppress("UNCHECKED_CAST")
+            return runCatching {
+                transferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<File>
+            }.getOrNull().orEmpty()
+        }
+
+        fun canAccept(transferable: Transferable?): Boolean {
+            return droppedFiles(transferable).any {
+                it.isFile && (it.extension.equals("zip", ignoreCase = true) || it.extension.equals("mrpack", ignoreCase = true))
+            }
+        }
+
+        val listener = object : DropTargetAdapter() {
+            override fun dragEnter(dtde: DropTargetDragEvent) {
+                if (dtde.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                    dtde.acceptDrag(DnDConstants.ACTION_COPY)
+                } else {
+                    dtde.rejectDrag()
+                }
+            }
+
+            override fun dragOver(dtde: DropTargetDragEvent) {
+                if (dtde.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                    dtde.acceptDrag(DnDConstants.ACTION_COPY)
+                } else {
+                    dtde.rejectDrag()
+                }
+            }
+
+            override fun dropActionChanged(dtde: DropTargetDragEvent) {
+                if (dtde.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                    dtde.acceptDrag(DnDConstants.ACTION_COPY)
+                } else {
+                    dtde.rejectDrag()
+                }
+            }
+
+            override fun drop(dtde: DropTargetDropEvent) {
+                runCatching {
+                    dtde.acceptDrop(DnDConstants.ACTION_COPY)
+                    val dropped = droppedFiles(dtde.transferable)
+                    if (dropped.isEmpty()) {
+                        dtde.dropComplete(false)
+                        return
+                    }
+                    launchModpackImport(dropped)
+                    dtde.dropComplete(true)
+                }.onFailure {
+                    dropMessage = "拖拽导入失败: ${it.message}"
+                    runCatching { dtde.dropComplete(false) }
+                }
+            }
+        }
+
+        // 在 AWT 事件线程上注册，确保 window peer 已完全初始化
+        var dropTarget: DropTarget? = null
+        javax.swing.SwingUtilities.invokeLater {
+            runCatching {
+                allowElevatedWindowDrop(window)
+                dropTarget = DropTarget(window, DnDConstants.ACTION_COPY, listener, true)
+                window.dropTarget = dropTarget
+                println("[DragImport] DropTarget 注册成功")
+            }.onFailure {
+                println("[DragImport] DropTarget 注册失败: ${it.message}")
+            }
+        }
+
+        onDispose {
+            runCatching { dropTarget?.removeDropTargetListener(listener) }
+            runCatching { window.dropTarget = null }
         }
     }
 
     val isMaximized = windowState.placement == WindowPlacement.Maximized
-    val windowShape = if (isMaximized) RoundedCornerShape(0.dp) else RoundedCornerShape(16.dp)
-    val windowPadding = if (isMaximized) 0.dp else 8.dp
+    val windowShape = if (isMaximized) RoundedCornerShape(0.dp) else RoundedCornerShape(12.dp)
+    val isWindows = remember { System.getProperty("os.name").contains("Windows", ignoreCase = true) }
+    val surfaceDragModifier = if (isWindows) {
+        Modifier
+    } else {
+        Modifier.onExternalDrag(
+            onDragStart = { _ -> },
+            onDrag = { _ -> },
+            onDragExit = { },
+            onDrop = { externalDragValue ->
+                val dragData = externalDragValue.dragData
+                if (dragData is DragData.FilesList) {
+                    val files = dragData.readFiles().map { pathString ->
+                        if (pathString.startsWith("file:/")) {
+                            runCatching { File(URI.create(pathString)) }.getOrElse { File(pathString) }
+                        } else {
+                            File(pathString)
+                        }
+                    }
+                    launchModpackImport(files)
+                }
+            }
+        )
+    }
 
+    // 移除导致周围出现点击盲区的透明边距 padding
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Transparent)
-            .padding(windowPadding),
+            .background(Color.Transparent),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
-            modifier = if (isMaximized) Modifier.fillMaxSize()
-            else Modifier.aspectRatio(9f / 7f).fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .then(surfaceDragModifier),
             shape = windowShape,
             color = MaterialTheme.colorScheme.background,
-            shadowElevation = if (isMaximized) 0.dp else 6.dp,
+            shadowElevation = 0.dp, // 移除会导致外部绘制区域问题的 Compose Shadow
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 WindowDraggableArea {
@@ -365,30 +483,6 @@ private fun TitleBar(
             modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // ── Logo ──────────────────────────────────────────────────────────
-            Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-            ) {
-                Text(
-                    " MD3L ",
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 1.sp,
-                    ),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                )
-            }
-
-            Spacer(Modifier.width(12.dp))
-            Text(
-                "Minecraft Launcher",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                maxLines = 1,
-            )
-
             Spacer(Modifier.weight(1f))
 
             // ── Window buttons ────────────────────────────────────────────────

@@ -1,13 +1,16 @@
 package launcher.ui.screens
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,6 +35,128 @@ import java.io.File
 private enum class EditionTab(val label: String) {
     Java("Java 版"),
     Bedrock("基岩版"),
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun BedrockVersionDetailScreen(version: WUDownloadClient.WUVersion) {
+    val scope = rememberCoroutineScope()
+    var selectedSource by remember { mutableStateOf(BedrockDownloadManager.availableSources(version).first()) }
+    var sourceExpanded by remember { mutableStateOf(false) }
+    var localError by remember { mutableStateOf("") }
+
+    val keyPreview = remember(version.name, version.packageType) { "${version.name}_${version.packageType}" }
+    val downloadingVersions by BedrockDownloadManager.downloadingVersions.collectAsState()
+    val downloadResults by BedrockDownloadManager.downloadResults.collectAsState()
+    val installProgress by BedrockDownloadManager.installProgress.collectAsState()
+    val isDownloading = keyPreview in downloadingVersions
+    val result = downloadResults[keyPreview]
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            FilledTonalIconButton(
+                onClick = { Navigator.back() },
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.size(40.dp),
+            ) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text("基岩版下载配置", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
+                Text("选择下载源并自定义安装版本名", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        ElevatedCard(
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("目标版本", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+                Text(version.name, style = MaterialTheme.typography.bodyMedium)
+                Text(version.displayLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                ExposedDropdownMenuBox(
+                    expanded = sourceExpanded,
+                    onExpandedChange = { sourceExpanded = !sourceExpanded },
+                ) {
+                    OutlinedTextField(
+                        value = selectedSource.label,
+                        onValueChange = {},
+                        readOnly = true,
+                        singleLine = true,
+                        label = { Text("下载源") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = sourceExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth(),
+                    )
+                    ExposedDropdownMenu(expanded = sourceExpanded, onDismissRequest = { sourceExpanded = false }) {
+                        BedrockDownloadManager.availableSources(version).forEach { source ->
+                            DropdownMenuItem(
+                                text = { Text(source.label) },
+                                onClick = {
+                                    selectedSource = source
+                                    sourceExpanded = false
+                                },
+                            )
+                        }
+                    }
+                }
+
+                if (localError.isNotBlank()) {
+                    Text(localError, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                }
+
+                if (isDownloading && installProgress.versionKey == keyPreview && installProgress.phase.isNotBlank()) {
+                    Text(installProgress.message, style = MaterialTheme.typography.labelSmall)
+                    if (installProgress.phase != "done" && installProgress.phase != "error") {
+                        LinearProgressIndicator(
+                            progress = { installProgress.fraction.coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(3.dp)),
+                        )
+                    }
+                } else if (!result.isNullOrBlank()) {
+                    val isErr = "失败" in result || "错误" in result || "取消" in result
+                    Text(
+                        result,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isErr) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                    )
+                }
+
+                FilledTonalButton(
+                    onClick = {
+                        val finalName = version.name
+                        if (finalName.isBlank()) {
+                            localError = "安装版本名不能为空"
+                            return@FilledTonalButton
+                        }
+                        localError = ""
+                        scope.launch {
+                            runCatching {
+                                BedrockDownloadManager.launchDownloadWU(
+                                    ver = version,
+                                    source = selectedSource,
+                                    installVersionName = finalName,
+                                )
+                            }.onFailure {
+                                localError = "启动下载失败: ${it.message}"
+                            }
+                        }
+                    },
+                    enabled = !isDownloading,
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (isDownloading) "下载中..." else "开始下载并安装")
+                }
+            }
+        }
+    }
 }
 
 // ── Java 版分类 ──────────────────────────────────────────────────────────────
@@ -259,19 +384,13 @@ private fun JavaDownloadContent() {
             }
     }
 
-    val aprilFoolIds = setOf(
-        "1.RV-Pre1", "15w14a", "3D Shareware v1.34",
-        "20w14infinite", "22w13oneblockatatime", "23w13a_or_b",
-        "24w14potato",
-    )
-
     val filtered = remoteVersions.filter { v ->
         val matchesSearch = searchQuery.isBlank() || v.id.contains(searchQuery, ignoreCase = true)
         val matchesTab = when (selectedTab) {
             JavaVersionTab.Release -> v.type == "release"
-            JavaVersionTab.Snapshot -> v.type == "snapshot" && v.id !in aprilFoolIds
+            JavaVersionTab.Snapshot -> v.type == "snapshot" && v.id !in VersionScanner.aprilFoolIds
             JavaVersionTab.OldAlpha -> v.type == "old_alpha" || v.type == "old_beta"
-            JavaVersionTab.AprilFool -> v.id in aprilFoolIds
+            JavaVersionTab.AprilFool -> v.id in VersionScanner.aprilFoolIds
         }
         matchesSearch && matchesTab
     }
@@ -354,10 +473,11 @@ private fun JavaDownloadContent() {
                 }
             }
         } else {
+            Box(modifier = Modifier.fillMaxSize()) {
             LazyColumn(
                 state = listState,
                 verticalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().padding(end = 8.dp),
             ) {
                 items(filtered, key = { it.id }) { version ->
                     ElevatedCard(
@@ -392,6 +512,11 @@ private fun JavaDownloadContent() {
                     }
                 }
             }
+            VerticalScrollbar(
+                adapter = rememberScrollbarAdapter(listState),
+                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+            )
+            }
         }
     }
 }
@@ -424,17 +549,12 @@ private fun BedrockDownloadContent() {
             return@LaunchedEffect
         }
         try {
-            bedrockVersions = WUDownloadClient.fetchVersions()
+            bedrockVersions = WUDownloadClient.fetchVersions(forceNetwork = true)
             loadError = if (bedrockVersions.isEmpty()) "未能获取版本列表" else ""
-            scope.launch {
-                try {
-                    bedrockVersions = WUDownloadClient.fetchVersions(forceNetwork = true)
-                    loadError = if (bedrockVersions.isEmpty()) "未能获取版本列表" else ""
-                } catch (_: Exception) {
-                }
-            }
         } catch (e: Exception) {
-            loadError = "获取失败: ${e.message}"
+            val fallback = runCatching { WUDownloadClient.fetchVersions(forceNetwork = false) }.getOrDefault(emptyList())
+            bedrockVersions = fallback
+            loadError = if (fallback.isEmpty()) "获取失败: ${e.message}" else "网络刷新失败，已显示本地缓存"
         }
         isLoading = false
     }
@@ -453,7 +573,9 @@ private fun BedrockDownloadContent() {
             BedrockSubTab.Release -> v.isRelease
             BedrockSubTab.Preview -> v.isPreview
         }
-        matchesSearch && matchesTab
+        // GDK 版本（>=1.21.120.21）没有 UWP 包，过滤掉错误条目
+        val validPackage = !(v.isUwp && v.isGdkByVersion)
+        matchesSearch && matchesTab && validPackage
     }.sortedWith(
         compareByDescending<WUDownloadClient.WUVersion> {
             it.name.split(".").joinToString("") { part -> part.padStart(6, '0') }
@@ -549,10 +671,11 @@ private fun BedrockDownloadContent() {
                 }
             }
         } else {
+            Box(modifier = Modifier.fillMaxSize()) {
             LazyColumn(
                 state = listState,
                 verticalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().padding(end = 8.dp),
             ) {
                 items(filtered, key = { "${it.name}_${it.packageType}" }) { ver ->
                     val versionKey = "${ver.name}_${ver.packageType}"
@@ -560,6 +683,7 @@ private fun BedrockDownloadContent() {
                     val result = downloadResults[versionKey]
 
                     ElevatedCard(
+                        onClick = { if (!isDownloading) Navigator.navigate(Route.BedrockVersionDetail(ver)) },
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth(),
                         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
@@ -651,31 +775,21 @@ private fun BedrockDownloadContent() {
                                     )
                                 }
                             } else {
-                                FilledTonalButton(
-                                    onClick = {
-                                        scope.launch {
-                                            try {
-                                                BedrockDownloadManager.launchDownloadWU(ver)
-                                            } catch (e: Exception) {
-                                                loadError = "启动下载失败: ${e.message}"
-                                            }
-                                        }
-                                    },
-                                    shape = RoundedCornerShape(10.dp),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                    colors = ButtonDefaults.filledTonalButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                                    ),
-                                ) {
-                                    Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("下载安装", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
-                                }
+                                Icon(
+                                    Icons.Filled.ChevronRight,
+                                    contentDescription = "进入详情",
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                     }
                 }
+            }
+            VerticalScrollbar(
+                adapter = rememberScrollbarAdapter(listState),
+                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+            )
             }
         }
     }

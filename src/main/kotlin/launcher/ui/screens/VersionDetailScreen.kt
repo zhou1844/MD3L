@@ -1,7 +1,9 @@
 package launcher.ui.screens
 
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -82,7 +84,8 @@ fun VersionDetailScreen(version: RemoteVersion) {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
+    Box(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState).padding(end = 8.dp)) {
         // ── 返回 + 标题 ──────────────────────────────────────────────────────
         Row(verticalAlignment = Alignment.CenterVertically) {
             FilledTonalIconButton(onClick = { Navigator.back() }, shape = RoundedCornerShape(12.dp), modifier = Modifier.size(40.dp)) {
@@ -345,6 +348,11 @@ fun VersionDetailScreen(version: RemoteVersion) {
                 Text("确认下载并安装", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
             }
         }
+    }
+    VerticalScrollbar(
+        adapter = rememberScrollbarAdapter(scrollState),
+        modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+    )
     }
 }
 

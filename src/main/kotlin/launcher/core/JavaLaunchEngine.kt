@@ -232,21 +232,43 @@ class JavaLaunchEngine : ILaunchEngine {
     private fun enableResourcePack(gameDir: File, packName: String) {
         val optionsFile = File(gameDir, "options.txt")
         val lines = if (optionsFile.exists()) optionsFile.readLines(Charsets.UTF_8).toMutableList() else mutableListOf()
-        val packValue = """["file/$packName","$packName"]"""
-        val idx = lines.indexOfFirst { it.startsWith("resourcePacks:") }
-        if (idx >= 0) lines[idx] = "resourcePacks:$packValue" else lines.add("resourcePacks:$packValue")
-        val incompatibleIdx = lines.indexOfFirst { it.startsWith("incompatibleResourcePacks:") }
-        if (incompatibleIdx >= 0) lines[incompatibleIdx] = "incompatibleResourcePacks:$packValue" else lines.add("incompatibleResourcePacks:$packValue")
+        val fileEntry = "file/$packName"
+
+        fun insertIntoPackLine(key: String) {
+            val idx = lines.indexOfFirst { it.startsWith("$key:") }
+            if (idx >= 0) {
+                val existing = lines[idx].substringAfter("$key:")
+                // 已包含则不重复添加
+                if (fileEntry in existing) return
+                // 将条目插入到已有列表的末尾（保留 vanilla 等默认包）
+                val trimmed = existing.trim()
+                val newList = if (trimmed == "[]" || trimmed.isBlank()) {
+                    "[\"$fileEntry\"]"
+                } else {
+                    trimmed.trimEnd(']') + ",\"$fileEntry\"]"
+                }
+                lines[idx] = "$key:$newList"
+            } else {
+                lines.add("$key:[\"$fileEntry\"]")
+            }
+        }
+
+        insertIntoPackLine("resourcePacks")
         optionsFile.writeText(lines.joinToString("\n") + "\n", Charsets.UTF_8)
     }
 
     private fun removeResourcePackFromOptions(gameDir: File, packName: String) {
         val optionsFile = File(gameDir, "options.txt")
         if (!optionsFile.exists()) return
+        val fileEntry = "file/$packName"
         val lines = optionsFile.readLines(Charsets.UTF_8).toMutableList()
         val idx = lines.indexOfFirst { it.startsWith("resourcePacks:") }
-        if (idx >= 0 && packName in lines[idx]) {
-            lines[idx] = "resourcePacks:[]"
+        if (idx >= 0 && fileEntry in lines[idx]) {
+            // 只移除皮肤包条目，保留其他包
+            lines[idx] = lines[idx]
+                .replace(",\"$fileEntry\"", "")
+                .replace("\"$fileEntry\",", "")
+                .replace("\"$fileEntry\"", "")
             optionsFile.writeText(lines.joinToString("\n") + "\n", Charsets.UTF_8)
         }
     }
