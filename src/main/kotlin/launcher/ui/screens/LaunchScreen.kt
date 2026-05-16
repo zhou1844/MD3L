@@ -5,16 +5,20 @@ import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -56,6 +60,8 @@ import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
 import java.net.URI
+import launcher.ui.theme.IosAppLaunchCurve
+import launcher.ui.theme.IosAppLaunchDuration
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,6 +82,8 @@ fun LaunchScreen() {
     val uiLocked = globalLaunching || gameRunning
     var launchMessage by remember { mutableStateOf("") }
     val downloadProgress by DownloadManager.progress.collectAsState()
+    val bedrockDownloading by BedrockDownloadManager.downloadingVersions.collectAsState()
+    val bedrockDownloadResults by BedrockDownloadManager.downloadResults.collectAsState()
 
     // ── AccountRepository StateFlow 响应式绑定 ──────────────────────────────
     val accountList by AccountRepository.accounts.collectAsState()
@@ -156,24 +164,35 @@ fun LaunchScreen() {
         versionPopupVisible.targetState = showVersionPopup
     }
 
-    LaunchedEffect(Unit) {
-        val loadedSettings = withContext(Dispatchers.IO) { AppSettings.load() }
-        settings = loadedSettings
-        nameInput = loadedSettings.playerName
-        AccountRepository.loadFromDisk()
+    suspend fun rescanLocalVersions(loadedSettings: AppSettings, forceReselect: Boolean) {
         val scannedVersions = VersionScanner.scan(loadedSettings.minecraftDir)
         val scannedBedrock = VersionScanner.scanBedrock(loadedSettings.minecraftDir)
         versions = scannedVersions
         bedrockVersions = scannedBedrock
         val allScanned = scannedVersions + scannedBedrock
-        if (selectedVersion == null) {
+        if (forceReselect || selectedVersion == null || allScanned.none { it.id == selectedVersion?.id && it.type == selectedVersion?.type }) {
             selectedVersion = allScanned.firstOrNull {
                 it.id == loadedSettings.lastVersionId &&
                     (loadedSettings.lastVersionType.isBlank() || it.type == loadedSettings.lastVersionType)
             } ?: scannedVersions.firstOrNull() ?: scannedBedrock.firstOrNull()
         }
+    }
+
+    LaunchedEffect(Unit) {
+        val loadedSettings = withContext(Dispatchers.IO) { AppSettings.load() }
+        settings = loadedSettings
+        nameInput = loadedSettings.playerName
+        AccountRepository.loadFromDisk()
+        rescanLocalVersions(loadedSettings, forceReselect = true)
         // 异步抓取官方资讯流
         NewsRepository.refresh()
+    }
+
+    LaunchedEffect(bedrockDownloading, bedrockDownloadResults) {
+        if (bedrockDownloading.isNotEmpty() || bedrockDownloadResults.isEmpty()) return@LaunchedEffect
+        val loadedSettings = withContext(Dispatchers.IO) { AppSettings.load() }
+        settings = loadedSettings
+        rescanLocalVersions(loadedSettings, forceReselect = false)
     }
 
     LaunchedEffect(crashReport) {
@@ -248,9 +267,12 @@ fun LaunchScreen() {
                     }
                 }
                 else -> {
+                    val newsListState = rememberLazyListState()
+                    Box(modifier = Modifier.fillMaxSize()) {
                     LazyColumn(
+                        state = newsListState,
                         verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().padding(end = 8.dp),
                     ) {
                         items(newsList, key = { it.title + it.date }) { entry ->
                             ElevatedCard(
@@ -323,6 +345,11 @@ fun LaunchScreen() {
                                 }
                             }
                         }
+                    }
+                    VerticalScrollbar(
+                        adapter = rememberScrollbarAdapter(newsListState),
+                        modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                    )
                     }
                 }
             }
@@ -728,9 +755,6 @@ fun LaunchScreen() {
                                         LaunchState.updateProgress(25, "正在加载启动配置…")
                                         val s = withContext(Dispatchers.IO) { AppSettings.load() }
 
-                                        // Step 3: 同步存档数据
-                                        LaunchState.updateProgress(30, "正在同步基岩版存档数据…")
-
                                         val context = LaunchContext(
                                             version = ver, javaPath = "", memoryMb = 0,
                                             playerName = "", uuid = "", accessToken = "",
@@ -738,28 +762,8 @@ fun LaunchScreen() {
                                             windowWidth = 0, windowHeight = 0, fullscreen = false,
                                         )
 
-                                        // Step 4: 解析安装包
-                                        LaunchState.updateProgress(40, "正在解析基岩版安装包…")
-                                        kotlinx.coroutines.delay(100) // 让 UI 刷新
-
-                                        // Step 5: 检查/注册 Appx 安装槽位
-                                        LaunchState.updateProgress(50, "正在检查 Appx 安装槽位…")
-                                        kotlinx.coroutines.delay(100)
-
-                                        // Step 6: 注册 UWP 包
-                                        LaunchState.updateProgress(60, "正在注册 UWP 应用包…")
-                                        kotlinx.coroutines.delay(100)
-
-                                        // Step 7: 激活应用
-                                        LaunchState.updateProgress(70, "正在通过 COM 接口激活基岩版…")
+                                        engine.onProgress = { pct, msg -> LaunchState.updateProgress(pct, msg) }
                                         val process = withContext(Dispatchers.IO) { engine.execute(context) }
-
-                                        // Step 8: 等待进程启动
-                                        LaunchState.updateProgress(80, "正在等待 Minecraft 进程启动…")
-                                        kotlinx.coroutines.delay(500)
-
-                                        LaunchState.updateProgress(90, "正在确认游戏窗口…")
-                                        kotlinx.coroutines.delay(300)
 
                                         LaunchState.updateProgress(95, "基岩版启动成功，正在移交进程监控…")
                                         LaunchState.attachProcess(process, ver.id)
@@ -846,8 +850,8 @@ fun LaunchScreen() {
                         } else {
                             val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
                             ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = if (darkTheme) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimary,
+                                containerColor = if (darkTheme) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.primary,
+                                contentColor = if (darkTheme) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary,
                             )
                         },
                     ) {
@@ -912,22 +916,19 @@ fun LaunchScreen() {
         ) {
             AnimatedVisibility(
                 visibleState = versionPopupVisible,
-                enter = fadeIn(spring(stiffness = Spring.StiffnessLow)) +
+                enter = fadeIn(tween(IosAppLaunchDuration, easing = IosAppLaunchCurve)) +
                     scaleIn(
                         initialScale = 0.94f,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = Spring.StiffnessLow,
-                        ),
+                        animationSpec = tween(IosAppLaunchDuration, easing = IosAppLaunchCurve)
                     ),
-                exit = fadeOut(spring(stiffness = Spring.StiffnessMediumLow)) +
+                exit = fadeOut(tween(IosAppLaunchDuration / 2, easing = IosAppLaunchCurve)) +
                     scaleOut(
                         targetScale = 0.97f,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = Spring.StiffnessMediumLow,
-                        ),
+                        animationSpec = tween(IosAppLaunchDuration / 2, easing = IosAppLaunchCurve)
                     ),
+                modifier = Modifier
+                    .width(420.dp)
+                    .fillMaxHeight(0.8f)
             ) {
                 Surface(
                     shape = RoundedCornerShape(16.dp),

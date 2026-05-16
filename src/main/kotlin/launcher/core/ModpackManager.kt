@@ -173,7 +173,11 @@ object ModpackManager {
                 VersionRepository.invalidateCache(minecraftDir)
                 report("整合包导入完成: $versionId", 1f)
 
-                val warning = loaderOutcome.warning?.let { "\n$it" } ?: ""
+                var warning = loaderOutcome.warning?.let { "\n$it" } ?: ""
+                if (definition.kind == PackKind.CurseForge) {
+                    warning += "\n提示：检测到 CurseForge 整合包，暂不支持自动下载 CF 模组。已导入基础环境及配置，请自行将模组文件放入 mods 文件夹。"
+                }
+
                 logger.info("导入成功: $versionId")
                 println("[ModpackImport] ====== 导入成功: $versionId ======")
                 "整合包导入成功: $versionId$warning\n日志: ${logger.path}"
@@ -687,6 +691,17 @@ object ModpackManager {
             ?.firstOrNull()
     }
 
+    private fun hideVersionInJson(minecraftDir: String, versionId: String) {
+        runCatching {
+            val file = File(minecraftDir, "versions/$versionId/$versionId.json")
+            if (file.isFile) {
+                val root = json.parseToJsonElement(file.readText(Charsets.UTF_8)).jsonObject.toMutableMap()
+                root["md3l_hidden"] = JsonPrimitive(true)
+                file.writeText(json.encodeToString(JsonObject.serializer(), JsonObject(root)), Charsets.UTF_8)
+            }
+        }
+    }
+
     private suspend fun installLoaderIfNeeded(
         definition: PackDefinition,
         mcVersion: String,
@@ -741,6 +756,7 @@ object ModpackManager {
                                 ?.also { logger.warn("Fabric 安装异常，回收已存在加载器: ${error.message}") }
                                 ?: throw error
                         }
+                        hideVersionInJson(minecraftDir, id)
                         LoaderInstallOutcome(installedVersionId = id)
                     }
                     "NeoForge" -> {
@@ -768,6 +784,7 @@ object ModpackManager {
                             onLoaderProgress = onLoaderProgress,
                         )
                         println("[ModpackImport] NeoForge 安装完成, id=$id")
+                        hideVersionInJson(minecraftDir, id)
                         LoaderInstallOutcome(installedVersionId = id)
                     }
                     "Forge" -> {
@@ -796,6 +813,7 @@ object ModpackManager {
                             onLoaderProgress = onLoaderProgress,
                         )
                         println("[ModpackImport] Forge 安装完成, id=$id")
+                        hideVersionInJson(minecraftDir, id)
                         LoaderInstallOutcome(installedVersionId = id)
                     }
                     "Quilt" -> {
@@ -861,6 +879,7 @@ object ModpackManager {
         val root = json.parseToJsonElement(sourceJson.readText(Charsets.UTF_8)).jsonObject.toMutableMap()
         root["id"] = JsonPrimitive(targetId)
         root["inheritsFrom"] = JsonPrimitive(mcVersion)
+        root.remove("md3l_hidden")
         targetJson.writeText(json.encodeToString(JsonObject.serializer(), JsonObject(root)), Charsets.UTF_8)
     }
 
@@ -883,9 +902,10 @@ object ModpackManager {
             runCatching {
                 val root = json.parseToJsonElement(donorJson.readText(Charsets.UTF_8)).jsonObject.toMutableMap()
                 root["id"] = JsonPrimitive(mcVersion)
+                root["md3l_hidden"] = JsonPrimitive(true)
                 root.remove("inheritsFrom")
                 vanillaJson.writeText(json.encodeToString(JsonObject.serializer(), JsonObject(root)), Charsets.UTF_8)
-                println("[ModpackImport] 创建原版 JSON: ${vanillaJson.absolutePath}")
+                println("[ModpackImport] 创建原版 JSON (隐藏): ${vanillaJson.absolutePath}")
             }
         }
 

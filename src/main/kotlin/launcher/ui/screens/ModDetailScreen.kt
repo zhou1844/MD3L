@@ -1,8 +1,11 @@
 package launcher.ui.screens
 
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -308,9 +311,12 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                 }
             }
         } else {
+            val listState = rememberLazyListState()
+            Box(modifier = Modifier.fillMaxSize()) {
             LazyColumn(
+                state = listState,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().padding(end = 8.dp),
             ) {
                 items(filteredVersions, key = { it.id }) { ver ->
                     val isDownloading = downloadingId == ver.id
@@ -495,6 +501,11 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                         }
                     }
                 }
+            }
+            VerticalScrollbar(
+                adapter = rememberScrollbarAdapter(listState),
+                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+            )
             }
         }
     }

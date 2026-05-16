@@ -1,12 +1,17 @@
 package launcher.ui.theme
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+
+// ── Animations ──────────────────────────────────────────────────────────────
+val IosAppLaunchCurve = CubicBezierEasing(0.22f, 1.0f, 0.36f, 1.0f)
+val IosAppLaunchDuration = 550
 
 // ── Neutral dark tones (shared across all palettes) ─────────────────────────
 private val darkBackground = Color(0xFF111113)

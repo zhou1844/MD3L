@@ -85,34 +85,36 @@ object DownloadManager {
         )
 
         val job = scope.launch {
-            val jobs = tasks.map { task ->
-                launch {
-                    semaphore.withPermit {
-                        _progress.value = _progress.value.copy(currentFile = task.dest.name)
-                        val ok = downloadSingleFile(task, null) { bytes ->
-                            downloadedBytes += bytes
-                            val elapsed = (System.currentTimeMillis() - startTime).coerceAtLeast(1)
-                            val speed = downloadedBytes * 1000 / elapsed
-                            _progress.value = _progress.value.copy(
-                                downloadedBytes = downloadedBytes,
-                                speedBytesPerSec = speed,
-                            )
-                        }
-                        if (ok) {
-                            completedFiles++
-                            _progress.value = _progress.value.copy(completedFiles = completedFiles)
-                        } else {
-                            synchronized(failed) { failed.add(task.url) }
+            try {
+                val jobs = tasks.map { task ->
+                    launch {
+                        semaphore.withPermit {
+                            _progress.value = _progress.value.copy(currentFile = task.dest.name)
+                            val ok = downloadSingleFile(task, null) { bytes ->
+                                downloadedBytes += bytes
+                                val elapsed = (System.currentTimeMillis() - startTime).coerceAtLeast(1)
+                                val speed = downloadedBytes * 1000 / elapsed
+                                _progress.value = _progress.value.copy(
+                                    downloadedBytes = downloadedBytes,
+                                    speedBytesPerSec = speed,
+                                )
+                            }
+                            if (ok) {
+                                completedFiles++
+                                _progress.value = _progress.value.copy(completedFiles = completedFiles)
+                            } else {
+                                synchronized(failed) { failed.add(task.url) }
+                            }
                         }
                     }
                 }
+                jobs.joinAll()
+            } finally {
+                _progress.value = _progress.value.copy(
+                    isRunning = false,
+                    failed = failed.toList(),
+                )
             }
-            jobs.joinAll()
-
-            _progress.value = _progress.value.copy(
-                isRunning = false,
-                failed = failed.toList(),
-            )
         }
         downloadJob = job
 

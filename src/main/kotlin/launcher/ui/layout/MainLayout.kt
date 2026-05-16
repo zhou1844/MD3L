@@ -27,9 +27,13 @@ import launcher.ui.nav.Route
 import launcher.ui.nav.Screen
 import launcher.ui.nav.primaryTab
 import launcher.ui.screens.*
+import launcher.ui.theme.IosAppLaunchCurve
+import launcher.ui.theme.IosAppLaunchDuration
 
 object Navigator {
     var current by mutableStateOf<Route>(Route.Launch)
+        private set
+    var lastPrimaryTap by mutableStateOf<Screen>(Screen.Launch)
         private set
 
     private val backStack = mutableListOf<Route>()
@@ -47,6 +51,7 @@ object Navigator {
 
     fun navigatePrimary(screen: Screen) {
         backStack.clear()
+        lastPrimaryTap = screen
         current = when (screen) {
             Screen.Launch -> Route.Launch
             Screen.Versions -> Route.Versions
@@ -76,19 +81,7 @@ fun MainLayout(modifier: Modifier = Modifier) {
                 .clip(RoundedCornerShape(16.dp))
                 .alpha(if (uiLocked) 0.45f else 1f),
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            header = {
-                Text(
-                    text = "MD3L",
-                    style = MaterialTheme.typography.labelLarge.copy(
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 1.5.sp,
-                        fontSize = 14.sp,
-                    ),
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1,
-                    modifier = Modifier.padding(bottom = 8.dp, top = 4.dp),
-                )
-            },
+            header = {},
         ) {
             Spacer(Modifier.height(2.dp))
             Screen.entries.forEach { screen ->
@@ -138,22 +131,61 @@ fun MainLayout(modifier: Modifier = Modifier) {
             AnimatedContent(
                 targetState = currentRoute,
                 transitionSpec = {
-                    val enter = fadeIn(spring(stiffness = Spring.StiffnessLow)) +
-                            scaleIn(
-                                initialScale = 0.96f,
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                    stiffness = Spring.StiffnessLow
+                    val targetTab = Navigator.lastPrimaryTap
+                    val tabIndex = Screen.entries.indexOf(targetTab)
+                    
+                    val isTargetPrimary = targetState == Route.Launch || targetState == Route.Versions || 
+                                       targetState == Route.Download || targetState == Route.Mods || 
+                                       targetState == Route.Settings
+                                       
+                    val isInitialPrimary = initialState == Route.Launch || initialState == Route.Versions || 
+                                       initialState == Route.Download || initialState == Route.Mods || 
+                                       initialState == Route.Settings
+
+                    if (!isTargetPrimary && isInitialPrimary) {
+                        // iOS Push: Slide in from right
+                        val enter = slideInHorizontally(
+                            initialOffsetX = { it },
+                            animationSpec = tween(IosAppLaunchDuration, easing = IosAppLaunchCurve)
+                        ) + fadeIn(tween(IosAppLaunchDuration / 2))
+                        
+                        val exit = slideOutHorizontally(
+                            targetOffsetX = { -it / 3 },
+                            animationSpec = tween(IosAppLaunchDuration, easing = IosAppLaunchCurve)
+                        ) + fadeOut(tween(IosAppLaunchDuration / 2))
+                        
+                        enter togetherWith exit
+                    } else if (isTargetPrimary && !isInitialPrimary) {
+                        // iOS Pop: Slide out to right
+                        val enter = slideInHorizontally(
+                            initialOffsetX = { -it / 3 },
+                            animationSpec = tween(IosAppLaunchDuration, easing = IosAppLaunchCurve)
+                        ) + fadeIn(tween(IosAppLaunchDuration / 2))
+                        
+                        val exit = slideOutHorizontally(
+                            targetOffsetX = { it },
+                            animationSpec = tween(IosAppLaunchDuration, easing = IosAppLaunchCurve)
+                        ) + fadeOut(tween(IosAppLaunchDuration / 2))
+                        
+                        enter togetherWith exit
+                    } else {
+                        // Switch between Primary Tabs: iOS App Launch style (spring scale from icon)
+                        val yOrigin = if (tabIndex >= 0) 0.15f + tabIndex * 0.15f else 0.5f
+                        val origin = androidx.compose.ui.graphics.TransformOrigin(0.05f, yOrigin)
+                        
+                        val enter = fadeIn(tween(IosAppLaunchDuration / 2, easing = IosAppLaunchCurve)) +
+                                scaleIn(
+                                    initialScale = 0.35f,
+                                    animationSpec = tween(IosAppLaunchDuration, easing = IosAppLaunchCurve),
+                                    transformOrigin = origin
                                 )
-                            ) + slideInVertically(
-                                initialOffsetY = { it / 25 },
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                    stiffness = Spring.StiffnessLow
+                        val exit = fadeOut(tween(IosAppLaunchDuration / 3, easing = IosAppLaunchCurve)) + 
+                                scaleOut(
+                                    targetScale = 1.08f,
+                                    animationSpec = tween(IosAppLaunchDuration / 3, easing = IosAppLaunchCurve)
                                 )
-                            )
-                    val exit = fadeOut(tween(150)) + scaleOut(targetScale = 0.98f, animationSpec = tween(150))
-                    enter togetherWith exit
+                        enter togetherWith exit
+                    }
                 },
                 modifier = Modifier.fillMaxSize().padding(16.dp),
             ) { route ->
@@ -164,6 +196,7 @@ fun MainLayout(modifier: Modifier = Modifier) {
                     is Route.Mods -> ModScreen()
                     is Route.Settings -> SettingsScreen()
                     is Route.VersionDetail -> VersionDetailScreen(route.version)
+                    is Route.BedrockVersionDetail -> BedrockVersionDetailScreen(route.version)
                     is Route.ModDetail -> ModDetailScreen(route.project, route.edition, route.contentType)
                     is Route.DownloadManager -> DownloadManagerScreen()
                 }

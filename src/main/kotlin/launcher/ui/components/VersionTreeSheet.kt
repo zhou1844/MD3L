@@ -9,6 +9,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,10 +24,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import launcher.core.RemoteVersion
+import launcher.ui.theme.IosAppLaunchCurve
+import launcher.ui.theme.IosAppLaunchDuration
 
 /**
  * 二级树状版本选择器 —— 作为 ModalBottomSheet 的内容。
@@ -58,10 +63,11 @@ class JavaVersionTree(
 ) {
     override val children = listOf(
         VersionCategory("正式版 (Release)", "release", releases),
-        VersionCategory("快照 (Snapshot)", "snapshot", snapshots),
+        VersionCategory("快照 (Snapshot)", "snapshot", snapshots.filter { it.id !in launcher.core.VersionScanner.aprilFoolIds }),
+        VersionCategory("愚人节 (April Fool)", "april_fool", snapshots.filter { it.id in launcher.core.VersionScanner.aprilFoolIds }),
         VersionCategory("远古 Beta", "old_beta", oldBeta),
         VersionCategory("远古 Alpha", "old_alpha", oldAlpha),
-    )
+    ).filter { it.versions.isNotEmpty() }
 }
 
 class BedrockVersionTree(
@@ -131,7 +137,8 @@ fun buildLocalVersionTree(
 ): List<LocalVersionCategory> {
     return listOf(
         LocalVersionCategory("正式版 (Release)", "release", localVersions.filter { it.type == "release" }),
-        LocalVersionCategory("快照 (Snapshot)", "snapshot", localVersions.filter { it.type == "snapshot" }),
+        LocalVersionCategory("快照 (Snapshot)", "snapshot", localVersions.filter { it.type == "snapshot" && it.id !in launcher.core.VersionScanner.aprilFoolIds }),
+        LocalVersionCategory("愚人节 (April Fool)", "april_fool", localVersions.filter { it.id in launcher.core.VersionScanner.aprilFoolIds }),
         LocalVersionCategory("基岩版 (Bedrock)", "bedrock", bedrockVersions),
         LocalVersionCategory("远古 Beta", "old_beta", localVersions.filter { it.type == "old_beta" }),
         LocalVersionCategory("远古 Alpha", "old_alpha", localVersions.filter { it.type == "old_alpha" }),
@@ -185,7 +192,7 @@ fun LocalVersionTreeSheetContent(
                             animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
                         )
                         
-                        Column(modifier = Modifier.fillMaxWidth().animateContentSize(spring(stiffness = Spring.StiffnessMediumLow))) {
+                        Column(modifier = Modifier.fillMaxWidth().animateContentSize(tween(IosAppLaunchDuration, easing = IosAppLaunchCurve))) {
                             ElevatedCard(
                                 onClick = { expandedCategory = if (catExpanded) null else category.type },
                                 shape = RoundedCornerShape(12.dp),
@@ -221,8 +228,8 @@ fun LocalVersionTreeSheetContent(
                             
                             AnimatedVisibility(
                                 visible = catExpanded,
-                                enter = expandVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(),
-                                exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut(),
+                                enter = expandVertically(tween(IosAppLaunchDuration, easing = IosAppLaunchCurve)) + fadeIn(),
+                                exit = shrinkVertically(tween(IosAppLaunchDuration / 2, easing = IosAppLaunchCurve)) + fadeOut(),
                             ) {
                                 Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
                                     category.versions.forEach { version ->
@@ -367,8 +374,12 @@ fun VersionTreeSheetContent(
                                 else MaterialTheme.colorScheme.surfaceContainer,
                                 animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
                             )
+                            val iconRotation by animateFloatAsState(
+                                targetValue = if (catExpanded) 180f else 0f,
+                                animationSpec = tween(IosAppLaunchDuration / 2, easing = IosAppLaunchCurve)
+                            )
                             
-                            Column(modifier = Modifier.fillMaxWidth().animateContentSize(spring(stiffness = Spring.StiffnessMediumLow))) {
+                            Column(modifier = Modifier.fillMaxWidth().animateContentSize(tween(IosAppLaunchDuration, easing = IosAppLaunchCurve))) {
                                 Surface(
                                     onClick = { expandedCategory = if (catExpanded) null else catKey },
                                     shape = RoundedCornerShape(10.dp),
@@ -401,7 +412,7 @@ fun VersionTreeSheetContent(
                                         Icon(
                                             if (catExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                                             contentDescription = null,
-                                            modifier = Modifier.size(16.dp),
+                                            modifier = Modifier.size(16.dp).graphicsLayer(rotationZ = iconRotation),
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
@@ -409,8 +420,8 @@ fun VersionTreeSheetContent(
 
                                 AnimatedVisibility(
                                     visible = catExpanded,
-                                    enter = expandVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(),
-                                    exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut(),
+                                    enter = expandVertically(tween(IosAppLaunchDuration, easing = IosAppLaunchCurve)) + fadeIn(),
+                                    exit = shrinkVertically(tween(IosAppLaunchDuration / 2, easing = IosAppLaunchCurve)) + fadeOut(),
                                 ) {
                                     Column(modifier = Modifier.fillMaxWidth().padding(top = 2.dp)) {
                                         val displayVersions = category.versions.take(100)

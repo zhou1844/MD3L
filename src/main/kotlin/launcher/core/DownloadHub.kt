@@ -89,6 +89,6 @@ object DownloadHub {
 
     /** 清除已完成/错误的任务 */
     fun clearFinished() {
-        _tasks.value = _tasks.value.filter { it.status == TaskStatus.Running || it.status == TaskStatus.Paused }
+        _tasks.value = _tasks.value.filter { it.status == TaskStatus.Running }
     }
 }

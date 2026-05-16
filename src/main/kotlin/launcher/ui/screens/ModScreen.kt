@@ -1,9 +1,11 @@
 package launcher.ui.screens
 
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -140,7 +142,7 @@ fun ModScreen() {
         Spacer(Modifier.height(8.dp))
 
         // ── 搜索 + MC版本过滤 ────────────────────────────────────────────────
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(56.dp)) {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
@@ -151,7 +153,7 @@ fun ModScreen() {
                 },
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).fillMaxHeight()
                     .onPreviewKeyEvent { event ->
                         if (event.key == Key.Enter && event.type == KeyEventType.KeyDown) {
                             doSearch(); true
@@ -160,7 +162,7 @@ fun ModScreen() {
                 textStyle = MaterialTheme.typography.bodySmall,
             )
             Spacer(Modifier.width(6.dp))
-            ExposedDropdownMenuBox(expanded = mcVersionExpanded, onExpandedChange = { mcVersionExpanded = it }) {
+            ExposedDropdownMenuBox(expanded = mcVersionExpanded, onExpandedChange = { mcVersionExpanded = it }, modifier = Modifier.fillMaxHeight()) {
                 OutlinedTextField(
                     value = mcVersionFilter.ifBlank { "全部" },
                     onValueChange = {},
@@ -169,7 +171,7 @@ fun ModScreen() {
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(mcVersionExpanded) },
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.width(110.dp).menuAnchor(),
+                    modifier = Modifier.width(110.dp).fillMaxHeight().menuAnchor(),
                     textStyle = MaterialTheme.typography.bodySmall,
                 )
                 ExposedDropdownMenu(expanded = mcVersionExpanded, onDismissRequest = { mcVersionExpanded = false }) {
@@ -179,7 +181,12 @@ fun ModScreen() {
                 }
             }
             Spacer(Modifier.width(6.dp))
-            FilledTonalButton(onClick = { doSearch() }, shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 12.dp)) {
+            FilledTonalButton(
+                onClick = { doSearch() },
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                modifier = Modifier.fillMaxHeight(),
+            ) {
                 Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
             }
         }
@@ -235,10 +242,16 @@ fun ModScreen() {
                 }
             }
         } else {
-            LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
-                items(projects, key = { it.slug }) { project ->
-                    ModProjectCard(project, selectedEdition, selectedType)
+            Box(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize().padding(end = 8.dp)) {
+                    items(projects, key = { it.slug }) { project ->
+                        ModProjectCard(project, selectedEdition, selectedType)
+                    }
                 }
+                VerticalScrollbar(
+                    adapter = rememberScrollbarAdapter(listState),
+                    modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                )
             }
         }
     }
