@@ -103,8 +103,8 @@ object GameProcessManager {
                     val allOutput = synchronized(lastLines) { lastLines.joinToString("\n") }
                     val tail = allOutput.lines().takeLast(18).joinToString("\n")
                     val targetLog = outputLog ?: File(
-                        System.getProperty("user.home"),
-                        ".md3l/crashes/${versionId.ifBlank { "unknown" }}-${System.currentTimeMillis()}.log",
+                        LauncherDirs.dataDir,
+                        "crashes/${versionId.ifBlank { "unknown" }}-${System.currentTimeMillis()}.log",
                     )
                     targetLog.parentFile?.mkdirs()
                     targetLog.appendText("\n\n── Game Output (exit $exitCode) ──\n$allOutput\n", Charsets.UTF_8)

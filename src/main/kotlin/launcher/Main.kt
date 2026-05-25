@@ -15,15 +15,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.DragData
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.onExternalDrag
 import androidx.compose.ui.window.*
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import kotlinx.coroutines.launch
 import launcher.core.AppSettings
 import launcher.core.DownloadManager
 import launcher.core.DownloadHub
+import launcher.core.LauncherDirs
 import launcher.core.ModpackManager
 import launcher.ui.layout.MainLayout
+import launcher.ui.layout.fastBoxBlur
 import launcher.ui.theme.*
 import java.awt.Image
 import java.awt.Taskbar
@@ -32,9 +39,6 @@ import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.Transferable
 import java.awt.dnd.*
 import java.io.File
-import androidx.compose.ui.DragData
-import androidx.compose.ui.ExperimentalComposeUiApi
-import androidx.compose.ui.onExternalDrag
 import com.sun.jna.Function
 import com.sun.jna.Native
 import com.sun.jna.NativeLibrary
@@ -42,7 +46,20 @@ import com.sun.jna.platform.win32.WinDef
 import java.net.URI
 
 fun main() {
-    val md3lDir = File(System.getProperty("user.home"), ".md3l")
+    // 在任何窗口创建前设置任务栏图标，否则会显示 Java 默认图标
+    runCatching {
+        val iconUrl = Thread.currentThread().contextClassLoader.getResource("app_icon.png")
+        if (iconUrl != null) {
+            val images = javax.imageio.ImageIO.read(iconUrl)
+            if (images != null) {
+                if (java.awt.Taskbar.isTaskbarSupported()) {
+                    runCatching { java.awt.Taskbar.getTaskbar().iconImage = images }
+                }
+            }
+        }
+    }
+    LauncherDirs.migrateFromLegacyIfNeeded()
+    val md3lDir = LauncherDirs.dataDir
     if (File(md3lDir, "software_render").exists() || File(md3lDir, "software_render.txt").exists()) {
         System.setProperty("skiko.renderApi", "SOFTWARE")
     }
@@ -56,11 +73,13 @@ private fun runLauncherApp() = application {
         position = WindowPosition(Alignment.Center),
     )
     val appIconImage = remember { loadTaskbarIconImage() }
+    val windowIcon = painterResource("app_icon.ico")
 
     Window(
         onCloseRequest = ::exitApplication,
         state = windowState,
         title = "MD3L",
+        icon = windowIcon,
         undecorated = true,
         transparent = true,
         visible = true,
@@ -84,11 +103,38 @@ private fun runLauncherApp() = application {
             // 立即在后台加载设置，不阻塞 UI 线程
             scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 val settings = runCatching { AppSettings.load() }.getOrDefault(AppSettings())
+                // 在 IO 线程预处理壁纸（仅解码与缩放），模糊改由 GPU 实时完成
+                val bgKey = settings.backgroundImagePath
+                if (settings.backgroundImagePath.isNotBlank()) {
+                    runCatching {
+                        var src = javax.imageio.ImageIO.read(java.io.File(settings.backgroundImagePath))
+                        if (src != null) {
+                            val maxDim = 1280
+                            if (src.width > maxDim || src.height > maxDim) {
+                                val s = maxDim.toFloat() / maxOf(src.width, src.height)
+                                val nw = (src.width * s).toInt().coerceAtLeast(1)
+                                val nh = (src.height * s).toInt().coerceAtLeast(1)
+                                val tmp = java.awt.image.BufferedImage(nw, nh, java.awt.image.BufferedImage.TYPE_INT_RGB)
+                                tmp.createGraphics().also { g ->
+                                    g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+                                    g.drawImage(src, 0, 0, nw, nh, null); g.dispose()
+                                }
+                                src = tmp
+                            }
+                            ThemeState.cachedBgBitmap = src.toComposeImageBitmap()
+                            ThemeState.cachedBgKey = bgKey
+                        }
+                    }
+                }
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     currentSettings = settings
                     val idx = settings.accentIndex.coerceIn(AllAccents.indices)
                     ThemeState.accent = AllAccents[idx]
                     ThemeState.isDark = settings.themeMode == "dark"
+                    ThemeState.backgroundImagePath = settings.backgroundImagePath
+                    ThemeState.backgroundBlurRadius = settings.backgroundBlurRadius
+                    ThemeState.backgroundBrightness = settings.backgroundBrightness
+                    ThemeState.uiPanelOpacity = settings.uiPanelOpacity
                     DownloadManager.activeMirror = settings.downloadMirror
                     // 若首次启动需要 EULA，切换到 EULA 界面
                     if (!settings.eulaAccepted) eulaAccepted = false
@@ -96,7 +142,7 @@ private fun runLauncherApp() = application {
 
                 runCatching { launcher.core.BundledRuntimeInstaller.ensureInstalled() }
 
-                val updateFlag = File(System.getProperty("user.home"), ".md3l/update_success")
+                val updateFlag = File(LauncherDirs.dataDir, "update_success")
                 if (updateFlag.exists()) {
                     val tag = runCatching { updateFlag.readText().trim() }.getOrNull()
                     runCatching { updateFlag.delete() }
@@ -153,8 +199,11 @@ private fun runLauncherApp() = application {
 }
 
 private fun loadTaskbarIconImage(): Image? {
-    val url = Thread.currentThread().contextClassLoader.getResource("app_icon.ico") ?: return null
-    return Toolkit.getDefaultToolkit().createImage(url)
+    return runCatching {
+        val url = Thread.currentThread().contextClassLoader.getResource("app_icon.png") ?: return null
+        val images = javax.imageio.ImageIO.read(url)
+        images
+    }.getOrNull()
 }
 
 private fun allowElevatedWindowDrop(window: java.awt.Window) {
@@ -483,6 +532,14 @@ private fun TitleBar(
             modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Text(
+                "MD3L",
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp,
+                ),
+                color = MaterialTheme.colorScheme.primary,
+            )
             Spacer(Modifier.weight(1f))
 
             // ── Window buttons ────────────────────────────────────────────────

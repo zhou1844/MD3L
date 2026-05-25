@@ -88,7 +88,7 @@ object JavaManager {
      * 一站式启动前 Java 解析：
      * 1. 判断所需 Java 大版本
      * 2. 在本地查找
-     * 3. 如缺失，自动下载到 ~/.md3l/java-{ver}
+     * 3. 如缺失，自动下载到 <启动器目录>/data/java-{ver}
      * 返回 java.exe 的完整路径。
      */
     suspend fun resolveJavaForLaunch(
@@ -133,7 +133,7 @@ object JavaManager {
         }
 
         // 检查之前下载的
-        val md3lDir = File(System.getProperty("user.home"), ".md3l")
+        val md3lDir = LauncherDirs.dataDir
         val cachedExe = findJavaExeInDir(File(md3lDir, "java-$required"))
         if (cachedExe != null && cachedExe.exists()) {
             val exe = cachedExe.absolutePath
@@ -205,7 +205,7 @@ object JavaManager {
             onProgress("本地 Java $required 运行时不完整，尝试其他来源")
         }
 
-        val md3lDir = File(System.getProperty("user.home"), ".md3l")
+        val md3lDir = LauncherDirs.dataDir
         val cachedExe = findJavaExeInDir(File(md3lDir, "java-$required"))
         if (cachedExe != null && cachedExe.exists()) {
             val exe = cachedExe.absolutePath
