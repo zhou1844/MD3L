@@ -37,7 +37,7 @@ data class GithubRelease(
 
 data class UpdateState(
     val hasUpdate: Boolean = false,
-    val releaseInfo: GithubRelease? = null,
+    val releaseInfo: GiteeRelease? = null,
     val isDownloading: Boolean = false,
     val downloadProgress: Float = 0f,
     val downloadedBytes: Long = 0L,
@@ -47,13 +47,11 @@ data class UpdateState(
 )
 
 object AutoUpdater {
-    const val CURRENT_VERSION = "1.3.2"
-    // GitHub Releases API — 无大小限制，国内通过镜像加速
-    private const val GITHUB_REPO = "zhou1844/MD3L"
+    const val CURRENT_VERSION = "1.3.5"
+    private const val GITEE_OWNER = "foolish-bird-crossing"
+    private const val GITEE_REPO = "md3llauncher"
     private val API_URLS = listOf(
-        "https://api.github.com/repos/$GITHUB_REPO/releases/latest",
-        "https://api.kgithub.com/repos/$GITHUB_REPO/releases/latest",
-        "https://githubapi.us.kg/repos/$GITHUB_REPO/releases/latest",
+        "https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO/releases/latest",
     )
 
     private val client = HttpClient(CIO) {
@@ -81,7 +79,6 @@ object AutoUpdater {
                 val proc = ProcessBuilder(
                     "curl.exe", "-sL",
                     "--connect-timeout", "8", "--max-time", "15",
-                    "-H", "Accept: application/vnd.github+json",
                     "-H", "User-Agent: MD3L-Launcher",
                     apiUrl,
                 ).redirectErrorStream(true).start()
@@ -89,16 +86,9 @@ object AutoUpdater {
                 proc.waitFor(20, java.util.concurrent.TimeUnit.SECONDS)
                 if (proc.exitValue() == 0 && out.length > 50) out else null
             } ?: return false
-            val release = json.decodeFromString<GithubRelease>(text)
+            val release = json.decodeFromString<GiteeRelease>(text)
             if (release.tag_name.isBlank()) return false
-            // 优先用 tag_name，但如果 tag 是固定名称（如 "Releases"）没有版本号，
-            // 则回退到 name 字段（如 "release-1.3.2"）
-            val versionSource = if (extractVersionNumbers(release.tag_name) == listOf(0)) {
-                release.name.ifBlank { release.tag_name }
-            } else {
-                release.tag_name
-            }
-            if (compareVersions(versionSource, CURRENT_VERSION) > 0) {
+            if (compareVersions(release.tag_name, CURRENT_VERSION) > 0) {
                 _state.value = _state.value.copy(hasUpdate = true, releaseInfo = release)
             }
             true
@@ -112,7 +102,7 @@ object AutoUpdater {
         val release = _state.value.releaseInfo ?: return
         val asset = release.assets.firstOrNull { it.name.lowercase().endsWith(".exe") }
             ?: release.assets.firstOrNull()
-        
+
         if (asset == null) {
             _state.value = _state.value.copy(error = "未找到可下载的更新文件")
             return
@@ -129,25 +119,15 @@ object AutoUpdater {
 
         scope.launch {
             try {
-                val cacheDir = File(System.getProperty("user.home"), ".md3l/updates")
+                val cacheDir = File(LauncherDirs.dataDir, "updates")
                 cacheDir.mkdirs()
                 val destFile = File(cacheDir, asset.name)
-                
-                // 如果已经有缓存的旧包，先删掉
-                if (destFile.exists()) {
-                    destFile.delete()
-                }
 
-                // 国内加速镜像列表（并发竞速取最快）
-                val originalUrl = asset.browser_download_url
-                val mirrors = listOf(
-                    "https://ghproxy.net/$originalUrl",
-                    "https://gh-proxy.com/$originalUrl",
-                    "https://github.moeyy.xyz/$originalUrl",
-                    originalUrl,
-                )
-                val downloadUrl = pickFastestMirror(mirrors) ?: originalUrl
-                println("[AutoUpdater] 选用镜像: $downloadUrl")
+                if (destFile.exists()) destFile.delete()
+
+                // Gitee 附件是国内直连，直接用原始 URL
+                val downloadUrl = asset.browser_download_url
+                println("[AutoUpdater] 下载: $downloadUrl")
 
                 val success = downloadWithCurl(downloadUrl, destFile) { downloaded, total, speed ->
                     _state.value = _state.value.copy(
@@ -160,32 +140,70 @@ object AutoUpdater {
 
                 if (success && destFile.exists() && destFile.length() > 0) {
                     println("[AutoUpdater] 下载完成，准备替换: ${destFile.absolutePath}")
-                    try { File(System.getProperty("user.home"), ".md3l/update_success").writeText(release.tag_name) } catch (_: Exception) {}
-                    
-                    val parentExe = ProcessHandle.current().parent().orElse(null)?.info()?.command()?.orElse("") ?: ""
-                    val currentExePath = if (parentExe.contains("MD3L", ignoreCase = true) && parentExe.endsWith(".exe", ignoreCase = true)) {
-                        parentExe
-                    } else {
-                        File(System.getProperty("user.dir"), "MD3L.exe").absolutePath
+                    try { File(LauncherDirs.dataDir, "update_success").writeText(release.tag_name) } catch (_: Exception) {}
+
+                    // 1. 优先用当前进程自身命令（JVM打包EXE时有效）
+                    // 2. 其次遍历父进程链找 MD3L*.exe
+                    // 3. 最后 fallback 到 user.dir/MD3L.exe
+                    fun resolveCurrentExe(): String {
+                        val own = ProcessHandle.current().info().command().orElse("") ?: ""
+                        if (own.endsWith(".exe", ignoreCase = true) &&
+                            !own.contains("java", ignoreCase = true) &&
+                            !own.contains("javaw", ignoreCase = true)) return own
+
+                        var ph: ProcessHandle? = ProcessHandle.current().parent().orElse(null)
+                        repeat(4) {
+                            val cmd = ph?.info()?.command()?.orElse("") ?: ""
+                            if (cmd.endsWith(".exe", ignoreCase = true) &&
+                                !cmd.contains("java", ignoreCase = true) &&
+                                !cmd.contains("powershell", ignoreCase = true) &&
+                                !cmd.contains("cmd.exe", ignoreCase = true)) return cmd
+                            ph = ph?.parent()?.orElse(null)
+                        }
+                        // fallback: 找 user.dir 下唯一的 .exe
+                        val dir = File(System.getProperty("user.dir"))
+                        val exes = dir.listFiles { f -> f.extension.equals("exe", ignoreCase = true) }
+                        val best = exes?.firstOrNull { it.name.contains("MD3L", ignoreCase = true) }
+                            ?: exes?.firstOrNull()
+                        return best?.absolutePath ?: File(dir, "MD3L.exe").absolutePath
                     }
+                    val currentExePath = resolveCurrentExe()
+                    println("[AutoUpdater] 当前EXE路径: $currentExePath")
 
                     if (destFile.name.lowercase().endsWith(".exe")) {
+                        val newExeQ  = destFile.absolutePath.replace("'", "''")
+                        val curExeQ  = currentExePath.replace("'", "''")
                         val updaterPs1 = File(cacheDir, "updater.ps1")
-                        updaterPs1.writeText("""
-                            Start-Sleep -Seconds 2
-                            Copy-Item -Path '${destFile.absolutePath.replace("'", "''")}' -Destination '${currentExePath.replace("'", "''")}' -Force
-                            Start-Process -FilePath '${currentExePath.replace("'", "''")}'
-                            Remove-Item -Path '${updaterPs1.absolutePath.replace("'", "''")}' -Force
-                        """.trimIndent())
+                        // bat 中转：以管理员权限运行 PS1，避免因权限不足 Copy-Item 静默失败
+                        val updaterBat = File(cacheDir, "updater.bat")
+                        val ps1Ps1Path = updaterPs1.absolutePath.replace("'", "''")
+                        val ps1BatPath = updaterBat.absolutePath.replace("'", "''")
+                        val dol = "\$"
+                        updaterPs1.writeText(
+                            "Start-Sleep -Seconds 3\r\n" +
+                            "for (${dol}i = 0; ${dol}i -lt 10; ${dol}i++) {\r\n" +
+                            "    try {\r\n" +
+                            "        Copy-Item -Path '$newExeQ' -Destination '$curExeQ' -Force -ErrorAction Stop\r\n" +
+                            "        break\r\n" +
+                            "    } catch {\r\n" +
+                            "        Start-Sleep -Seconds 1\r\n" +
+                            "    }\r\n" +
+                            "}\r\n" +
+                            "Start-Process -FilePath '$curExeQ'\r\n" +
+                            "Remove-Item -Path '$ps1Ps1Path' -Force -ErrorAction SilentlyContinue\r\n" +
+                            "Remove-Item -Path '$ps1BatPath' -Force -ErrorAction SilentlyContinue\r\n"
+                        )
+                        updaterBat.writeText(
+                            "@echo off\r\n" +
+                            "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"${updaterPs1.absolutePath}\"\r\n"
+                        )
+                        // 用 cmd /c start 以独立进程（脱离当前进程树）运行 bat
                         ProcessBuilder(
-                            "powershell",
-                            "-NoProfile",
-                            "-WindowStyle", "Hidden",
-                            "-ExecutionPolicy", "Bypass",
-                            "-File", updaterPs1.absolutePath
+                            "cmd", "/c", "start", "", "/b",
+                            updaterBat.absolutePath
                         ).start()
                     } else {
-                        ProcessBuilder("cmd", "/c", "start", destFile.absolutePath).start()
+                        ProcessBuilder("cmd", "/c", "start", "", destFile.absolutePath).start()
                     }
                     exitProcess(0)
                 } else {
@@ -248,7 +266,6 @@ object AutoUpdater {
                     if (ok) url else null
                 }
             }
-            // 轮询等待第一个非 null 结果，最多 14 秒
             val deadline = System.currentTimeMillis() + 14_000
             var winner: String? = null
             while (winner == null && System.currentTimeMillis() < deadline) {

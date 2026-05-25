@@ -30,6 +30,10 @@ data class AppSettings(
     val lastVersionId: String = "",
     val lastVersionType: String = "",
     val themeMode: String = "dark",
+    val backgroundImagePath: String = "",
+    val backgroundBlurRadius: Int = 20,
+    val backgroundBrightness: Float = 0.75f,
+    val uiPanelOpacity: Float = 0.75f,
 ) {
     companion object {
         private val json = Json {
@@ -39,11 +43,7 @@ data class AppSettings(
         }
 
         private val configFile: File
-            get() {
-                val dir = File(System.getProperty("user.home"), ".md3l")
-                if (!dir.exists()) dir.mkdirs()
-                return File(dir, "settings.json")
-            }
+            get() = File(LauncherDirs.dataDir, "settings.json")
 
         suspend fun load(): AppSettings = withContext(Dispatchers.IO) {
             try {

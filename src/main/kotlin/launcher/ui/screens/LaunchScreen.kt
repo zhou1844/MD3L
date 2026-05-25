@@ -54,9 +54,10 @@ import kotlinx.serialization.json.contentOrNull
 import launcher.core.*
 import launcher.ui.components.LocalVersionTreeSheetContent
 import launcher.ui.components.VersionIcon
-import java.awt.Desktop
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import java.awt.Desktop
 import java.io.File
+import java.net.URL
 import java.io.PrintWriter
 import java.io.StringWriter
 import java.net.URI
@@ -188,6 +189,32 @@ fun LaunchScreen() {
         NewsRepository.refresh()
     }
 
+    LaunchedEffect(selectedVersion, activeAccount) {
+        val ver = selectedVersion ?: return@LaunchedEffect
+        if (ver.type != "bedrock" || ver.versionDir.isBlank()) return@LaunchedEffect
+        val isMsa = activeAccount?.type == AccountType.MSA
+        val versionDir = java.io.File(ver.versionDir)
+        val isGdk = versionDir.name.let { id ->
+            val parts = id.trim().split(".").mapNotNull { it.toIntOrNull() }
+            if (parts.size < 4) false
+            else {
+                val threshold = listOf(1, 21, 120, 21)
+                var isAbove = false
+                for (i in 0 until 4) {
+                    val a = parts.getOrElse(i) { 0 }
+                    val b = threshold.getOrElse(i) { 0 }
+                    if (a != b) { isAbove = a > b; break }
+                    if (i == 3) isAbove = true
+                }
+                isAbove
+            }
+        }
+        if (isGdk && isMsa) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            BedrockLaunchEngine.preheat(versionDir)
+        }
+    }
+
     LaunchedEffect(bedrockDownloading, bedrockDownloadResults) {
         if (bedrockDownloading.isNotEmpty() || bedrockDownloadResults.isEmpty()) return@LaunchedEffect
         val loadedSettings = withContext(Dispatchers.IO) { AppSettings.load() }
@@ -214,7 +241,7 @@ fun LaunchScreen() {
     // ══════════════════════════════════════════════════════════════════════════
     Row(modifier = Modifier.fillMaxSize()) {
 
-        // ── 左区 (News Feed) ─── Minecraft 官方资讯流 ─────────────────
+        // ── 左区 (官方资讯) ──────────────────────────────────────────────
         Column(
             modifier = Modifier
                 .weight(0.5f)
@@ -228,128 +255,29 @@ fun LaunchScreen() {
                 Spacer(Modifier.width(6.dp))
                 Text("Minecraft 资讯", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
                 Spacer(Modifier.weight(1f))
-                if (!newsLoading) {
-                    IconButton(
-                        onClick = { scope.launch { NewsRepository.refresh() } },
-                        modifier = Modifier.size(28.dp),
-                    ) {
+                if (newsLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                } else {
+                    IconButton(onClick = { scope.launch { NewsRepository.refresh() } }, modifier = Modifier.size(24.dp)) {
                         Icon(Icons.Filled.Refresh, contentDescription = "刷新", modifier = Modifier.size(16.dp))
                     }
                 }
             }
-
-            when {
-                newsLoading && newsList.isEmpty() -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.5.dp, color = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.height(8.dp))
-                            Text("加载资讯中…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+            if (newsError.isNotBlank() && newsList.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(newsError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.height(8.dp))
+                        Button(onClick = { scope.launch { NewsRepository.refresh() } }) { Text("重试") }
                     }
                 }
-                newsList.isEmpty() && newsError.isNotBlank() -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Filled.CloudOff, contentDescription = null, modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
-                            Spacer(Modifier.height(8.dp))
-                            Text(newsError, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
-                            Spacer(Modifier.height(8.dp))
-                            FilledTonalButton(
-                                onClick = { scope.launch { NewsRepository.refresh() } },
-                                shape = RoundedCornerShape(10.dp),
-                            ) {
-                                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("重试", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                    }
-                }
-                else -> {
-                    val newsListState = rememberLazyListState()
-                    Box(modifier = Modifier.fillMaxSize()) {
-                    LazyColumn(
-                        state = newsListState,
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxSize().padding(end = 8.dp),
-                    ) {
-                        items(newsList, key = { it.title + it.date }) { entry ->
-                            ElevatedCard(
-                                onClick = {
-                                    if (entry.readMoreLink.isNotBlank()) {
-                                        try {
-                                            Desktop.getDesktop().browse(URI(entry.readMoreLink))
-                                        } catch (_: Exception) { }
-                                    }
-                                },
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth(),
-                                elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
-                            ) {
-                                Column {
-                                    // 封面图
-                                    if (entry.imageUrl.isNotBlank()) {
-                                        KamelImage(
-                                            resource = asyncPainterResource(data = entry.imageUrl),
-                                            contentDescription = entry.title,
-                                            modifier = Modifier.fillMaxWidth().height(140.dp).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
-                                            contentScale = ContentScale.Crop,
-                                            onLoading = {
-                                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                                                }
-                                            },
-                                            onFailure = {
-                                                Box(
-                                                    Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerHigh),
-                                                    contentAlignment = Alignment.Center,
-                                                ) {
-                                                    Icon(Icons.Filled.Image, contentDescription = null, modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
-                                                }
-                                            },
-                                        )
-                                    }
-                                    Column(modifier = Modifier.padding(10.dp)) {
-                                        if (entry.tag.isNotBlank()) {
-                                            Surface(
-                                                shape = RoundedCornerShape(4.dp),
-                                                color = MaterialTheme.colorScheme.primaryContainer,
-                                            ) {
-                                                Text(
-                                                    entry.tag,
-                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                                )
-                                            }
-                                            Spacer(Modifier.height(4.dp))
-                                        }
-                                        Text(
-                                            entry.title,
-                                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                        if (entry.text.isNotBlank()) {
-                                            Spacer(Modifier.height(2.dp))
-                                            Text(
-                                                entry.text,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    VerticalScrollbar(
-                        adapter = rememberScrollbarAdapter(newsListState),
-                        modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
-                    )
+            } else {
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(newsList) { entry ->
+                        NewsCard(entry)
                     }
                 }
             }
@@ -405,9 +333,10 @@ fun LaunchScreen() {
                                     org.jetbrains.skia.Image.makeFromEncoded(bytes).toComposeImageBitmap()
                                 } catch (_: Exception) { null }
                             }
-                            if (avatarBitmap != null) {
+                            val bmp = avatarBitmap
+                            if (bmp != null) {
                                 androidx.compose.foundation.Image(
-                                    bitmap = avatarBitmap,
+                                    bitmap = bmp,
                                     contentDescription = "头像",
                                     modifier = Modifier.fillMaxSize().clip(CircleShape),
                                     contentScale = ContentScale.Crop,
@@ -755,18 +684,28 @@ fun LaunchScreen() {
                                         LaunchState.updateProgress(25, "正在加载启动配置…")
                                         val s = withContext(Dispatchers.IO) { AppSettings.load() }
 
+                                        val acc = activeAccount
                                         val context = LaunchContext(
                                             version = ver, javaPath = "", memoryMb = 0,
-                                            playerName = "", uuid = "", accessToken = "",
+                                            playerName = acc?.username ?: "",
+                                            uuid = acc?.uuid ?: "",
+                                            accessToken = "",
                                             minecraftDir = s.minecraftDir, customJvmArgs = "",
                                             windowWidth = 0, windowHeight = 0, fullscreen = false,
+                                            skinUri = if (acc?.type == AccountType.Offline) acc.skinUri else "",
+                                            skinModel = if (acc?.type == AccountType.Offline) acc.skinModel else "classic",
+                                            accountType = acc?.type ?: AccountType.Offline,
                                         )
 
                                         engine.onProgress = { pct, msg -> LaunchState.updateProgress(pct, msg) }
+                                        val bedrockLogFile = java.io.File(
+                                            launcher.core.LauncherDirs.dataDir,
+                                            "crashes/${ver.id}-bedrock-${System.currentTimeMillis()}.log"
+                                        ).also { it.parentFile?.mkdirs() }
                                         val process = withContext(Dispatchers.IO) { engine.execute(context) }
 
                                         LaunchState.updateProgress(95, "基岩版启动成功，正在移交进程监控…")
-                                        LaunchState.attachProcess(process, ver.id)
+                                        LaunchState.attachProcess(process, ver.id, bedrockLogFile)
                                         attached = true
                                         launchMessage = "基岩版已启动: ${ver.id}"
                                     } catch (e: Exception) {
@@ -817,6 +756,7 @@ fun LaunchScreen() {
                                             skinUri = if (acc?.type == AccountType.Offline) acc.skinUri else "",
                                             skinModel = if (acc?.type == AccountType.Offline) acc.skinModel else "classic",
                                             authServerUrl = acc?.authServerUrl ?: "",
+                                            gcPolicy = s.gcPolicy,
                                         )
 
                                         val engine = JavaLaunchEngine()
@@ -1458,8 +1398,8 @@ fun LaunchScreen() {
 private fun writeLaunchFailureLog(versionId: String, trace: String): String {
     return try {
         val file = File(
-            System.getProperty("user.home"),
-            ".md3l/crashes/${versionId.ifBlank { "unknown" }}-launch-${System.currentTimeMillis()}.log",
+            launcher.core.LauncherDirs.dataDir,
+            "crashes/${versionId.ifBlank { "unknown" }}-launch-${System.currentTimeMillis()}.log",
         )
         file.parentFile?.mkdirs()
         file.writeText(trace, Charsets.UTF_8)
@@ -1468,6 +1408,78 @@ private fun writeLaunchFailureLog(versionId: String, trace: String): String {
         ""
     }
 }
+
+@Composable
+private fun NewsCard(entry: NewsRepository.NewsEntry) {
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+
+    Card(
+        onClick = {
+            if (entry.readMoreLink.isNotBlank()) runCatching { uriHandler.openUri(entry.readMoreLink) }
+        },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Column {
+            // 封面图
+            if (entry.imageUrl.isNotBlank()) {
+                KamelImage(
+                    resource = asyncPainterResource(data = entry.imageUrl),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxWidth().height(120.dp).clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
+                    contentScale = ContentScale.Crop,
+                    onLoading = { Box(Modifier.fillMaxWidth().height(120.dp).background(MaterialTheme.colorScheme.surfaceVariant)) },
+                    onFailure = { Box(Modifier.fillMaxWidth().height(60.dp).background(MaterialTheme.colorScheme.surfaceVariant)) },
+                )
+            }
+            Column(modifier = Modifier.padding(12.dp)) {
+                // Tag chip
+                if (entry.tag.isNotBlank()) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.padding(bottom = 6.dp),
+                    ) {
+                        Text(
+                            entry.tag.uppercase(),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
+                }
+                Text(
+                    entry.title,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (entry.text.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        entry.text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (entry.date.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.CalendarToday, contentDescription = null,
+                            modifier = Modifier.size(10.dp), tint = MaterialTheme.colorScheme.outline)
+                        Spacer(Modifier.width(3.dp))
+                        Text(entry.date, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+            }
+        }
+    }
+
+}
+
 
 @Composable
 private fun AvatarPlaceholder(name: String, size: Int) {
