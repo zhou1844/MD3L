@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MD3L — Minecraft 启动器</title>
+<meta name="description" content="MD3L 是同时支持 Java 版与基岩版的免费开源 Minecraft 启动器，Material Design 3 风格。"/>
+<link rel="icon" href="icon.png"/>
+<link rel="stylesheet" href="md3.css"/>
+<style>
+/* ── Hero ── */
+.hero {
+  padding: 96px 0 80px;
+  margin-top: 64px;
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  position: relative; overflow: hidden;
+}
+.hero-bg {
+  position:absolute; inset:0; z-index:0;
+  background:
+    radial-gradient(ellipse 80% 55% at 50% -5%,
+      color-mix(in srgb,var(--md-primary-container) 35%,transparent),
+      transparent 65%);
+  pointer-events:none;
+}
+.hero > * { position:relative; z-index:1; }
+.hero-eyebrow {
+  display:inline-flex; align-items:center; gap:8px;
+  background: var(--md-surface-c); border:1px solid var(--md-outline-var);
+  border-radius:var(--r-full); padding:6px 18px;
+  font-size:13px; font-weight:500; color:var(--md-primary);
+  margin-bottom:24px;
+}
+.hero-title {
+  font-size:clamp(40px,7vw,64px); font-weight:700; line-height:1.1;
+  color:var(--md-on-surface); letter-spacing:-1.5px;
+  margin-bottom:18px;
+}
+.hero-title em { color:var(--md-primary); font-style:normal; }
+.hero-body {
+  font-size:17px; line-height:1.8; color:var(--md-on-surface-var);
+  max-width:520px; margin-bottom:36px;
+}
+.hero-cta { display:flex; gap:12px; flex-wrap:wrap; justify-content:center; margin-bottom:48px; }
+.hero-chips { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:56px; }
+
+/* Screenshot strip */
+.ss-strip {
+  width:100%; max-width:1100px;
+  display:grid; grid-template-columns:repeat(5,1fr); gap:10px;
+}
+.ss-card {
+  border-radius:var(--r-l); overflow:hidden;
+  border:1px solid var(--md-outline-var);
+  cursor:pointer;
+  box-shadow:0 2px 4px rgba(0,0,0,.3),0 4px 8px 2px rgba(0,0,0,.15);
+  transition:transform .2s,box-shadow .2s;
+}
+.ss-card:hover {
+  transform:translateY(-5px) scale(1.02);
+  box-shadow:0 6px 12px rgba(0,0,0,.3),0 12px 24px 4px rgba(0,0,0,.15);
+}
+.ss-card img { width:100%; }
+.ss-caption {
+  padding:8px 12px;
+  background:var(--md-surface-c);
+  font-size:12px; font-weight:500;
+  color:var(--md-on-surface-var);
+  text-align:center;
+}
+
+/* ── Stats row ── */
+.stats { padding:40px 0; background:var(--md-surface-c-low); }
+.stats-row {
+  display:grid; grid-template-columns:repeat(3,1fr); gap:1px;
+  background:var(--md-outline-var);
+  border-radius:var(--r-xl); overflow:hidden;
+}
+.stat-item {
+  background:var(--md-surface-c); padding:28px 20px; text-align:center;
+}
+.stat-num { font-size:36px; font-weight:700; color:var(--md-primary); }
+.stat-label { font-size:13px; color:var(--md-on-surface-var); margin-top:4px; }
+
+/* ── Feature highlights ── */
+.highlights {
+  display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:48px;
+}
+.hl-card {
+  background:var(--md-surface-c);
+  border:1px solid var(--md-outline-var);
+  border-radius:var(--r-xl); padding:28px;
+  display:flex; gap:20px; align-items:flex-start;
+  transition:background .2s, transform .2s;
+}
+.hl-card:hover { background:var(--md-surface-c-high); transform:translateY(-2px); }
+.hl-icon {
+  width:48px; height:48px; flex-shrink:0;
+  border-radius:var(--r-l);
+  background:var(--md-primary-container);
+  display:flex; align-items:center; justify-content:center;
+  font-size:24px;
+}
+.hl-content h3 { font-size:16px; font-weight:600; margin-bottom:6px; }
+.hl-content p { font-size:14px; line-height:1.7; color:var(--md-on-surface-var); }
+
+/* ── CTA band ── */
+.cta-band {
+  background:var(--md-primary-container);
+  border-radius:var(--r-xl); padding:48px;
+  display:flex; align-items:center; justify-content:space-between;
+  gap:24px; flex-wrap:wrap; margin-top:64px;
+}
+.cta-band h2 { font-size:24px; font-weight:700; color:var(--md-on-primary-container); margin-bottom:6px; }
+.cta-band p { font-size:14px; color:color-mix(in srgb,var(--md-on-primary-container) 70%,transparent); }
+.btn-cta {
+  background:var(--md-on-primary-container);
+  color:var(--md-primary-container);
+  height:48px; padding:0 32px; font-size:15px;
+}
+
+@media(max-width:700px){
+  .ss-strip{grid-template-columns:repeat(2,1fr);}
+  .highlights{grid-template-columns:1fr}
+  .stats-row{grid-template-columns:1fr}
+  .cta-band{flex-direction:column;text-align:center}
+}
+</style>
+</head>
+<body>
+<header class="top-app-bar"></header>
+<nav class="mobile-nav"></nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-eyebrow reveal">
+    <span class="ms" style="font-size:16px">new_releases</span>
+    最新版本 v1.3.6 · 免费开源
+  </div>
+  <h1 class="hero-title reveal">启动 <em>Minecraft</em><br/>从未如此简单</h1>
+  <p class="hero-body reveal">
+    MD3L 是同时支持 <strong style="color:var(--md-on-surface)">Java 版</strong> 与
+    <strong style="color:var(--md-on-surface)">基岩版</strong> 的 Minecraft 启动器，
+    采用 Material Design 3 界面设计，内置仪表盘数据统计、模组资源中心、多账号管理，完全免费开源。
+  </p>
+  <div class="hero-cta reveal">
+    <a class="btn btn-filled" href="download.html">
+      <span class="ms">download</span>立即下载
+    </a>
+    <a class="btn btn-outlined" href="features.html">
+      <span class="ms">explore</span>了解功能
+    </a>
+  </div>
+  <div class="hero-chips reveal">
+    <span class="chip">☕ Java 版</span>
+    <span class="chip">🟩 基岩版（支持离线）</span>
+    <span class="chip">🧩 模组支持</span>
+    <span class="chip">🔄 自动更新</span>
+    <span class="chip">🆓 完全免费</span>
+    <span class="chip">🎨 Material Design 3</span>
+  </div>
+  <div class="ss-strip reveal">
+    <div class="ss-card" onclick="openLightbox('screenshot.png')">
+      <img src="screenshot.png" alt="游戏数据仪表盘"/><div class="ss-caption">游戏数据仪表盘</div>
+    </div>
+    <div class="ss-card" onclick="openLightbox('screenshot2.png')">
+      <img src="screenshot2.png" alt="版本管理"/><div class="ss-caption">版本管理</div>
+    </div>
+    <div class="ss-card" onclick="openLightbox('screenshot3.png')">
+      <img src="screenshot3.png" alt="下载中心"/><div class="ss-caption">下载中心</div>
+    </div>
+    <div class="ss-card" onclick="openLightbox('screenshot4.png')">
+      <img src="screenshot4.png" alt="资源中心"/><div class="ss-caption">资源中心</div>
+    </div>
+    <div class="ss-card" onclick="openLightbox('screenshot5.png')">
+      <img src="screenshot5.png" alt="个性化设置"/><div class="ss-caption">个性化设置</div>
+    </div>
+  </div>
+</section>
+
+<!-- STATS -->
+<section class="stats">
+  <div class="container">
+    <div class="stats-row reveal">
+      <div class="stat-item">
+        <div class="stat-num">2</div>
+        <div class="stat-label">支持平台（Java &amp; 基岩版）</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">v1.3.6</div>
+        <div class="stat-label">当前版本</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">∞</div>
+        <div class="stat-label">永久免费</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HIGHLIGHTS -->
+<section class="section">
+  <div class="container">
+    <p class="section-label reveal">核心功能</p>
+    <h2 class="section-title reveal">你需要的，都在这里</h2>
+    <p class="section-body reveal">从账号登录到版本管理，MD3L 覆盖 Minecraft 启动全流程。</p>
+    <div class="highlights">
+      <div class="hl-card reveal">
+        <div class="hl-icon">☕</div>
+        <div class="hl-content">
+          <h3>Java 版全支持</h3>
+          <p>支持 Forge / NeoForge / Fabric / Quilt，.mrpack 整合包一键导入。</p>
+        </div>
+      </div>
+      <div class="hl-card reveal">
+        <div class="hl-icon">🟩</div>
+        <div class="hl-content">
+          <h3>基岩版原生启动</h3>
+          <p>MSIX / GDK 直接安装启动，正式版与预览版快速切换。</p>
+        </div>
+      </div>
+      <div class="hl-card reveal">
+        <div class="hl-icon">👤</div>
+        <div class="hl-content">
+          <h3>多账号管理</h3>
+          <p>微软正版、离线、Yggdrasil 第三方账号，头像皮肤自动缓存。</p>
+        </div>
+      </div>
+      <div class="hl-card reveal">
+        <div class="hl-icon">📦</div>
+        <div class="hl-content">
+          <h3>模组 &amp; 资源中心</h3>
+          <p>Modrinth / CurseForge 内置搜索，支持中文自动翻译，一键安装。</p>
+        </div>
+      </div>
+    </div>
+    <div class="cta-band reveal">
+      <div>
+        <h2>查看全部功能 →</h2>
+        <p>了解 MD3L 的每一个细节</p>
+      </div>
+      <a class="btn btn-cta" href="features.html">功能特性</a>
+    </div>
+  </div>
+</section>
+
+<footer class="site-footer"><div class="container"></div></footer>
+<a class="fab" href="download.html"><span class="ms">download</span><span class="label">下载</span></a>
+<div class="lightbox" id="lightbox" onclick="closeLightbox()"><img src="" alt=""/></div>
+<script src="nav.js"></script>
+</body>
+</html>

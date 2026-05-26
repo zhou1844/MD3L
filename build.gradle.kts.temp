@@ -1,4 +1,4 @@
-﻿import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
     kotlin("jvm") version "1.9.22"
@@ -36,9 +36,10 @@ dependencies {
     implementation("net.java.dev.jna:jna:5.14.0")
     implementation("net.java.dev.jna:jna-platform:5.14.0")
 
-    // Jsoup HTML Parser
+    // Jsoup HTML Parser (基岩版爬�?
     implementation("org.jsoup:jsoup:1.17.2")
 
+    // JCEF 已移�?—�?3D 皮肤渲染改用 Visage API + Kamel 异步图片加载
 }
 
 compose.desktop {
@@ -59,7 +60,10 @@ compose.desktop {
                 iconFile.set(project.file("src/main/resources/app_icon.ico"))
             }
 
-            jvmArgs += listOf("-Dfile.encoding=UTF-8", "-Dsun.java2d.opengl=true")
+            jvmArgs += listOf(
+                "-Dfile.encoding=UTF-8",
+                "-Dsun.java2d.opengl=true"
+            )
         }
     }
 }
@@ -67,3 +71,4 @@ compose.desktop {
 kotlin {
     jvmToolchain(17)
 }
+

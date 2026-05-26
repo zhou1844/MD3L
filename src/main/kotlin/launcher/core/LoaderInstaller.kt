@@ -8,9 +8,6 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.*
 import java.io.File
 
-/**
- * 加载器安装进度。
- */
 data class LoaderInstallProgress(
     val isRunning: Boolean = false,
     val loaderName: String = "",
@@ -20,9 +17,6 @@ data class LoaderInstallProgress(
     val done: Boolean = false,
 )
 
-/**
- * 加载器自动安装器：在原版安装完成后，自动安装 Fabric / Forge / NeoForge。
- */
 object LoaderInstaller {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -94,10 +88,6 @@ object LoaderInstaller {
         ))
     }
 
-    /**
-     * Forge/NeoForge 完整性校验: 如果安装不完整 (处理器输出缺失)，自动重跑处理器。
-     * 返回 true 表示修复过 / 本身正常；false 表示无法修复 (缺少 installer)。
-     */
     suspend fun repairForgeIfNeeded(
         versionJsonFile: File,
         minecraftDir: String,
@@ -107,12 +97,10 @@ object LoaderInstaller {
         val text = versionJsonFile.readText(Charsets.UTF_8)
         val root = json.parseToJsonElement(text).jsonObject
 
-        // 判断是否为 Forge / NeoForge
         val isForge = "net.minecraftforge" in text || "forge" in versionJsonFile.nameWithoutExtension.lowercase()
         val isNeoForge = "net.neoforged" in text || "neoforge" in versionJsonFile.nameWithoutExtension.lowercase()
         if (!isForge && !isNeoForge) return@withContext true
 
-        // 提取版本号
         val gameArgs = root["arguments"]?.jsonObject?.get("game")?.jsonArray
         val forgeVersion = gameArgs?.let { args ->
             args.mapIndexedNotNull { i, el ->
@@ -148,7 +136,6 @@ object LoaderInstaller {
             } ?: loaderVersion
         } else loaderVersion
 
-        // 找到 installer jar
         var installerFile = listOf(
             File(minecraftDir, "cache/forge-$mcVersion-$loaderVersion-installer.jar"),
             File(minecraftDir, "cache/neoforge-$loaderVersion-installer.jar"),
@@ -193,7 +180,6 @@ object LoaderInstaller {
             }
         }
 
-        // 打开 install_profile，检查 processors 输出
         val zip = runCatching { java.util.zip.ZipFile(installerFile) }.getOrNull() ?: return@withContext false
         val profileEntry = zip.getEntry("install_profile.json")
         if (profileEntry == null) { zip.close(); return@withContext false }
@@ -233,7 +219,6 @@ object LoaderInstaller {
         vars["{LIBRARY_DIR}"] = librariesDir.absolutePath
         vars["{BINPATCH}"] = ""
 
-        // 预解析 data 段
         val dataMap = installProfile["data"]?.jsonObject ?: JsonObject(emptyMap())
         val tempDir = File(minecraftDir, "cache/forge_temp")
         tempDir.mkdirs()
@@ -256,7 +241,6 @@ object LoaderInstaller {
             vars["{$key}"] = resolved
         }
 
-        // 检查是否所有 client-side processor outputs 已通过
         var needsRepair = false
         for (procEl in processors) {
             val proc = procEl.jsonObject
@@ -270,8 +254,6 @@ object LoaderInstaller {
             }
         }
 
-        // 额外检查关键产物：许多 Forge 处理器（如 ForgeAutoRenamingTool, binarypatcher）没有 outputs 字段，
-        // 只能通过 data 段中定义的产物文件是否存在来判断。
         if (!needsRepair) {
             val criticalKeys = listOf("PATCHED", "MC_SRG")
             for (key in criticalKeys) {
@@ -288,7 +270,6 @@ object LoaderInstaller {
             }
         }
 
-        // NeoForge 的关键产物：minecraft-client-patched-<version>.jar
         if (!needsRepair && requiresPatchedClient) {
             val patchedFile = File(
                 librariesDir,
@@ -300,7 +281,6 @@ object LoaderInstaller {
             }
         }
 
-        // NeoForge 关键产物内容验证：jar 存在但内部缺少 .class 文件 → processor 输出不完整
         if (!needsRepair && isNeoForge) {
             val neoFormVersion = gameArgs?.let { args ->
                 args.mapIndexedNotNull { i, el ->
@@ -334,7 +314,6 @@ object LoaderInstaller {
         onProgress?.invoke("正在修复 $loaderName 安装 (重跑处理器)...")
 
         zip.close()
-        // 重跑整个 processors 阶段
         try {
             runForgeProcessors(
                 installProfile = installProfile,
@@ -371,9 +350,6 @@ object LoaderInstaller {
         true
     }
 
-    /**
-     * 在全局 scope 中启动加载器安装，切换页面不会中断。
-     */
     fun launchInstall(
         loaderType: String,
         mcVersion: String,
@@ -417,8 +393,6 @@ object LoaderInstaller {
         activeJobs[taskId] = job
     }
 
-    // Fabric
-    // 直接获取 profile JSON + 下载 libraries
     suspend fun installFabric(
         mcVersion: String,
         loaderVersion: String,
@@ -430,7 +404,6 @@ object LoaderInstaller {
         val versionDir = File(minecraftDir, "versions/$versionId")
         versionDir.mkdirs()
 
-        // 获取 Fabric profile JSON
         val urls = listOf(
             "https://bmclapi2.bangbang93.com/fabric-meta/v2/versions/loader/$mcVersion/$loaderVersion/profile/json",
             "https://meta.fabricmc.net/v2/versions/loader/$mcVersion/$loaderVersion/profile/json",
@@ -451,7 +424,6 @@ object LoaderInstaller {
         val finalJson = JsonObject(root).toString()
         File(versionDir, "$versionId.json").writeText(finalJson, Charsets.UTF_8)
 
-        // 下载 Fabric 自身 libraries（多候选 URL 防止单点不可达）
         val libs = root["libraries"]?.jsonArray ?: JsonArray(emptyList())
         val artifacts = mutableListOf<ArtifactDownloadCandidate>()
         val librariesDir = File(minecraftDir, "libraries")
@@ -487,7 +459,6 @@ object LoaderInstaller {
         versionId
     }
 
-    // Forge
     suspend fun installForge(
         mcVersion: String,
         loaderVersion: String,
@@ -496,7 +467,6 @@ object LoaderInstaller {
         baseVersionId: String = mcVersion,
         javaPath: String,
     ): String = withContext(Dispatchers.IO) {
-        // ── Step 1: 下载 installer jar ─────────────────────────────
         emit("Forge", "正在下载 Forge 安装器...", 0.05f)
         val mavenPath = "net/minecraftforge/forge/$mcVersion-$loaderVersion/forge-$mcVersion-$loaderVersion-installer.jar"
         val installerUrls = buildList {
@@ -536,7 +506,6 @@ object LoaderInstaller {
         }
         emit("Forge", "正在解析安装器...", 0.15f)
 
-        // Step 2: 解压 installer jar 提取 profile 和 version.json
         val zip = runCatching { java.util.zip.ZipFile(installerFile) }
             .getOrElse { throw RuntimeException("Forge installer 无法解析，可能文件损坏: ${installerFile.absolutePath}") }
         val installProfileEntry = zip.getEntry("install_profile.json")
@@ -544,7 +513,6 @@ object LoaderInstaller {
         val installProfileText = zip.getInputStream(installProfileEntry).bufferedReader().readText()
         val installProfile = json.parseToJsonElement(installProfileText).jsonObject
 
-        // 判断新旧 Forge：旧版在 install_profile 中有 versionInfo，新版有独立 version.json
         val versionJsonEntry = zip.getEntry("version.json")
         val isNewFormat = versionJsonEntry != null
 
@@ -553,12 +521,10 @@ object LoaderInstaller {
         val librariesDir = File(minecraftDir, "libraries")
 
         if (isNewFormat) {
-            // 新 Forge (1.13+): version.json 独立，install_profile 有 processors
             versionJsonText = zip.getInputStream(versionJsonEntry!!).bufferedReader().readText()
             val vJson = json.parseToJsonElement(versionJsonText).jsonObject
             versionId = vJson["id"]?.jsonPrimitive?.contentOrNull ?: "$mcVersion-forge-$loaderVersion"
         } else {
-            // 旧 Forge (<=1.12.2): versionInfo 就是 version.json
             val vInfo = installProfile["versionInfo"]?.jsonObject
                 ?: throw RuntimeException("install_profile.json 缺少 versionInfo")
             versionId = vInfo["id"]?.jsonPrimitive?.contentOrNull ?: "$mcVersion-forge-$loaderVersion"
@@ -566,13 +532,11 @@ object LoaderInstaller {
         }
         emit("Forge", "版本: $versionId", 0.2f)
 
-        // ── Step 3: 保存 version.json ──────────────────────────────
         val versionDir = File(minecraftDir, "versions/$versionId")
         versionDir.mkdirs()
         File(versionDir, "$versionId.json").writeText(versionJsonText, Charsets.UTF_8)
         println("[LoaderInstaller] Forge version.json -> $versionDir")
 
-        // Step 4: 从 installer jar 提取 maven/ 到 libraries/
         emit("Forge", "正在提取 Forge 库文件...", 0.25f)
         val mavenEntries = zip.entries().asSequence().filter { it.name.startsWith("maven/") && !it.isDirectory }
         var extractCount = 0
@@ -585,7 +549,6 @@ object LoaderInstaller {
         }
         println("[LoaderInstaller] 从 installer 提取 $extractCount 个 maven 文件")
 
-        // Step 5: 下载运行时 libraries（version.json 中的）
         emit("Forge", "正在分析依赖库...", 0.3f)
         val versionRoot = json.parseToJsonElement(versionJsonText).jsonObject
         val artifacts = linkedMapOf<String, ArtifactDownloadCandidate>()
@@ -600,7 +563,6 @@ object LoaderInstaller {
             val sha1 = artifact?.get("sha1")?.jsonPrimitive?.contentOrNull
             if (dest.exists() && dest.length() > 0L && (sha1 == null || verifyFile(dest, sha1))) continue
 
-            // 优先从 artifact downloads 获取 URL
             val artUrl = artifact?.get("url")?.jsonPrimitive?.contentOrNull
             val libUrl = lib["url"]?.jsonPrimitive?.contentOrNull
 
@@ -613,7 +575,6 @@ object LoaderInstaller {
             upsertArtifactCandidate(artifacts, dest, sha1, candidates, path)
         }
 
-        // ── Step 6: 下载 install_profile libraries（新 Forge 处理器需要） ──
         if (isNewFormat) {
             val profileLibs = installProfile["libraries"]?.jsonArray ?: JsonArray(emptyList())
             for (libEl in profileLibs) {
@@ -652,7 +613,6 @@ object LoaderInstaller {
             ensureArtifactsDownloaded("Forge", artifacts.values.toList(), 0.35f, 0.69f)
         }
 
-        // ── Step 7: 运行 processors（新 Forge 才需要） ─────────────
         if (isNewFormat) {
             emit("Forge", "正在运行处理器...", 0.7f)
             runForgeProcessors(
@@ -672,9 +632,6 @@ object LoaderInstaller {
         versionId
     }
 
-    /**
-     * 运行新版 Forge/NeoForge install_profile.json 中的 processors。每个 processor 是一个 jar + classpath + args 组合。
-     */
     private suspend fun runForgeProcessors(
         installProfile: JsonObject,
         minecraftDir: String,
@@ -690,7 +647,6 @@ object LoaderInstaller {
         val javaExe = resolveJavaExe(javaPath)
         val minecraftJar = resolveMinecraftJar(minecraftDir, baseVersionId, mcVersion)
 
-        // 打开 installer jar 以便提取内嵌资源
         val installerJarPath = listOf(
             File(minecraftDir, "cache/forge-$mcVersion-$loaderVersion-installer.jar"),
             File(minecraftDir, "cache/neoforge-$loaderVersion-installer.jar"),
@@ -704,12 +660,11 @@ object LoaderInstaller {
         vars["{ROOT}"] = File(minecraftDir).absolutePath
         vars["{INSTALLER}"] = installerJarPath?.absolutePath ?: ""
         vars["{LIBRARY_DIR}"] = librariesDir.absolutePath
-        vars["{BINPATCH}"] = "" // 会在下面动态覆盖
+        vars["{BINPATCH}"] = ""
 
         val tempDir = File(minecraftDir, "cache/forge_temp")
         tempDir.mkdirs()
 
-        // Pre-download all data HTTP urls, replacing them with local File paths, like HMCL literal parser does.
         val dataDownloads = mutableListOf<DownloadTask>()
         val dataDestinations = mutableMapOf<String, String>()
         for ((key, valEl) in dataMap) {
@@ -733,10 +688,8 @@ object LoaderInstaller {
         for ((key, valEl) in dataMap) {
             val clientVal = valEl.jsonObject["client"]?.jsonPrimitive?.contentOrNull ?: continue
             val resolved = if (clientVal.startsWith("[") && clientVal.endsWith("]")) {
-                // Maven coordinate -> library path
                 File(librariesDir, mavenToPath(clientVal.drop(1).dropLast(1))).absolutePath
             } else if (clientVal.startsWith("/") && installerZip != null) {
-                // Path inside installer jar -> extract to temp file
                 val entryName = clientVal.removePrefix("/")
                 val entry = installerZip.getEntry(entryName)
                 if (entry != null) {
@@ -745,7 +698,6 @@ object LoaderInstaller {
                     tmpFile.absolutePath
                 } else clientVal
             } else if (clientVal.startsWith("http")) {
-                // We just downloaded these
                 val localPath = dataDestinations[key] ?: ""
                 if (localPath.isNotBlank() && File(localPath).exists()) {
                     localPath
@@ -763,7 +715,6 @@ object LoaderInstaller {
             val proc = procEl.jsonObject
             idx++
 
-            // 跳过 server-side processors
             val sides = proc["sides"]?.jsonArray?.map { it.jsonPrimitive.content }
             if (sides != null && "client" !in sides) continue
 
@@ -775,7 +726,6 @@ object LoaderInstaller {
                 }
             }
 
-            // 构建 classpath
             val cp = mutableListOf(jarPath.absolutePath)
             proc["classpath"]?.jsonArray?.forEach { cpEl ->
                 val coord = cpEl.jsonPrimitive.content
@@ -788,7 +738,6 @@ object LoaderInstaller {
                 cp.add(cpFile.absolutePath)
             }
 
-            // 获取 main class
             val mainClass = try {
                 val jarZip = java.util.zip.ZipFile(jarPath)
                 val manifest = jarZip.getEntry("META-INF/MANIFEST.MF")
@@ -809,7 +758,6 @@ object LoaderInstaller {
                 continue
             }
 
-            // 替换 args
             val rawArgs = proc["args"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
             val resolvedArgs = rawArgs.map { arg ->
                 resolveProcessorLiteral(arg, vars, librariesDir)
@@ -826,8 +774,6 @@ object LoaderInstaller {
                 }
             }
 
-            // 【关键补丁】：强制覆盖 user_jvm_args.txt 生成目录。NeoForge 生成的参数有时候会被重定向到错的地方，导致执行失败。
-            // 只要不是 DOWNLOAD_MOJMAPS，我们就顺路执行它，并捕获输出
             val shortName = jarCoord.substringAfterLast(":")
             val isHeavy = shortName.contains("binarypatcher", true) ||
                     shortName.contains("ForgeAutoRenamingTool", true) ||
@@ -887,12 +833,10 @@ object LoaderInstaller {
             }
         }
 
-        // 清理
         installerZip?.close()
         tempDir.deleteRecursively()
     }
 
-    // NeoForge
     suspend fun installNeoForge(
         mcVersion: String,
         loaderVersion: String,
@@ -940,7 +884,6 @@ object LoaderInstaller {
 
         emit("NeoForge", "版本: $versionId", 0.2f)
 
-        // 提取 maven 依赖
         emit("NeoForge", "正在提取 NeoForge 库文件...", 0.25f)
         val mavenEntries = zip.entries().asSequence().filter { it.name.startsWith("maven/") && !it.isDirectory }
         for (entry in mavenEntries) {
@@ -954,7 +897,6 @@ object LoaderInstaller {
             }
         }
 
-        // 解析需下载依赖（按 HMCL 思路：先收集全部候选，再按文件串行兜底下载+校验）
         val librariesDir = File(minecraftDir, "libraries")
         val artifacts = linkedMapOf<String, ArtifactDownloadCandidate>()
         val allLibs = mutableListOf<JsonObject>()
@@ -1047,8 +989,6 @@ object LoaderInstaller {
             .directory(workingDir)
             .redirectErrorStream(true)
             .start()
-        // Drain stdout/stderr incrementally to prevent pipe buffer deadlock.
-        // The classic hang: process fills OS pipe buffer -> blocks on write -> waitFor() blocks on exit -> deadlock.
         val outputBuilder = StringBuilder()
         val drainThread = Thread({
             try {
@@ -1269,12 +1209,6 @@ object LoaderInstaller {
         return outputs
     }
 
-    /**
-     * 验证 processor 输出 jar 的内容有效性：
-     * - 能作为 ZIP 打开
-     * - 包含至少一个 .class 文件
-     * 用于捕捉 processor 因网络中断等原因产出的空壳 jar。
-     */
     private fun isValidProcessorOutputJar(file: File): Boolean {
         if (!file.isFile || file.length() <= 1000) return false
         return runCatching {
@@ -1584,13 +1518,7 @@ object LoaderInstaller {
         return actual.equals(expectedSha1, ignoreCase = true)
     }
 
-    // 工具方法
-
-    /** Maven 坐标 -> 本地路径，支持 @ext 和 classifier。
-     *  "net.fabricmc:fabric-loader:0.16.14" -> "net/fabricmc/fabric-loader/0.16.14/fabric-loader-0.16.14.jar"
-     */
     private fun mavenToPath(coordinate: String): String {
-        // 处理 @ext 后缀
         val atIdx = coordinate.indexOf('@')
         val ext = if (atIdx >= 0) coordinate.substring(atIdx + 1) else "jar"
         val coords = if (atIdx >= 0) coordinate.substring(0, atIdx) else coordinate
@@ -1684,7 +1612,6 @@ object LoaderInstaller {
         return false
     }
 
-    /** 通用 HTTP GET：curl 优先 */
     private fun httpGet(url: String): String {
         try {
             val proc = ProcessBuilder(
@@ -1695,7 +1622,6 @@ object LoaderInstaller {
             if (ok && proc.exitValue() == 0 && text.isNotBlank()) return text.trim()
         } catch (_: Exception) {}
 
-        // fallback
         val conn = java.net.URI(url).toURL().openConnection() as java.net.HttpURLConnection
         conn.connectTimeout = 15_000
         conn.readTimeout = 60_000
@@ -1710,7 +1636,6 @@ object LoaderInstaller {
         return ""
     }
 
-    /** 下载文件到本地 */
     private fun downloadFile(url: String, dest: File): Boolean {
         try {
             dest.parentFile?.mkdirs()
@@ -1722,7 +1647,6 @@ object LoaderInstaller {
             if (ok && proc.exitValue() == 0 && dest.exists() && dest.length() > 0) return true
         } catch (_: Exception) {}
 
-        // fallback
         try {
             val conn = java.net.URI(url).toURL().openConnection() as java.net.HttpURLConnection
             conn.connectTimeout = 15_000
@@ -1741,7 +1665,6 @@ object LoaderInstaller {
         return false
     }
 
-    /** 从 javaPath 设置解析出 java.exe 完整路径 */
     private fun resolveJavaExe(javaPath: String): String {
         if (javaPath == "java" || javaPath.isBlank()) return "java"
         val exe = File(javaPath, "bin/java.exe")

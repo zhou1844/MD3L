@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>下载 — MD3L</title>
+<link rel="icon" href="icon.png"/>
+<link rel="stylesheet" href="md3.css"/>
+<style>
+.page-hero {
+  padding:96px 0 56px;
+  margin-top:64px;
+  background: radial-gradient(ellipse 70% 50% at 50% 0%,
+    color-mix(in srgb,var(--md-primary-container) 30%,transparent),transparent 65%);
+}
+
+/* Main download card */
+.dl-main {
+  background:var(--md-surface-c);
+  border:1px solid var(--md-outline-var);
+  border-radius:var(--r-xl);
+  padding:40px;
+  display:grid; grid-template-columns:1fr auto;
+  gap:32px; align-items:center;
+  margin-top:48px;
+}
+.dl-badge {
+  display:inline-flex; align-items:center; gap:6px;
+  background:var(--md-primary-container);
+  color:var(--md-on-primary-container);
+  height:24px; padding:0 12px;
+  border-radius:var(--r-full);
+  font-size:12px; font-weight:700;
+  margin-left:12px;
+}
+.dl-title { font-size:24px; font-weight:700; margin-bottom:10px; display:flex; align-items:center; }
+.dl-desc { font-size:14px; line-height:1.75; color:var(--md-on-surface-var); margin-bottom:20px; }
+.dl-meta { display:flex; gap:20px; flex-wrap:wrap; }
+.dl-meta-item {
+  display:flex; align-items:center; gap:6px;
+  font-size:13px; color:var(--md-on-surface-var);
+}
+.dl-meta-item .ms { font-size:16px; color:var(--md-primary); }
+.dl-actions { display:flex; flex-direction:column; gap:10px; align-items:flex-end; }
+
+/* Requirements */
+.req-grid {
+  display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+  gap:16px; margin-top:40px;
+}
+.req-card {
+  background:var(--md-surface-c);
+  border:1px solid var(--md-outline-var);
+  border-radius:var(--r-xl); padding:24px;
+}
+.req-card h4 { font-size:14px; font-weight:600; color:var(--md-on-surface-var); margin-bottom:8px; }
+.req-card p { font-size:16px; font-weight:600; color:var(--md-on-surface); }
+
+/* Install steps */
+.steps { margin-top:40px; display:flex; flex-direction:column; gap:0; }
+.step {
+  display:flex; gap:20px; align-items:flex-start;
+  padding:24px 0;
+  border-bottom:1px solid var(--md-outline-var);
+}
+.step:last-child { border-bottom:none; }
+.step-num {
+  width:36px; height:36px; flex-shrink:0;
+  border-radius:var(--r-full);
+  background:var(--md-primary-container);
+  color:var(--md-on-primary-container);
+  display:flex; align-items:center; justify-content:center;
+  font-size:15px; font-weight:700;
+}
+.step-content h3 { font-size:16px; font-weight:600; margin-bottom:6px; }
+.step-content p { font-size:14px; line-height:1.7; color:var(--md-on-surface-var); }
+
+/* FAQ */
+.faq { margin-top:40px; display:flex; flex-direction:column; gap:12px; }
+.faq-item {
+  background:var(--md-surface-c);
+  border:1px solid var(--md-outline-var);
+  border-radius:var(--r-l);
+  overflow:hidden;
+}
+.faq-q {
+  width:100%; padding:16px 20px;
+  background:transparent; border:none;
+  font-family:inherit; font-size:15px; font-weight:500;
+  color:var(--md-on-surface);
+  display:flex; align-items:center; justify-content:space-between;
+  cursor:pointer; text-align:left;
+}
+.faq-q .ms { font-size:20px; color:var(--md-on-surface-var); transition:transform .2s; }
+.faq-item.open .faq-q .ms { transform:rotate(180deg); }
+.faq-a {
+  display:none; padding:0 20px 16px;
+  font-size:14px; line-height:1.75; color:var(--md-on-surface-var);
+}
+.faq-item.open .faq-a { display:block; }
+
+@media(max-width:700px){
+  .dl-main { grid-template-columns:1fr; }
+  .dl-actions { align-items:flex-start; }
+}
+</style>
+</head>
+<body>
+<header class="top-app-bar"></header>
+<nav class="mobile-nav"></nav>
+
+<div class="page-hero">
+  <div class="container">
+    <p class="section-label reveal">下载</p>
+    <h1 class="section-title reveal" style="font-size:clamp(32px,5vw,48px)">立即开始<br/>你的游戏之旅</h1>
+    <p class="section-body reveal">免费下载，内含完整运行时，安装即用。</p>
+  </div>
+</div>
+
+<!-- MAIN DOWNLOAD -->
+<section class="section" style="padding-top:40px">
+  <div class="container">
+    <p class="section-label reveal">最新版本</p>
+    <h2 class="section-title reveal">MD3L 启动器</h2>
+
+    <div class="dl-main reveal">
+      <div>
+        <div class="dl-title">
+          MD3L 安装器
+          <span class="dl-badge">v1.3.6 最新</span>
+        </div>
+        <p class="dl-desc">
+          Windows 安装版，内含完整 Java 运行时，无需提前安装 Java。<br/>
+          默认安装路径 D:\MD3L，安装时可自定义目录。
+        </p>
+        <div class="dl-meta">
+          <div class="dl-meta-item"><span class="ms">computer</span>Windows 10 / 11 x64</div>
+          <div class="dl-meta-item"><span class="ms">storage</span>约 111 MB</div>
+          <div class="dl-meta-item"><span class="ms">verified</span>免费开源</div>
+          <div class="dl-meta-item"><span class="ms">admin_panel_settings</span>需要管理员权限</div>
+        </div>
+      </div>
+      <div class="dl-actions">
+        <a class="btn btn-filled"
+           href="https://dlink.host/1drv/aHR0cHM6Ly8xZHJ2Lm1zL3UvYy80NmEyZjAxZDI1NjA4YjI5L0lRQXhjLWpkb2tnSVNJbjZ3UHpHQUptNUFhZEtnSW5iR2lLQjFFTDRsSlVJZXhRP2U9VnhOcmVJ.exe">
+          <span class="ms">download</span>下载 .exe 安装器
+        </a>
+        <a class="btn btn-outlined" href="https://github.com/zhou1844/MD3L/releases" target="_blank">
+          <span class="ms">history</span>历史版本
+        </a>
+        <a class="btn btn-text" href="changelog.html">
+          <span class="ms">article</span>查看更新日志
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SYSTEM REQUIREMENTS -->
+<section class="section" style="background:var(--md-surface-c-low);padding-top:48px;padding-bottom:48px">
+  <div class="container">
+    <p class="section-label reveal">系统要求</p>
+    <h2 class="section-title reveal">运行环境</h2>
+    <div class="req-grid">
+      <div class="req-card reveal">
+        <h4>操作系统</h4>
+        <p>Windows 10 / 11<br/><small style="font-size:13px;font-weight:400;color:var(--md-on-surface-var)">64 位，版本 1903+</small></p>
+      </div>
+      <div class="req-card reveal">
+        <h4>处理器</h4>
+        <p>x64 兼容<br/><small style="font-size:13px;font-weight:400;color:var(--md-on-surface-var)">2 GHz+</small></p>
+      </div>
+      <div class="req-card reveal">
+        <h4>内存</h4>
+        <p>4 GB+<br/><small style="font-size:13px;font-weight:400;color:var(--md-on-surface-var)">建议 8 GB</small></p>
+      </div>
+      <div class="req-card reveal">
+        <h4>存储空间</h4>
+        <p>200 MB+<br/><small style="font-size:13px;font-weight:400;color:var(--md-on-surface-var)">游戏文件另计</small></p>
+      </div>
+      <div class="req-card reveal">
+        <h4>Java 运行时</h4>
+        <p>内置 JRE<br/><small style="font-size:13px;font-weight:400;color:var(--md-on-surface-var)">无需手动安装</small></p>
+      </div>
+      <div class="req-card reveal">
+        <h4>网络</h4>
+        <p>需要联网<br/><small style="font-size:13px;font-weight:400;color:var(--md-on-surface-var)">用于下载游戏资源</small></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- INSTALL STEPS -->
+<section class="section">
+  <div class="container">
+    <p class="section-label reveal">安装指南</p>
+    <h2 class="section-title reveal">三步开始游戏</h2>
+    <div class="steps">
+      <div class="step reveal">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <h3>下载安装器</h3>
+          <p>点击上方"下载 .exe 安装器"按钮，下载 MD3L_Setup.exe 到本地。</p>
+        </div>
+      </div>
+      <div class="step reveal">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <h3>运行安装程序</h3>
+          <p>双击 MD3L_Setup.exe，按向导提示选择安装目录（默认 D:\MD3L），点击安装。安装过程需要管理员权限，请在弹出的 UAC 对话框中点击"是"。</p>
+        </div>
+      </div>
+      <div class="step reveal">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <h3>启动并登录</h3>
+          <p>安装完成后桌面/开始菜单会创建快捷方式，双击 MD3L 启动器，登录你的 Minecraft 账号，选择版本开始游戏！</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="section" style="background:var(--md-surface-c-low);padding-top:48px;padding-bottom:64px">
+  <div class="container">
+    <p class="section-label reveal">常见问题</p>
+    <h2 class="section-title reveal">FAQ</h2>
+    <div class="faq reveal">
+      <div class="faq-item">
+        <button class="faq-q" onclick="toggleFaq(this)">
+          安装时提示"Windows 已保护你的电脑"怎么办？
+          <span class="ms">expand_more</span>
+        </button>
+        <div class="faq-a">这是 Windows SmartScreen 对未签名 EXE 的默认警告。点击"更多信息"→"仍要运行"即可正常安装。MD3L 完全开源，源码可在 GitHub 查看。</div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q" onclick="toggleFaq(this)">
+          支持 macOS / Linux 吗？
+          <span class="ms">expand_more</span>
+        </button>
+        <div class="faq-a">目前 MD3L 仅支持 Windows 10 / 11 64位系统。macOS 和 Linux 支持在规划中，敬请期待。</div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q" onclick="toggleFaq(this)">
+          旧版本的数据会丢失吗？
+          <span class="ms">expand_more</span>
+        </button>
+        <div class="faq-a">不会。首次启动时，MD3L 会自动检测旧版数据目录（~/.md3l），并将所有数据迁移到启动器目录下的 data 文件夹。</div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q" onclick="toggleFaq(this)">
+          基岩版启动需要购买正版吗？
+          <span class="ms">expand_more</span>
+        </button>
+        <div class="faq-a">是的，基岩版需要通过微软账号购买并已在 Microsoft Store 中拥有 Minecraft。MD3L 负责安装与启动，但不提供破解功能。</div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q" onclick="toggleFaq(this)">
+          如何卸载 MD3L？
+          <span class="ms">expand_more</span>
+        </button>
+        <div class="faq-a">在 Windows 设置 → 应用 → 已安装应用中找到"MD3L 启动器"，点击卸载即可。卸载时会询问是否同时删除游戏数据（data 文件夹），选择"否"可保留存档和设置。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="site-footer"><div class="container"></div></footer>
+<div class="lightbox" id="lightbox" onclick="closeLightbox()"><img src="" alt=""/></div>
+<script src="nav.js"></script>
+<script>
+function toggleFaq(btn) {
+  btn.closest('.faq-item').classList.toggle('open');
+}
+</script>
+</body>
+</html>

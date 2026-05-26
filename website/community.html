@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>社区 — MD3L</title>
+<link rel="icon" href="icon.png"/>
+<link rel="stylesheet" href="md3.css"/>
+<style>
+.page-hero {
+  padding:96px 0 56px;
+  margin-top:64px;
+  background: radial-gradient(ellipse 70% 50% at 50% 0%,
+    color-mix(in srgb,var(--md-secondary-container) 30%,transparent),transparent 65%);
+}
+
+/* Community cards */
+.comm-grid {
+  display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+  gap:20px; margin-top:48px;
+}
+.comm-card {
+  background:var(--md-surface-c);
+  border:1px solid var(--md-outline-var);
+  border-radius:var(--r-xl); padding:32px 28px;
+  text-decoration:none; display:flex; flex-direction:column;
+  transition:background .2s,transform .2s,box-shadow .2s;
+}
+.comm-card:hover {
+  background:var(--md-surface-c-high);
+  transform:translateY(-4px);
+  box-shadow:0 4px 8px rgba(0,0,0,.3),0 8px 16px 4px rgba(0,0,0,.15);
+}
+.comm-icon-wrap {
+  width:64px; height:64px;
+  border-radius:var(--r-xl);
+  display:flex; align-items:center; justify-content:center;
+  margin-bottom:20px; font-size:32px;
+}
+.comm-title { font-size:20px; font-weight:700; color:var(--md-on-surface); margin-bottom:8px; }
+.comm-desc { font-size:14px; line-height:1.75; color:var(--md-on-surface-var); flex:1; }
+.comm-action {
+  margin-top:20px;
+  display:inline-flex; align-items:center; gap:6px;
+  font-size:14px; font-weight:600; color:var(--md-primary);
+}
+.comm-action .ms { font-size:18px; transition:transform .2s; }
+.comm-card:hover .comm-action .ms { transform:translateX(4px); }
+
+/* QQ group special */
+.qq-banner {
+  background: linear-gradient(135deg,#12b7f5,#0d90c0);
+  border-radius:var(--r-xl); padding:40px;
+  display:flex; align-items:center; gap:32px; flex-wrap:wrap;
+  margin-top:24px;
+}
+.qq-banner-icon { font-size:56px; flex-shrink:0; }
+.qq-banner-text h3 { font-size:22px; font-weight:700; color:#fff; margin-bottom:8px; }
+.qq-banner-text p { font-size:14px; line-height:1.7; color:rgba(255,255,255,.8); }
+.qq-number {
+  font-size:28px; font-weight:700; color:#fff;
+  letter-spacing:2px; margin-top:12px;
+  font-variant-numeric:tabular-nums;
+}
+.btn-qq {
+  background:#fff; color:#12b7f5;
+  margin-top:16px;
+}
+.btn-qq:hover { filter:brightness(.95); }
+
+/* Support section */
+.support-card {
+  background:linear-gradient(135deg,
+    color-mix(in srgb,#f6921e 15%,var(--md-surface-c)),
+    color-mix(in srgb,#f9c515 10%,var(--md-surface-c)));
+  border:1px solid color-mix(in srgb,#f6921e 30%,var(--md-outline-var));
+  border-radius:var(--r-xl); padding:40px;
+  display:flex; align-items:center; justify-content:space-between;
+  gap:24px; flex-wrap:wrap; margin-top:24px;
+}
+.support-card h3 { font-size:22px; font-weight:700; margin-bottom:8px; }
+.support-card p { font-size:14px; line-height:1.7; color:var(--md-on-surface-var); max-width:460px; }
+.btn-ifdian {
+  background:linear-gradient(135deg,#f6921e,#f9c515);
+  color:#fff; font-weight:700; flex-shrink:0;
+  box-shadow:0 2px 8px rgba(246,146,30,.4);
+}
+.btn-ifdian:hover { filter:brightness(1.08); }
+
+/* Guidelines */
+.guide-list { margin-top:40px; display:flex; flex-direction:column; gap:12px; }
+.guide-item {
+  display:flex; gap:16px; align-items:flex-start;
+  background:var(--md-surface-c);
+  border:1px solid var(--md-outline-var);
+  border-radius:var(--r-l); padding:18px 20px;
+}
+.guide-num {
+  width:32px; height:32px; flex-shrink:0;
+  border-radius:var(--r-full);
+  background:var(--md-primary-container);
+  color:var(--md-on-primary-container);
+  display:flex; align-items:center; justify-content:center;
+  font-size:14px; font-weight:700;
+}
+.guide-item h4 { font-size:15px; font-weight:600; margin-bottom:4px; }
+.guide-item p { font-size:13px; line-height:1.65; color:var(--md-on-surface-var); }
+
+@media(max-width:600px){
+  .qq-banner { flex-direction:column; align-items:flex-start; }
+  .support-card { flex-direction:column; }
+}
+</style>
+</head>
+<body>
+<header class="top-app-bar"></header>
+<nav class="mobile-nav"></nav>
+
+<div class="page-hero">
+  <div class="container">
+    <p class="section-label reveal">社区</p>
+    <h1 class="section-title reveal" style="font-size:clamp(32px,5vw,48px)">加入 MD3L 社区<br/>一起更好地玩</h1>
+    <p class="section-body reveal">关注动态、参与讨论、支持开发者，让 MD3L 越来越好。</p>
+  </div>
+</div>
+
+<!-- COMMUNITY CHANNELS -->
+<section class="section" style="padding-top:40px">
+  <div class="container">
+    <p class="section-label reveal">社交平台</p>
+    <h2 class="section-title reveal">找到我们</h2>
+    <div class="comm-grid">
+
+      <!-- GitHub -->
+      <a class="comm-card reveal" href="https://github.com/zhou1844/MD3L" target="_blank">
+        <div class="comm-icon-wrap" style="background:var(--md-surface-c-highest)">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="var(--md-on-surface)">
+            <path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33s1.71.11 2.5.33c1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"/>
+          </svg>
+        </div>
+        <div class="comm-title">GitHub</div>
+        <p class="comm-desc">查看 MD3L 源码、提交 Bug 报告、参与功能讨论、提交 Pull Request。</p>
+        <div class="comm-action">前往仓库 <span class="ms">arrow_forward</span></div>
+      </a>
+
+      <!-- Bilibili -->
+      <a class="comm-card reveal" href="https://space.bilibili.com/1340292263" target="_blank">
+        <div class="comm-icon-wrap" style="background:#fb7299">
+          <svg width="32" height="26" viewBox="0 0 24 24" fill="white">
+            <path d="M17.813 4.653h.854c1.51.054 2.769.578 3.773 1.574 1.004.995 1.524 2.249 1.56 3.76v7.36c-.036 1.51-.556 2.769-1.56 3.773s-2.262 1.524-3.773 1.56H5.333c-1.51-.036-2.769-.556-3.773-1.56S.036 18.858 0 17.347v-7.36c.036-1.511.556-2.765 1.56-3.76 1.004-.996 2.262-1.52 3.773-1.574h.774l-1.174-1.12a1.234 1.234 0 0 1-.373-.906c0-.356.124-.658.373-.907l.027-.027c.267-.249.573-.373.92-.373.347 0 .653.124.92.373L9.653 4.44c.071.071.134.142.187.213h4.267a.836.836 0 0 1 .16-.213l2.853-2.747c.267-.249.573-.373.92-.373.347 0 .662.151.929.4.267.249.391.551.391.907 0 .355-.124.657-.373.906zM5.333 7.24c-.746.018-1.373.276-1.88.773-.506.498-.769 1.13-.789 1.894v7.52c.02.765.283 1.396.79 1.893.506.498 1.133.756 1.879.773h13.334c.746-.017 1.373-.275 1.88-.773.506-.497.769-1.128.789-1.893v-7.52c-.02-.765-.283-1.396-.789-1.894-.507-.497-1.134-.755-1.88-.773zM8 11.107c.373 0 .684.124.933.373.25.249.383.569.4.96v1.173c-.017.391-.15.711-.4.96-.249.25-.56.374-.933.374s-.684-.125-.933-.374c-.25-.249-.383-.569-.4-.96V12.44c0-.373.129-.689.386-.947.258-.257.574-.386.947-.386zm8 0c.373 0 .684.124.933.373.25.249.383.569.4.96v1.173c-.017.391-.15.711-.4.96-.249.25-.56.374-.933.374s-.684-.125-.933-.374c-.25-.249-.383-.569-.4-.96V12.44c.017-.391.15-.711.4-.96.249-.249.56-.373.933-.373z"/>
+          </svg>
+        </div>
+        <div class="comm-title">Bilibili</div>
+        <p class="comm-desc">关注 UP 主，获取 MD3L 最新功能演示、使用教程和版本更新视频。</p>
+        <div class="comm-action">前往主页 <span class="ms">arrow_forward</span></div>
+      </a>
+
+    </div>
+
+    <!-- QQ GROUP BANNER -->
+    <p class="section-label reveal" style="margin-top:48px">QQ 交流群</p>
+    <h2 class="section-title reveal">加入玩家社群</h2>
+    <div class="qq-banner reveal">
+      <div class="qq-banner-icon">💬</div>
+      <div class="qq-banner-text" style="flex:1">
+        <h3>MD3L 玩家交流群</h3>
+        <p>在这里你可以提问启动器使用问题、分享整合包、与其他玩家交流 Minecraft 经验，以及第一时间获取 MD3L 更新公告。</p>
+        <div class="qq-number">1102400426</div>
+        <a class="btn btn-qq" style="margin-top:16px;display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 24px;border:none;border-radius:9999px;font-size:14px;font-weight:600;text-decoration:none;cursor:pointer;background:#fff;color:#12b7f5"
+           href="https://qm.qq.com/cgi-bin/qm/qr?k=&jump_from=webapi&authKey=&noverify=1&group_code=1102400426"
+           target="_blank"
+           onclick="handleQQJoin(event)">
+          加入 QQ 群
+        </a>
+        <p style="margin-top:10px;font-size:12px;opacity:.7">若链接无法跳转，请手动在 QQ 搜索群号 <strong>1102400426</strong> 加入</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SUPPORT -->
+<section class="section" style="background:var(--md-surface-c-low);padding-top:48px;padding-bottom:48px">
+  <div class="container">
+    <p class="section-label reveal">支持开发</p>
+    <h2 class="section-title reveal">爱发电</h2>
+    <div class="support-card reveal">
+      <div>
+        <h3>⚡ 支持 MD3L 的持续开发</h3>
+        <p>MD3L 完全免费，由个人开发者利用业余时间维护。如果你觉得 MD3L 对你有帮助，可以通过爱发电给予支持，你的每一份支持都会让 MD3L 变得更好。</p>
+      </div>
+      <a class="btn btn-ifdian" href="https://www.ifdian.net/a/zzh10086" target="_blank" style="display:inline-flex;align-items:center;gap:8px;height:48px;padding:0 28px;border:none;border-radius:9999px;font-size:15px;font-weight:700;text-decoration:none;cursor:pointer;background:linear-gradient(135deg,#f6921e,#f9c515);color:#fff;box-shadow:0 2px 8px rgba(246,146,30,.4)">
+        ⚡ 前往爱发电
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- COMMUNITY GUIDELINES -->
+<section class="section">
+  <div class="container">
+    <p class="section-label reveal">社区规范</p>
+    <h2 class="section-title reveal">参与守则</h2>
+    <p class="section-body reveal">为了让社区保持友好，请遵守以下基本规范。</p>
+    <div class="guide-list">
+      <div class="guide-item reveal">
+        <div class="guide-num">1</div>
+        <div>
+          <h4>友善交流</h4>
+          <p>尊重每一位成员，禁止人身攻击、侮辱性言论和歧视行为。</p>
+        </div>
+      </div>
+      <div class="guide-item reveal">
+        <div class="guide-num">2</div>
+        <div>
+          <h4>提问清晰</h4>
+          <p>提交 Bug 时请附上操作系统版本、MD3L 版本、复现步骤和日志截图，方便开发者定位问题。</p>
+        </div>
+      </div>
+      <div class="guide-item reveal">
+        <div class="guide-num">3</div>
+        <div>
+          <h4>不传播破解内容</h4>
+          <p>MD3L 支持离线账号，但请不要在社区讨论或分享任何非法破解、盗版相关内容。</p>
+        </div>
+      </div>
+      <div class="guide-item reveal">
+        <div class="guide-num">4</div>
+        <div>
+          <h4>搜索后再提问</h4>
+          <p>提问前请先查阅 FAQ 和已有 Issue，避免重复提问占用开发者时间。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="site-footer"><div class="container"></div></footer>
+<a class="fab" href="download.html"><span class="ms">download</span><span class="label">下载</span></a>
+<script src="nav.js"></script>
+<script>
+function handleQQJoin(e) {
+  // 尝试唤起QQ客户端直接加群
+  const groupNum = '1102400426';
+  // 先尝试 mqqapi 协议
+  const qqUrl = `mqqapi://card/show_pslcard?src_type=internal&version=1&uin=${groupNum}&card_type=group&source=qrcode`;
+  window.location.href = qqUrl;
+  // 延迟后跳转网页版作为备用
+  setTimeout(() => {
+    window.open(`https://qm.qq.com/cgi-bin/qm/qr?_wv=1027&k=&authKey=&noverify=1&group_code=${groupNum}`, '_blank');
+  }, 1200);
+  e.preventDefault();
+}
+</script>
+</body>
+</html>

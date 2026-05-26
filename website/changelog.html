@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>更新日志 — MD3L</title>
+<link rel="icon" href="icon.png"/>
+<link rel="stylesheet" href="md3.css"/>
+<style>
+.page-hero {
+  padding:96px 0 56px;
+  margin-top:64px;
+  background: radial-gradient(ellipse 70% 50% at 50% 0%,
+    color-mix(in srgb,var(--md-tertiary-container) 25%,transparent),transparent 65%);
+}
+/* Timeline */
+.timeline { position:relative; padding-left:32px; margin-top:48px; }
+.timeline::before {
+  content:''; position:absolute; left:10px; top:0; bottom:0;
+  width:2px; background:var(--md-outline-var);
+}
+.tl-item { position:relative; margin-bottom:40px; }
+.tl-dot {
+  position:absolute; left:-32px; top:18px;
+  width:20px; height:20px;
+  border-radius:var(--r-full);
+  background:var(--md-primary);
+  border:3px solid var(--md-surface);
+  box-shadow:0 0 0 2px var(--md-primary);
+}
+.tl-dot.old {
+  background:var(--md-surface-c-high);
+  box-shadow:0 0 0 2px var(--md-outline-var);
+}
+.tl-card {
+  background:var(--md-surface-c);
+  border:1px solid var(--md-outline-var);
+  border-radius:var(--r-xl); padding:28px;
+}
+.tl-header {
+  display:flex; align-items:center; flex-wrap:wrap; gap:10px;
+  margin-bottom:16px;
+}
+.tl-version { font-size:20px; font-weight:700; color:var(--md-on-surface); }
+.tl-badge {
+  height:24px; padding:0 12px;
+  border-radius:var(--r-full);
+  font-size:12px; font-weight:700;
+  display:inline-flex; align-items:center;
+}
+.tl-badge.latest { background:var(--md-primary-container); color:var(--md-on-primary-container); }
+.tl-badge.minor  { background:var(--md-secondary-container); color:var(--md-on-secondary-container); }
+.tl-badge.patch  { background:var(--md-surface-c-highest); color:var(--md-on-surface-var); }
+.tl-date { font-size:13px; color:var(--md-outline); margin-left:auto; }
+
+.change-list { list-style:none; display:flex; flex-direction:column; gap:8px; }
+.change-item {
+  display:flex; align-items:flex-start; gap:10px;
+  font-size:14px; line-height:1.6; color:var(--md-on-surface-var);
+}
+.change-type {
+  flex-shrink:0; height:20px; padding:0 8px;
+  border-radius:var(--r-xs);
+  font-size:11px; font-weight:700; display:inline-flex; align-items:center;
+  margin-top:1px;
+}
+.type-new  { background:color-mix(in srgb,#4caf50 20%,transparent); color:#81c784; }
+.type-fix  { background:color-mix(in srgb,#f44336 20%,transparent); color:#e57373; }
+.type-imp  { background:color-mix(in srgb,var(--md-primary) 20%,transparent); color:var(--md-primary); }
+.type-sec  { background:color-mix(in srgb,#ff9800 20%,transparent); color:#ffb74d; }
+</style>
+</head>
+<body>
+<header class="top-app-bar"></header>
+<nav class="mobile-nav"></nav>
+
+<div class="page-hero">
+  <div class="container">
+    <p class="section-label reveal">更新日志</p>
+    <h1 class="section-title reveal" style="font-size:clamp(32px,5vw,48px)">每一次更新<br/>都在变得更好</h1>
+    <p class="section-body reveal">查看 MD3L 各版本的功能新增、问题修复与优化改进。</p>
+  </div>
+</div>
+
+<section class="section" style="padding-top:40px">
+  <div class="container">
+    <div class="timeline">
+
+      <!-- v1.3.5 -->
+      <div class="tl-item reveal">
+        <div class="tl-dot"></div>
+        <div class="tl-card">
+          <div class="tl-header">
+            <span class="tl-version">v1.3.5</span>
+            <span class="tl-badge latest">最新</span>
+            <span class="tl-date">2026-05</span>
+          </div>
+          <ul class="change-list">
+            <li class="change-item"><span class="change-type type-new">新增</span>任务栏图标修复，从 ICO 提取 256×256 PNG，main() 入口最早处设置，彻底解决显示 Java 默认图标问题</li>
+            <li class="change-item"><span class="change-type type-new">新增</span>安装器打包脚本 build-installer.bat 自动读取 AutoUpdater.kt 中的版本号，无需手动维护</li>
+            <li class="change-item"><span class="change-type type-imp">优化</span>EXE 图标替换为包含 256/128/64/48/32/16 六个尺寸的完整 ICO，文件管理器超大图标视图清晰显示</li>
+            <li class="change-item"><span class="change-type type-fix">修复</span>安装器 DisableDirPage=no，重装时强制显示目录选择页，解决无法更改安装路径问题</li>
+            <li class="change-item"><span class="change-type type-fix">修复</span>build-installer.bat 改为纯 ASCII 编码，解决中文字符导致 cmd.exe 闪退问题</li>
+            <li class="change-item"><span class="change-type type-imp">优化</span>所有数据迁移至启动器同目录 data 文件夹，首次启动自动从旧版 ~/.md3l 迁移</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- v1.3.0 -->
+      <div class="tl-item reveal">
+        <div class="tl-dot old"></div>
+        <div class="tl-card">
+          <div class="tl-header">
+            <span class="tl-version">v1.3.0</span>
+            <span class="tl-badge minor">次要版本</span>
+            <span class="tl-date">2026-04</span>
+          </div>
+          <ul class="change-list">
+            <li class="change-item"><span class="change-type type-new">新增</span>NeoForge 21.11.42+ 支持，修复 universal 库缺失导致的启动失败</li>
+            <li class="change-item"><span class="change-type type-new">新增</span>基岩版启动优化，版本切换速度大幅提升</li>
+            <li class="change-item"><span class="change-type type-new">新增</span>模组资源中心接入 CurseForge，支持双源搜索</li>
+            <li class="change-item"><span class="change-type type-imp">优化</span>整合包导入进度 PCL2 风格分阶段展示，带百分比和速度</li>
+            <li class="change-item"><span class="change-type type-fix">修复</span>NeoForge 启动崩溃 "Minecraft jar does not have a Minecraft-Dists attribute" 问题</li>
+            <li class="change-item"><span class="change-type type-fix">修复</span>外层 ZIP 包裹的 .mrpack 整合包导入时加载器识别为 null 的问题</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- v1.2.0 -->
+      <div class="tl-item reveal">
+        <div class="tl-dot old"></div>
+        <div class="tl-card">
+          <div class="tl-header">
+            <span class="tl-version">v1.2.0</span>
+            <span class="tl-badge minor">次要版本</span>
+            <span class="tl-date">2026-03</span>
+          </div>
+          <ul class="change-list">
+            <li class="change-item"><span class="change-type type-new">新增</span>Yggdrasil 第三方账号支持（LittleSkin / AuthMe），自动下载注入 authlib-injector</li>
+            <li class="change-item"><span class="change-type type-new">新增</span>拖拽导入 .mrpack 整合包，支持管理员权限窗口的拖拽兼容</li>
+            <li class="change-item"><span class="change-type type-new">新增</span>GDK/WU 基岩版下载鲁棒性优化：chunk 并发控制、超时检测、失败重试</li>
+            <li class="change-item"><span class="change-type type-imp">优化</span>下载任务卡片支持多行进度详情和百分比徽章</li>
+            <li class="change-item"><span class="change-type type-fix">修复</span>JVM classpath 仅加载单层 inheritsFrom 导致 NoClassDefFoundError 问题，改为递归解析</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- v1.1.0 -->
+      <div class="tl-item reveal">
+        <div class="tl-dot old"></div>
+        <div class="tl-card">
+          <div class="tl-header">
+            <span class="tl-version">v1.1.0</span>
+            <span class="tl-badge minor">次要版本</span>
+            <span class="tl-date">2026-02</span>
+          </div>
+          <ul class="change-list">
+            <li class="change-item"><span class="change-type type-new">新增</span>Modrinth 模组搜索，支持中文关键词自动翻译</li>
+            <li class="change-item"><span class="change-type type-new">新增</span>设置页面主题配色选择与自定义背景图片</li>
+            <li class="change-item"><span class="change-type type-new">新增</span>自动更新检查，从 Gitee 拉取最新 Release</li>
+            <li class="change-item"><span class="change-type type-imp">优化</span>BMCLAPI 镜像加速，大幅提升国内下载速度</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- v1.0.0 -->
+      <div class="tl-item reveal">
+        <div class="tl-dot old"></div>
+        <div class="tl-card">
+          <div class="tl-header">
+            <span class="tl-version">v1.0.0</span>
+            <span class="tl-badge patch">首发</span>
+            <span class="tl-date">2026-01</span>
+          </div>
+          <ul class="change-list">
+            <li class="change-item"><span class="change-type type-new">新增</span>Java 版启动，支持 Forge / Fabric / NeoForge / Quilt</li>
+            <li class="change-item"><span class="change-type type-new">新增</span>基岩版 MSIX 安装与启动</li>
+            <li class="change-item"><span class="change-type type-new">新增</span>微软正版账号与离线账号登录</li>
+            <li class="change-item"><span class="change-type type-new">新增</span>Material Design 3 深色主题界面</li>
+            <li class="change-item"><span class="change-type type-new">新增</span>Minecraft 官方资讯展示</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<footer class="site-footer"><div class="container"></div></footer>
+<a class="fab" href="download.html"><span class="ms">download</span><span class="label">下载</span></a>
+<script src="nav.js"></script>
+</body>
+</html>

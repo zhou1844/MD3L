@@ -60,11 +60,7 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
             }
             selectedTargetVersion = localVersions.firstOrNull()
         }
-        versions = if (edition == "bedrock") {
-            BedrockResourceApi.getProjectVersions(project.slug, project.title)
-        } else {
-            ModrinthApi.getProjectVersions(project.slug)
-        }
+        versions = ModrinthApi.getProjectVersions(project.slug)
         isLoading = false
     }
 
@@ -82,6 +78,12 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
+        var translatedTitle by remember(project.title) { mutableStateOf(project.title) }
+        var translatedDesc by remember(project.description) { mutableStateOf(project.description) }
+        LaunchedEffect(project.title, project.description) {
+            translatedTitle = MicrosoftTranslate.toChinese(project.title)
+            translatedDesc = if (project.description.isNotBlank()) MicrosoftTranslate.toChinese(project.description) else ""
+        }
         // ── 返回 + 标题 ──────────────────────────────────────────────────────
         Row(verticalAlignment = Alignment.CenterVertically) {
             FilledTonalIconButton(
@@ -94,14 +96,14 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    project.title,
+                    translatedTitle,
                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    project.description,
+                    translatedDesc.ifBlank { project.description },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
@@ -428,6 +430,34 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                                                 targetDir.mkdirs()
                                                 val dest = File(targetDir, file.filename)
                                                 val versionHint = selectedTargetVersion?.let { " → ${it.id}" } ?: if (isJavaModpack) " → 导入为新版本" else " → 全局目录"
+
+                                                // ── 自动解析并下载前置依赖（仅 Java mod，非整合包）──
+                                                if (edition != "bedrock" && !isJavaModpack) {
+                                                    val preferGv = ver.gameVersions.firstOrNull() ?: filterGameVersion
+                                                    val preferLd = ver.loaders.firstOrNull() ?: filterLoader
+                                                    val depFiles = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                        runCatching {
+                                                            ModrinthApi.resolveDependencyFiles(ver, preferGv, preferLd)
+                                                        }.getOrDefault(emptyList())
+                                                    }
+                                                    var depCount = 0
+                                                    depFiles.forEach { (depName, depFile) ->
+                                                        val depDest = File(targetDir, depFile.filename)
+                                                        if (!depDest.exists()) {
+                                                            depCount++
+                                                            ResourceDownloadManager.launch(
+                                                                name = "[前置] $depName",
+                                                                url = depFile.url,
+                                                                dest = depDest,
+                                                                size = depFile.size,
+                                                            ) { _, _ -> }
+                                                        }
+                                                    }
+                                                    if (depCount > 0) {
+                                                        statusMessage = "已自动加入 $depCount 个前置依赖到下载管理"
+                                                    }
+                                                }
+
                                                 ResourceDownloadManager.launch(
                                                     name = file.filename,
                                                     url = file.url,

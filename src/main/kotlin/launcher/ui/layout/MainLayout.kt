@@ -1,25 +1,40 @@
 package launcher.ui.layout
 
 import androidx.compose.animation.*
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.collectAsState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 import launcher.core.GameProcessManager
 import launcher.core.LaunchState
 import launcher.ui.components.DownloadFab
@@ -27,8 +42,11 @@ import launcher.ui.nav.Route
 import launcher.ui.nav.Screen
 import launcher.ui.nav.primaryTab
 import launcher.ui.screens.*
-import launcher.ui.theme.IosAppLaunchCurve
-import launcher.ui.theme.IosAppLaunchDuration
+import launcher.ui.theme.ThemeState
+import java.awt.RenderingHints
+import java.awt.image.BufferedImage
+import java.io.File
+import javax.imageio.ImageIO
 
 object Navigator {
     var current by mutableStateOf<Route>(Route.Launch)
@@ -71,120 +89,183 @@ fun MainLayout(modifier: Modifier = Modifier) {
     val activeProcess by GameProcessManager.activeProcess.collectAsState()
     val uiLocked = isLaunching || activeProcess != null
 
-    Row(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        // ── Left: NavigationRail ──────────────────────────────────────────────
-        NavigationRail(
+    val bgPath = ThemeState.backgroundImagePath
+    val bgBlur = ThemeState.backgroundBlurRadius
+    val bgBrightness = ThemeState.backgroundBrightness
+    // bgKey 只依赖路径，模糊由 GPU layer 实时处理，切换模糊度 0 延迟
+    val bgKey = bgPath
+    var bgBitmap by remember { mutableStateOf(if (ThemeState.cachedBgKey == bgKey) ThemeState.cachedBgBitmap else null) }
+    LaunchedEffect(bgKey) {
+        if (ThemeState.cachedBgKey == bgKey && ThemeState.cachedBgBitmap != null) {
+            bgBitmap = ThemeState.cachedBgBitmap
+            return@LaunchedEffect
+        }
+        bgBitmap = if (bgPath.isNotBlank()) withContext(Dispatchers.IO) {
+            runCatching {
+                var src = ImageIO.read(File(bgPath)) ?: return@runCatching null
+                // 降采样到 1280px 供 GPU 渲染，无需 CPU 模糊
+                val maxDim = 1280
+                if (src.width > maxDim || src.height > maxDim) {
+                    val scale = maxDim.toFloat() / maxOf(src.width, src.height)
+                    val nw = (src.width * scale).toInt().coerceAtLeast(1)
+                    val nh = (src.height * scale).toInt().coerceAtLeast(1)
+                    val tmp = BufferedImage(nw, nh, BufferedImage.TYPE_INT_RGB)
+                    tmp.createGraphics().also {
+                        it.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+                        it.drawImage(src, 0, 0, nw, nh, null); it.dispose()
+                    }
+                    src = tmp
+                }
+                val bmp = src.toComposeImageBitmap()
+                ThemeState.cachedBgBitmap = bmp
+                ThemeState.cachedBgKey = bgKey
+                bmp
+            }.getOrNull()
+        } else null
+    }
+    val hasBg = bgBitmap != null
+    val panelAlpha = if (hasBg) ThemeState.uiPanelOpacity else 1f
+
+    // 有壁纸时面板用 uiPanelOpacity；无壁纸时保持不透明
+    val railContainerColor = if (hasBg)
+        MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = panelAlpha)
+    else
+        MaterialTheme.colorScheme.surfaceContainerLow
+    val contentBgColor = if (hasBg)
+        MaterialTheme.colorScheme.surfaceContainer.copy(alpha = panelAlpha)
+    else
+        MaterialTheme.colorScheme.surfaceContainer
+
+    Box(modifier = modifier.fillMaxSize().graphicsLayer { clip = true }) {
+        // ── 全局壁纸底层 ─────────────────────────────────────────────────────
+        val bmp = bgBitmap
+        if (bmp != null) {
+            // 壁纸 + GPU 实时模糊：blurRadius 变化时只重绘此 GPU layer，0 CPU 延迟
+            // clip 防止 blur 扩散到 MainLayout 外部（TitleBar 方向）
+            val blurPx = bgBlur.toFloat() * 2f  // radius→sigma 映射
+            androidx.compose.foundation.Image(
+                bitmap = bmp,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        clip = true
+                        if (blurPx > 0f) {
+                            renderEffect = BlurEffect(blurPx, blurPx, TileMode.Decal)
+                        }
+                    },
+            )
+            // 亮度遮罩：独立 layer，亮度变化只更新 GPU layer，不触发重组
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = (1f - bgBrightness).coerceIn(0f, 0.85f) }
+                    .background(Color.Black)
+            )
+        } else {
+            // 无壁纸时填充默认背景色
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+            )
+        }
+
+    Row(modifier = Modifier.fillMaxSize()) {
+        // ── Left: Custom Sidebar ──────────────────────────────────────────────
+        Column(
             modifier = Modifier
                 .fillMaxHeight()
                 .width(80.dp)
                 .padding(vertical = 8.dp, horizontal = 4.dp)
                 .clip(RoundedCornerShape(16.dp))
-                .alpha(if (uiLocked) 0.45f else 1f),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            header = {},
+                .background(railContainerColor)
+                .alpha(if (uiLocked) 0.5f else 1f)
+                .padding(vertical = 10.dp, horizontal = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(4.dp))
             Screen.entries.forEach { screen ->
                 val selected = activeTab == screen
-                NavigationRailItem(
+                SidebarNavItem(
+                    screen = screen,
                     selected = selected,
+                    locked = uiLocked,
                     onClick = { if (!uiLocked) Navigator.navigatePrimary(screen) },
-                    enabled = !uiLocked,
-                    icon = {
-                        Icon(
-                            imageVector = screen.icon,
-                            contentDescription = screen.label,
-                            modifier = Modifier.size(22.dp),
-                        )
-                    },
-                    label = {
-                        Text(
-                            text = screen.label,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    },
-                    alwaysShowLabel = true,
-                    colors = NavigationRailItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
                 )
                 Spacer(Modifier.height(2.dp))
             }
-
             Spacer(Modifier.weight(1f))
         }
 
         // ── Right: Main content with Crossfade + 悬浮球 ──────────────────
+        var fabContainerW by remember { mutableStateOf(0) }
+        var fabContainerH by remember { mutableStateOf(0) }
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp)
                 .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainer),
+                .background(contentBgColor)
+                .onSizeChanged { fabContainerW = it.width; fabContainerH = it.height },
         ) {
+            // ── MD3 动画曲线 ──────────────────────────────────────────────
+            // Emphasized Decelerate: 进场——从快到慢，感觉内容「落定」
+            val md3EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1.0f)
+            // Emphasized Accelerate: 退场——从慢到快，感觉内容「飞走」
+            val md3EmphasizedAccelerate = CubicBezierEasing(0.3f, 0.0f, 0.8f, 0.15f)
+
             AnimatedContent(
                 targetState = currentRoute,
                 transitionSpec = {
-                    val targetTab = Navigator.lastPrimaryTap
-                    val tabIndex = Screen.entries.indexOf(targetTab)
-                    
-                    val isTargetPrimary = targetState == Route.Launch || targetState == Route.Versions || 
-                                       targetState == Route.Download || targetState == Route.Mods || 
-                                       targetState == Route.Settings
-                                       
-                    val isInitialPrimary = initialState == Route.Launch || initialState == Route.Versions || 
-                                       initialState == Route.Download || initialState == Route.Mods || 
-                                       initialState == Route.Settings
+                    val isPrimaryRoute = { r: Route ->
+                        r == Route.Launch || r == Route.Versions ||
+                        r == Route.Download || r == Route.Mods || r == Route.Settings
+                    }
+                    val toSub   = isPrimaryRoute(initialState) && !isPrimaryRoute(targetState)
+                    val fromSub = !isPrimaryRoute(initialState) && isPrimaryRoute(targetState)
 
-                    if (!isTargetPrimary && isInitialPrimary) {
-                        // iOS Push: Slide in from right
-                        val enter = slideInHorizontally(
-                            initialOffsetX = { it },
-                            animationSpec = tween(IosAppLaunchDuration, easing = IosAppLaunchCurve)
-                        ) + fadeIn(tween(IosAppLaunchDuration / 2))
-                        
-                        val exit = slideOutHorizontally(
-                            targetOffsetX = { -it / 3 },
-                            animationSpec = tween(IosAppLaunchDuration, easing = IosAppLaunchCurve)
-                        ) + fadeOut(tween(IosAppLaunchDuration / 2))
-                        
-                        enter togetherWith exit
-                    } else if (isTargetPrimary && !isInitialPrimary) {
-                        // iOS Pop: Slide out to right
-                        val enter = slideInHorizontally(
-                            initialOffsetX = { -it / 3 },
-                            animationSpec = tween(IosAppLaunchDuration, easing = IosAppLaunchCurve)
-                        ) + fadeIn(tween(IosAppLaunchDuration / 2))
-                        
-                        val exit = slideOutHorizontally(
-                            targetOffsetX = { it },
-                            animationSpec = tween(IosAppLaunchDuration, easing = IosAppLaunchCurve)
-                        ) + fadeOut(tween(IosAppLaunchDuration / 2))
-                        
-                        enter togetherWith exit
-                    } else {
-                        // Switch between Primary Tabs: iOS App Launch style (spring scale from icon)
-                        val yOrigin = if (tabIndex >= 0) 0.15f + tabIndex * 0.15f else 0.5f
-                        val origin = androidx.compose.ui.graphics.TransformOrigin(0.05f, yOrigin)
-                        
-                        val enter = fadeIn(tween(IosAppLaunchDuration / 2, easing = IosAppLaunchCurve)) +
-                                scaleIn(
-                                    initialScale = 0.35f,
-                                    animationSpec = tween(IosAppLaunchDuration, easing = IosAppLaunchCurve),
-                                    transformOrigin = origin
-                                )
-                        val exit = fadeOut(tween(IosAppLaunchDuration / 3, easing = IosAppLaunchCurve)) + 
-                                scaleOut(
-                                    targetScale = 1.08f,
-                                    animationSpec = tween(IosAppLaunchDuration / 3, easing = IosAppLaunchCurve)
-                                )
-                        enter togetherWith exit
+                    when {
+                        toSub -> {
+                            // 进入子页面：内容从右侧滑入（Shared Axis X Forward）
+                            val enter = slideInHorizontally(
+                                initialOffsetX = { (it * 0.25f).toInt() },
+                                animationSpec = tween(350, easing = md3EmphasizedDecelerate)
+                            ) + fadeIn(tween(200, easing = md3EmphasizedDecelerate))
+                            val exit = slideOutHorizontally(
+                                targetOffsetX = { -(it * 0.1f).toInt() },
+                                animationSpec = tween(200, easing = md3EmphasizedAccelerate)
+                            ) + fadeOut(tween(150, easing = md3EmphasizedAccelerate))
+                            enter togetherWith exit
+                        }
+                        fromSub -> {
+                            // 返回主页面：内容从左侧滑入（Shared Axis X Backward）
+                            val enter = slideInHorizontally(
+                                initialOffsetX = { -(it * 0.1f).toInt() },
+                                animationSpec = tween(350, easing = md3EmphasizedDecelerate)
+                            ) + fadeIn(tween(200, easing = md3EmphasizedDecelerate))
+                            val exit = slideOutHorizontally(
+                                targetOffsetX = { (it * 0.25f).toInt() },
+                                animationSpec = tween(200, easing = md3EmphasizedAccelerate)
+                            ) + fadeOut(tween(150, easing = md3EmphasizedAccelerate))
+                            enter togetherWith exit
+                        }
+                        else -> {
+                            // 主 Tab 间切换：MD3 Fade Through
+                            // 退场先缩小淡出，进场从略小放大淡入，形成「穿越」感
+                            val enter = fadeIn(
+                                animationSpec = tween(220, delayMillis = 90, easing = md3EmphasizedDecelerate)
+                            ) + scaleIn(
+                                initialScale = 0.92f,
+                                animationSpec = tween(300, delayMillis = 90, easing = md3EmphasizedDecelerate)
+                            )
+                            val exit = fadeOut(
+                                animationSpec = tween(90, easing = md3EmphasizedAccelerate)
+                            ) + scaleOut(
+                                targetScale = 0.96f,
+                                animationSpec = tween(90, easing = md3EmphasizedAccelerate)
+                            )
+                            enter togetherWith exit
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxSize().padding(16.dp),
@@ -194,21 +275,192 @@ fun MainLayout(modifier: Modifier = Modifier) {
                     is Route.Versions -> VersionScreen()
                     is Route.Download -> DownloadScreen()
                     is Route.Mods -> ModScreen()
+                    is Route.BedrockMods -> BedrockModScreen()
                     is Route.Settings -> SettingsScreen()
                     is Route.VersionDetail -> VersionDetailScreen(route.version)
                     is Route.BedrockVersionDetail -> BedrockVersionDetailScreen(route.version)
                     is Route.ModDetail -> ModDetailScreen(route.project, route.edition, route.contentType)
+                    is Route.CfBedrockDetail -> CfBedrockDetailScreen(route.project)
                     is Route.DownloadManager -> DownloadManagerScreen()
+                    is Route.BedrockPackManager -> BedrockPackManagerScreen(route.versionId, route.versionDir, route.packType)
+                    is Route.BedrockWorldManager -> BedrockWorldManagerScreen(route.versionId, route.versionDir)
                 }
             }
 
-            // ── 下载悬浮球（始终悬浮在右下角，不随页面切换消失）──
+            // ── 下载悬浮球（可自由拖动）──────────────────────────────────────
+            val density = LocalDensity.current
+            val fabSizePx = with(density) { 56.dp.toPx() }
+            val fabPadPx = with(density) { 20.dp.toPx() }
+            var fabOffsetX by remember { mutableStateOf(Float.MAX_VALUE) }
+            var fabOffsetY by remember { mutableStateOf(Float.MAX_VALUE) }
+            LaunchedEffect(fabContainerW, fabContainerH) {
+                if (fabContainerW > 0 && fabContainerH > 0) {
+                    if (fabOffsetX == Float.MAX_VALUE || fabOffsetY == Float.MAX_VALUE) {
+                        fabOffsetX = fabContainerW - fabSizePx - fabPadPx
+                        fabOffsetY = fabContainerH - fabSizePx - fabPadPx
+                    }
+                    fabOffsetX = fabOffsetX.coerceIn(fabPadPx, (fabContainerW - fabSizePx - fabPadPx).coerceAtLeast(fabPadPx))
+                    fabOffsetY = fabOffsetY.coerceIn(fabPadPx, (fabContainerH - fabSizePx - fabPadPx).coerceAtLeast(fabPadPx))
+                }
+            }
             DownloadFab(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(20.dp),
+                    .offset { IntOffset(fabOffsetX.roundToInt(), fabOffsetY.roundToInt()) },
+                dragModifier = Modifier.pointerInput(Unit) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        fabOffsetX = (fabOffsetX + dragAmount.x).coerceIn(fabPadPx, (fabContainerW - fabSizePx - fabPadPx).coerceAtLeast(fabPadPx))
+                        fabOffsetY = (fabOffsetY + dragAmount.y).coerceIn(fabPadPx, (fabContainerH - fabSizePx - fabPadPx).coerceAtLeast(fabPadPx))
+                    }
+                },
                 onClick = { Navigator.navigate(Route.DownloadManager) },
             )
         }
     }
+    } // end root Box
+}
+
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@Composable
+private fun SidebarNavItem(
+    screen: launcher.ui.nav.Screen,
+    selected: Boolean,
+    locked: Boolean,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    var isHovered by remember { mutableStateOf(false) }
+
+    val containerColor = when {
+        selected -> MaterialTheme.colorScheme.primaryContainer
+        isHovered -> MaterialTheme.colorScheme.surfaceContainerHighest
+        else -> Color.Transparent
+    }
+    val iconTint = when {
+        selected -> MaterialTheme.colorScheme.onPrimaryContainer
+        isHovered -> MaterialTheme.colorScheme.onSurface
+        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+    }
+    val labelColor = when {
+        selected -> MaterialTheme.colorScheme.primary
+        isHovered -> MaterialTheme.colorScheme.onSurface
+        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .onPointerEvent(PointerEventType.Enter) { isHovered = true }
+            .onPointerEvent(PointerEventType.Exit)  { isHovered = false }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = !locked,
+                onClick = onClick,
+            )
+            .padding(vertical = 4.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(containerColor),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = screen.icon,
+                contentDescription = screen.label,
+                modifier = Modifier.size(22.dp),
+                tint = iconTint,
+            )
+        }
+        Spacer(Modifier.height(3.dp))
+        Text(
+            text = screen.label,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 10.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            ),
+            color = labelColor,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * 快速箱形模糊（线性时间），迭代3次近似高斯模糊效果。
+ * 先缩小到 1/scale 再模糊再放大，进一步提速。
+ * Public 供 Main.kt 启动时预处理调用。
+ */
+fun fastBoxBlur(src: BufferedImage, radius: Int): BufferedImage {
+    if (radius <= 0) return src
+    val scale = if (radius > 15) 4 else if (radius > 6) 2 else 1
+    val sw = (src.width / scale).coerceAtLeast(1)
+    val sh = (src.height / scale).coerceAtLeast(1)
+    // 缩小
+    var img = BufferedImage(sw, sh, BufferedImage.TYPE_INT_RGB)
+    img.createGraphics().also {
+        it.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+        it.drawImage(src, 0, 0, sw, sh, null)
+        it.dispose()
+    }
+    // 箱形模糊：迭代3次（近似高斯）
+    val r = (radius / scale).coerceAtLeast(1)
+    repeat(3) { img = boxBlurPass(img, r) }
+    // 放大回原尺寸
+    val out = BufferedImage(src.width, src.height, BufferedImage.TYPE_INT_RGB)
+    out.createGraphics().also {
+        it.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+        it.drawImage(img, 0, 0, src.width, src.height, null)
+        it.dispose()
+    }
+    return out
+}
+
+private fun boxBlurPass(src: BufferedImage, r: Int): BufferedImage {
+    val w = src.width; val h = src.height
+    val pixels = IntArray(w * h)
+    src.getRGB(0, 0, w, h, pixels, 0, w)
+    val tmp = IntArray(w * h)
+    // 水平方向
+    for (y in 0 until h) {
+        var rSum = 0; var gSum = 0; var bSum = 0
+        val start = y * w
+        for (x in -r..r) {
+            val p = pixels[start + x.coerceIn(0, w - 1)]
+            rSum += (p shr 16) and 0xFF; gSum += (p shr 8) and 0xFF; bSum += p and 0xFF
+        }
+        val div = r * 2 + 1
+        for (x in 0 until w) {
+            tmp[start + x] = (0xFF shl 24) or ((rSum / div) shl 16) or ((gSum / div) shl 8) or (bSum / div)
+            val add = pixels[start + (x + r + 1).coerceIn(0, w - 1)]
+            val rem = pixels[start + (x - r).coerceIn(0, w - 1)]
+            rSum += ((add shr 16) and 0xFF) - ((rem shr 16) and 0xFF)
+            gSum += ((add shr 8) and 0xFF) - ((rem shr 8) and 0xFF)
+            bSum += (add and 0xFF) - (rem and 0xFF)
+        }
+    }
+    // 垂直方向
+    val out = IntArray(w * h)
+    for (x in 0 until w) {
+        var rSum = 0; var gSum = 0; var bSum = 0
+        for (y in -r..r) {
+            val p = tmp[y.coerceIn(0, h - 1) * w + x]
+            rSum += (p shr 16) and 0xFF; gSum += (p shr 8) and 0xFF; bSum += p and 0xFF
+        }
+        val div = r * 2 + 1
+        for (y in 0 until h) {
+            out[y * w + x] = (0xFF shl 24) or ((rSum / div) shl 16) or ((gSum / div) shl 8) or (bSum / div)
+            val add = tmp[(y + r + 1).coerceIn(0, h - 1) * w + x]
+            val rem = tmp[(y - r).coerceIn(0, h - 1) * w + x]
+            rSum += ((add shr 16) and 0xFF) - ((rem shr 16) and 0xFF)
+            gSum += ((add shr 8) and 0xFF) - ((rem shr 8) and 0xFF)
+            bSum += (add and 0xFF) - (rem and 0xFF)
+        }
+    }
+    val result = BufferedImage(w, h, BufferedImage.TYPE_INT_RGB)
+    result.setRGB(0, 0, w, h, out, 0, w)
+    return result
 }

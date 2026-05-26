@@ -1,9 +1,13 @@
 package launcher.ui.screens
 
 import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -28,14 +32,31 @@ import launcher.ui.components.VersionIcon
 import java.awt.Desktop
 import java.io.File
 
+@Composable
+private fun VersionPill(label: String, selected: Boolean, onClick: () -> Unit) {
+    val bg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh
+    val fg = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+    Box(
+        modifier = Modifier.clip(RoundedCornerShape(20.dp)).background(bg).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 7.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium.copy(fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal), color = fg)
+    }
+}
+
+private object VersionScreenState {
+    var filterBedrock by androidx.compose.runtime.mutableStateOf(false)
+    var filterType by androidx.compose.runtime.mutableStateOf<LoaderType?>(null)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VersionScreen() {
     val scope = rememberCoroutineScope()
     val repoVersions by VersionRepository.versions.collectAsState()
     var isLoading by remember { mutableStateOf(true) }
-    var filterType by remember { mutableStateOf<LoaderType?>(null) }
-    var filterBedrock by remember { mutableStateOf(false) }
+    var filterType by VersionScreenState::filterType
+    var filterBedrock by VersionScreenState::filterBedrock
     var searchQuery by remember { mutableStateOf("") }
     var bedrockVersions by remember { mutableStateOf<List<LocalVersion>>(emptyList()) }
     val bedrockDownloading by BedrockDownloadManager.downloadingVersions.collectAsState()
@@ -76,107 +97,104 @@ fun VersionScreen() {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        Text("本地版本管理", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
-        Spacer(Modifier.height(2.dp))
-        Text("共 ${repoVersions.size + bedrockVersions.size} 个版本 · 点击卡片管理", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(12.dp))
-
-        // ── 搜索 + 过滤 ─────────────────────────────────────────────────────
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("搜索版本...") },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.weight(1f),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                ),
-            )
-            Spacer(Modifier.width(8.dp))
-            val types = listOf(null to "全部", LoaderType.Vanilla to "原版", LoaderType.Forge to "Forge", LoaderType.NeoForge to "NeoForge", LoaderType.Fabric to "Fabric")
-            // Bedrock 独立 chip
-            FilterChip(
-                selected = filterBedrock,
-                onClick = { filterBedrock = !filterBedrock; if (filterBedrock) filterType = null },
-                label = { Text("基岩版", style = MaterialTheme.typography.labelSmall) },
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.padding(horizontal = 2.dp),
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                ),
-            )
-            types.forEach { (type, label) ->
-                FilterChip(
-                    selected = filterType == type,
-                    onClick = { filterType = type; filterBedrock = false },
-                    label = { Text(label, style = MaterialTheme.typography.labelSmall) },
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.padding(horizontal = 2.dp),
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    ),
-                )
+        // ── 标题区 ───────────────────────────────────────────────────────────
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier.size(44.dp).clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.Storage, null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
             }
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text("本地版本管理", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+                Text("共 ${repoVersions.size + bedrockVersions.size} 个版本 · 点击卡片管理", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+
+        // ── 搜索栏 ───────────────────────────────────────────────────────────
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            placeholder = { Text("搜索版本名称…") },
+            leadingIcon = { Icon(Icons.Filled.Search, null, modifier = Modifier.size(20.dp)) },
+            trailingIcon = { if (searchQuery.isNotBlank()) IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Filled.Clear, null, modifier = Modifier.size(18.dp)) } },
+            singleLine = true,
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = MaterialTheme.typography.bodyMedium,
+        )
+        Spacer(Modifier.height(10.dp))
+
+        // ── 过滤 Pills + 操作按钮 ─────────────────────────────────────────────
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            val filterTypes = listOf(null to "全部", LoaderType.Vanilla to "原版", LoaderType.Forge to "Forge", LoaderType.NeoForge to "NeoForge", LoaderType.Fabric to "Fabric", null to "基岩版")
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f)) {
+                filterTypes.forEach { (type, label) ->
+                    item(key = label) {
+                        val isBedrock = label == "基岩版"
+                        VersionPill(
+                            label = label,
+                            selected = if (isBedrock) filterBedrock else filterType == type && !filterBedrock,
+                        ) {
+                            if (isBedrock) { filterBedrock = !filterBedrock; if (filterBedrock) filterType = null }
+                            else { filterType = type; filterBedrock = false }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.width(8.dp))
             FilledTonalButton(
                 onClick = {
                     scope.launch {
                         val file = withContext(Dispatchers.IO) {
-                            chooseFileDialog("导入整合包", "*.zip;*.mrpack", load = true)
+                            chooseFileDialog("导入整合包 / 基岩版包", "*.zip;*.mrpack;*.md3l;*.md3lbackup", load = true)
                         }
                         if (file != null) {
                             val settings = withContext(Dispatchers.IO) { AppSettings.load() }
-                            val importTaskId = "manual_modpack_import_${file.absolutePath.hashCode()}_${System.currentTimeMillis()}"
-                            DownloadHub.upsert(DownloadHub.HubTask(
-                                id = importTaskId,
-                                name = "导入整合包 ${file.name}",
-                                type = DownloadHub.TaskType.ResourceDownload,
-                                step = "准备导入整合包",
-                                fraction = 0f,
-                            ))
-                            // 用独立协程作用域，不绑定 Compose 生命周期，防止切换页面时取消导入
-                            val importScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
-                            importScope.launch {
-                                val result = ModpackManager.importMrpack(file, settings.minecraftDir) { step, fraction ->
-                                    runCatching { sheetMessage = step }
-                                    DownloadHub.upsert(DownloadHub.HubTask(
-                                        id = importTaskId,
-                                        name = "导入整合包 ${file.name}",
-                                        type = DownloadHub.TaskType.ResourceDownload,
-                                        step = step,
-                                        fraction = fraction.coerceIn(0f, 1f),
-                                    ))
+                            val ext = file.extension.lowercase()
+                            if (ext == "md3lbackup") {
+                                val importTaskId = "bedrock_restore_${file.absolutePath.hashCode()}_${System.currentTimeMillis()}"
+                                DownloadHub.upsert(DownloadHub.HubTask(id = importTaskId, name = "恢复基岩版备份 ${file.name}", type = DownloadHub.TaskType.ResourceDownload, step = "准备恢复备份", fraction = 0f))
+                                val importScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+                                importScope.launch {
+                                    val result = BedrockExportManager.restoreBackup(file, settings.minecraftDir) { msg ->
+                                        DownloadHub.upsert(DownloadHub.HubTask(id = importTaskId, name = "恢复基岩版备份 ${file.name}", type = DownloadHub.TaskType.ResourceDownload, step = msg, fraction = 0.5f))
+                                    }
+                                    DownloadHub.upsert(DownloadHub.HubTask(id = importTaskId, name = "恢复基岩版备份 ${file.name}", type = DownloadHub.TaskType.ResourceDownload, status = if ("成功" in result) DownloadHub.TaskStatus.Done else DownloadHub.TaskStatus.Error, step = result, fraction = if ("成功" in result) 1f else 0f, error = if ("成功" in result) "" else result))
+                                    runCatching { refresh() }
                                 }
-                                DownloadHub.upsert(DownloadHub.HubTask(
-                                    id = importTaskId,
-                                    name = "导入整合包 ${file.name}",
-                                    type = DownloadHub.TaskType.ResourceDownload,
-                                    status = if ("成功" in result) DownloadHub.TaskStatus.Done else DownloadHub.TaskStatus.Error,
-                                    step = result,
-                                    fraction = if ("成功" in result) 1f else 0f,
-                                    error = if ("成功" in result) "" else result,
-                                ))
-                                runCatching { sheetMessage = result }
-                                runCatching { refresh() }
+                            } else if (ext == "md3l") {
+                                // .md3l 需要目标版本：弹出提示让用户先选中版本后从版本管理面板导入
+                                sheetMessage = "请在版本管理面板中选择目标基岩版版本后使用导入功能，或将 .md3l 文件拖入版本列表"
+                            } else {
+                                val importTaskId = "manual_modpack_import_${file.absolutePath.hashCode()}_${System.currentTimeMillis()}"
+                                DownloadHub.upsert(DownloadHub.HubTask(id = importTaskId, name = "导入整合包 ${file.name}", type = DownloadHub.TaskType.ResourceDownload, step = "准备导入整合包", fraction = 0f))
+                                val importScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+                                importScope.launch {
+                                    val result = ModpackManager.importMrpack(file, settings.minecraftDir) { step, fraction ->
+                                        runCatching { sheetMessage = step }
+                                        DownloadHub.upsert(DownloadHub.HubTask(id = importTaskId, name = "导入整合包 ${file.name}", type = DownloadHub.TaskType.ResourceDownload, step = step, fraction = fraction.coerceIn(0f, 1f)))
+                                    }
+                                    DownloadHub.upsert(DownloadHub.HubTask(id = importTaskId, name = "导入整合包 ${file.name}", type = DownloadHub.TaskType.ResourceDownload, status = if ("成功" in result) DownloadHub.TaskStatus.Done else DownloadHub.TaskStatus.Error, step = result, fraction = if ("成功" in result) 1f else 0f, error = if ("成功" in result) "" else result))
+                                    runCatching { sheetMessage = result }
+                                    runCatching { refresh() }
+                                }
                             }
                         }
                     }
                 },
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(14.dp),
             ) {
                 Icon(Icons.Filled.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("导入整合包")
+                Text("导入")
             }
             Spacer(Modifier.width(4.dp))
-            IconButton(onClick = { refresh() }) {
-                Icon(Icons.Filled.Refresh, contentDescription = "刷新", tint = MaterialTheme.colorScheme.primary)
+            FilledTonalIconButton(onClick = { refresh() }, shape = RoundedCornerShape(14.dp)) {
+                Icon(Icons.Filled.Refresh, contentDescription = "刷新", modifier = Modifier.size(18.dp))
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -184,14 +202,19 @@ fun VersionScreen() {
         // ── 版本列表 ─────────────────────────────────────────────────────────
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator(modifier = Modifier.size(36.dp), strokeWidth = 3.dp)
+                    Text("加载版本列表…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         } else if (filteredVersions.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Filled.Inbox, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
-                    Spacer(Modifier.height(12.dp))
-                    Text("没有找到匹配的版本", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.size(80.dp).clip(RoundedCornerShape(28.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.Inbox, null, modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                    }
+                    Text("没有找到匹配的版本", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (searchQuery.isBlank()) "下载或导入版本后将在此显示" else "试试其他关键词", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                 }
             }
         } else {
@@ -233,7 +256,8 @@ fun VersionScreen() {
             shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ) {
-            Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+            val sheetScrollState = rememberScrollState()
+            Column(modifier = Modifier.fillMaxWidth().verticalScroll(sheetScrollState).padding(horizontal = 24.dp, vertical = 8.dp)) {
                 // ── 标题 ─────────────────────────────────────────────────
                 Text(ver.id, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
                 Text("${ver.loaderType.name} · ${ver.type}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -341,45 +365,77 @@ fun VersionScreen() {
                     }
                 }
 
-                // ── 基岩版: 行为包/资源包/Addon 导入 ──────────────────
+                // ── 基岩版: 包管理 ────────────────────────────────────
                 if (ver.type == "bedrock") {
                     Spacer(Modifier.height(16.dp))
-                    Text("导入内容", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                    Text("包管理", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        // 行为包
                         FilledTonalButton(
                             onClick = {
-                                scope.launch(Dispatchers.IO) {
-                                    sheetMessage = importBedrockPack(ver.versionDir, ver.id, "behavior_packs", "mcpack", "行为包")
-                                }
+                                showSheet = false
+                                launcher.ui.layout.Navigator.navigate(
+                                    launcher.ui.nav.Route.BedrockPackManager(ver.id, ver.versionDir, "behavior_packs")
+                                )
                             },
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f),
                         ) {
                             Icon(Icons.Filled.Code, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("行为包")
+                            Text("行为包管理")
                         }
-                        // 资源包
                         FilledTonalButton(
                             onClick = {
-                                scope.launch(Dispatchers.IO) {
-                                    sheetMessage = importBedrockPack(ver.versionDir, ver.id, "resource_packs", "mcpack", "资源包")
-                                }
+                                showSheet = false
+                                launcher.ui.layout.Navigator.navigate(
+                                    launcher.ui.nav.Route.BedrockPackManager(ver.id, ver.versionDir, "resource_packs")
+                                )
                             },
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f),
                         ) {
                             Icon(Icons.Filled.Image, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("资源包")
+                            Text("资源包管理")
                         }
-                        // Addon
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    FilledTonalButton(
+                        onClick = {
+                            showSheet = false
+                            launcher.ui.layout.Navigator.navigate(
+                                launcher.ui.nav.Route.BedrockWorldManager(ver.id, ver.versionDir)
+                            )
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("地图管理")
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+                    Text("导出 / 备份", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         FilledTonalButton(
                             onClick = {
                                 scope.launch(Dispatchers.IO) {
-                                    sheetMessage = importBedrockPack(ver.versionDir, ver.id, "addon", "mcaddon", "Addon")
+                                    val settings = AppSettings.load()
+                                    val target = chooseFileDialog("导出 Addon", "*.mcaddon", load = false, defaultName = "${ver.id}.mcaddon")
+                                    if (target != null) {
+                                        val outFile = if (target.extension.isBlank()) File("${target.absolutePath}.mcaddon") else target
+                                        val taskId = "bedrock_export_addon_${ver.id}_${System.currentTimeMillis()}"
+                                        DownloadHub.upsert(DownloadHub.HubTask(id = taskId, name = "导出 Addon · ${ver.id}", type = DownloadHub.TaskType.ResourceDownload, step = "正在打包行为包和资源包…", fraction = 0f))
+                                        showSheet = false
+                                        val exportScope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+                                        exportScope.launch {
+                                            val result = BedrockExportManager.exportAddon(ver.id, ver.versionDir, settings.minecraftDir, outFile)
+                                            DownloadHub.upsert(DownloadHub.HubTask(id = taskId, name = "导出 Addon · ${ver.id}", type = DownloadHub.TaskType.ResourceDownload, status = if ("成功" in result) DownloadHub.TaskStatus.Done else DownloadHub.TaskStatus.Error, step = result, fraction = if ("成功" in result) 1f else 0f, error = if ("成功" in result) "" else result))
+                                        }
+                                    }
                                 }
                             },
                             shape = RoundedCornerShape(12.dp),
@@ -387,8 +443,61 @@ fun VersionScreen() {
                         ) {
                             Icon(Icons.Filled.Extension, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("Addon")
+                            Text("导出 Addon")
                         }
+                        FilledTonalButton(
+                            onClick = {
+                                scope.launch(Dispatchers.IO) {
+                                    val settings = AppSettings.load()
+                                    val target = chooseFileDialog("导出整合包", "*.md3l", load = false, defaultName = "${ver.id}.md3l")
+                                    if (target != null) {
+                                        val outFile = if (target.extension.equals("md3l", ignoreCase = true)) target else File("${target.absolutePath}.md3l")
+                                        val taskId = "bedrock_export_md3l_${ver.id}_${System.currentTimeMillis()}"
+                                        DownloadHub.upsert(DownloadHub.HubTask(id = taskId, name = "导出整合包 · ${ver.id}", type = DownloadHub.TaskType.ResourceDownload, step = "正在打包整合包…", fraction = 0f))
+                                        showSheet = false
+                                        val exportScope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+                                        exportScope.launch {
+                                            val result = BedrockExportManager.exportMd3lPack(ver.id, ver.versionDir, settings.minecraftDir, outFile)
+                                            DownloadHub.upsert(DownloadHub.HubTask(id = taskId, name = "导出整合包 · ${ver.id}", type = DownloadHub.TaskType.ResourceDownload, status = if ("成功" in result) DownloadHub.TaskStatus.Done else DownloadHub.TaskStatus.Error, step = result, fraction = if ("成功" in result) 1f else 0f, error = if ("成功" in result) "" else result))
+                                        }
+                                    }
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(Icons.Filled.Inventory2, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("导出整合包")
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    FilledTonalButton(
+                        onClick = {
+                            scope.launch(Dispatchers.IO) {
+                                val settings = AppSettings.load()
+                                val target = chooseFileDialog("备份版本", "*.md3lbackup", load = false, defaultName = "${ver.id}.md3lbackup")
+                                if (target != null) {
+                                    val outFile = if (target.extension.equals("md3lbackup", ignoreCase = true)) target else File("${target.absolutePath}.md3lbackup")
+                                    val taskId = "bedrock_backup_${ver.id}_${System.currentTimeMillis()}"
+                                    DownloadHub.upsert(DownloadHub.HubTask(id = taskId, name = "备份版本 · ${ver.id}", type = DownloadHub.TaskType.ResourceDownload, step = "正在备份版本文件…", fraction = 0.1f))
+                                    showSheet = false
+                                    val exportScope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+                                    exportScope.launch {
+                                        val result = BedrockExportManager.backupVersion(ver.id, ver.versionDir, settings.minecraftDir, outFile) { msg ->
+                                            DownloadHub.upsert(DownloadHub.HubTask(id = taskId, name = "备份版本 · ${ver.id}", type = DownloadHub.TaskType.ResourceDownload, step = msg, fraction = 0.5f))
+                                        }
+                                        DownloadHub.upsert(DownloadHub.HubTask(id = taskId, name = "备份版本 · ${ver.id}", type = DownloadHub.TaskType.ResourceDownload, status = if ("成功" in result) DownloadHub.TaskStatus.Done else DownloadHub.TaskStatus.Error, step = result, fraction = if ("成功" in result) 1f else 0f, error = if ("成功" in result) "" else result))
+                                    }
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Filled.Backup, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("备份版本 (.md3lbackup)")
                     }
                 }
 

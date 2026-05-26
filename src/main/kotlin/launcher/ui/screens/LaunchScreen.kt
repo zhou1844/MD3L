@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -184,6 +185,7 @@ fun LaunchScreen() {
         settings = loadedSettings
         nameInput = loadedSettings.playerName
         AccountRepository.loadFromDisk()
+        PlayerStats.load()
         rescanLocalVersions(loadedSettings, forceReselect = true)
         // 异步抓取官方资讯流
         NewsRepository.refresh()
@@ -192,6 +194,8 @@ fun LaunchScreen() {
     LaunchedEffect(selectedVersion, activeAccount) {
         val ver = selectedVersion ?: return@LaunchedEffect
         if (ver.type != "bedrock" || ver.versionDir.isBlank()) return@LaunchedEffect
+        val currentSettings = withContext(Dispatchers.IO) { AppSettings.load() }
+        if (!currentSettings.bedrockPreheatEnabled) return@LaunchedEffect
         val isMsa = activeAccount?.type == AccountType.MSA
         val versionDir = java.io.File(ver.versionDir)
         val isGdk = versionDir.name.let { id ->
@@ -211,7 +215,7 @@ fun LaunchScreen() {
         }
         if (isGdk && isMsa) return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            BedrockLaunchEngine.preheat(versionDir)
+            BedrockLaunchEngine.preheat(versionDir, currentSettings.minecraftDir, ver.id)
         }
     }
 
@@ -237,48 +241,203 @@ fun LaunchScreen() {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // 主布局：Row 左 50% 右 50% —— 对称布局
+    // 主布局：Row 左 45% 右 55%
     // ══════════════════════════════════════════════════════════════════════════
+
     Row(modifier = Modifier.fillMaxSize()) {
 
-        // ── 左区 (官方资讯) ──────────────────────────────────────────────
+        // ── 左区：玩家仪表盘 ────────────────────────────────────────
+        val stats by PlayerStats.data.collectAsState()
+        val totalLaunches = stats.javaLaunchCount + stats.bedrockLaunchCount
+        val totalSec = stats.javaPlayTimeSec + stats.bedrockPlayTimeSec
+
+        // 格式化游玩时长
+        fun fmtTime(sec: Long): String = when {
+            sec < 60 -> "${sec}s"
+            sec < 3600 -> "${sec / 60}m"
+            else -> "${sec / 3600}h ${(sec % 3600) / 60}m"
+        }
+        // 圆环比例
+        val javaFrac = if (totalLaunches > 0) stats.javaLaunchCount.toFloat() / totalLaunches else 0f
+        val bedrockFrac = 1f - javaFrac
+
+        val primaryColor = MaterialTheme.colorScheme.primary
+        val tertiaryColor = MaterialTheme.colorScheme.tertiary
+        val trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
+        val onSurface = MaterialTheme.colorScheme.onSurface
+        val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
+
         Column(
             modifier = Modifier
-                .weight(0.5f)
-                .fillMaxHeight(),
+                .weight(0.618f)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.55f))
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Filled.Newspaper, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.width(6.dp))
-                Text("Minecraft 资讯", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
-                Spacer(Modifier.weight(1f))
-                if (newsLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                } else {
-                    IconButton(onClick = { scope.launch { NewsRepository.refresh() } }, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "刷新", modifier = Modifier.size(16.dp))
+            // ── 标题 ──
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Filled.BarChart, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                }
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text("游戏数据", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                    Text("本机累计统计", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            // ── 圆环图：启动次数分布 ──
+            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    // Canvas 圆环
+                    Box(modifier = Modifier.size(88.dp), contentAlignment = Alignment.Center) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val stroke = 10.dp.toPx()
+                            val inset = stroke / 2f
+                            val sweepJ = if (totalLaunches == 0) 0f else (javaFrac * 360f).coerceIn(1f, 359f)
+                            val sweepB = if (totalLaunches == 0) 0f else ((bedrockFrac * 360f).coerceIn(1f, 359f))
+                            // track
+                            drawArc(trackColor, 0f, 360f, false, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke), topLeft = androidx.compose.ui.geometry.Offset(inset, inset), size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke))
+                            if (totalLaunches == 0) {
+                                drawArc(trackColor, -90f, 360f, false, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke), topLeft = androidx.compose.ui.geometry.Offset(inset, inset), size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke))
+                            } else {
+                                drawArc(primaryColor, -90f, sweepJ, false, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round), topLeft = androidx.compose.ui.geometry.Offset(inset, inset), size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke))
+                                drawArc(tertiaryColor, -90f + sweepJ + 2f, sweepB - 2f, false, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round), topLeft = androidx.compose.ui.geometry.Offset(inset, inset), size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke))
+                            }
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("$totalLaunches", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = onSurface)
+                            Text("次", style = MaterialTheme.typography.labelSmall, color = onSurfaceVariant)
+                        }
+                    }
+                    // 图例 + 数值
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f)) {
+                        Text("总启动次数", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold), color = onSurface)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(primaryColor))
+                            Text("Java 版", style = MaterialTheme.typography.labelSmall, color = onSurfaceVariant, modifier = Modifier.weight(1f))
+                            Text("${stats.javaLaunchCount}", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = primaryColor)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(tertiaryColor))
+                            Text("基岩版", style = MaterialTheme.typography.labelSmall, color = onSurfaceVariant, modifier = Modifier.weight(1f))
+                            Text("${stats.bedrockLaunchCount}", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = tertiaryColor)
+                        }
                     }
                 }
             }
-            if (newsError.isNotBlank() && newsList.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(newsError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                        Spacer(Modifier.height(8.dp))
-                        Button(onClick = { scope.launch { NewsRepository.refresh() } }) { Text("重试") }
+
+            // ── 游玩时长卡片 ──
+            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Box(modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.Timer, null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("累计游玩时长", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f))
+                        Text(fmtTime(totalSec), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("Java  ${fmtTime(stats.javaPlayTimeSec)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+                        Text("基岩  ${fmtTime(stats.bedrockPlayTimeSec)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
                     }
                 }
-            } else {
-                androidx.compose.foundation.lazy.LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    items(newsList) { entry ->
-                        NewsCard(entry)
+            }
+
+            // ── 小数据卡片 2×2 ──
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // 崩溃次数
+                Surface(modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Icon(Icons.Filled.BugReport, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.height(4.dp))
+                        Text("${stats.totalCrashCount}", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onErrorContainer)
+                        Text("次崩溃", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.75f))
                     }
+                }
+                // 最长单次
+                Surface(modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Icon(Icons.Filled.EmojiEvents, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.secondary)
+                        Spacer(Modifier.height(4.dp))
+                        Text(fmtTime(stats.longestSessionSec), style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Text("最长单次", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.75f))
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // 已安装版本
+                val totalInstalled = versions.size + bedrockVersions.size
+                Surface(modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Icon(Icons.Filled.Inventory2, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.tertiary)
+                        Spacer(Modifier.height(4.dp))
+                        Text("$totalInstalled", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onTertiaryContainer)
+                        Text("已安装版本", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.75f))
+                    }
+                }
+                // Mod版本数
+                val modCount = versions.count { it.loaderType != LoaderType.Vanilla }
+                Surface(modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f)) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Icon(Icons.Filled.Extension, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(4.dp))
+                        Text("$modCount", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
+                        Text("Mod 版本", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            // ── 上次游玩 ──
+            if (stats.lastPlayedVersion.isNotBlank()) {
+                Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f), modifier = Modifier.fillMaxWidth()) {
+                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Icon(Icons.Filled.History, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("上次游玩", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stats.lastPlayedVersion, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        if (stats.lastPlayedMs > 0L) {
+                            val daysAgo = ((System.currentTimeMillis() - stats.lastPlayedMs) / 86400000L).toInt()
+                            Text(if (daysAgo == 0) "今天" else "${daysAgo}天前", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+
+            // ── 运行状态条 ──
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = if (gameRunning) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
+                        else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(modifier = Modifier.size(8.dp).clip(CircleShape)
+                        .background(if (gameRunning) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.outlineVariant))
+                    Text(
+                        if (gameRunning) "游戏运行中  ${selectedVersion?.id ?: ""}"
+                        else if (globalLaunching) globalStatusMsg.ifBlank { "正在启动…" }
+                        else "未运行",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (gameRunning) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         }
@@ -288,7 +447,7 @@ fun LaunchScreen() {
         // ── 右区 (Control Node) ─── Box 绝对定位，彻底杜绝错位 ────────
         Box(
             modifier = Modifier
-                .weight(0.5f)
+                .weight(0.382f)
                 .fillMaxHeight(),
         ) {
             // ════════════════════════════════════════════════════════════════
@@ -299,7 +458,7 @@ fun LaunchScreen() {
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .padding(top = 24.dp),
+                    .padding(top = 8.dp),
             ) {
                 // ── Windows 风格账号卡片 ──────────────────────────────────
                 Column(
@@ -310,19 +469,21 @@ fun LaunchScreen() {
                     val acctIdx = accountList.indexOfFirst { it.uuid == acct?.uuid }.coerceAtLeast(0)
                     val hasMultiple = accountList.size > 1
 
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(8.dp))
 
-                    // 大头像
-                    Box(modifier = Modifier.size(110.dp).clip(CircleShape)) {
+                    // 头像（圆角方）
+                    Box(modifier = Modifier.size(96.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
                         if (acct != null && acct.type == AccountType.MSA && acct.avatarUri.isNotBlank()
                             && acct.avatarUri.startsWith("http")) {
                             KamelImage(
                                 resource = asyncPainterResource(data = acct.avatarUri),
                                 contentDescription = "Xbox Gamerpic",
-                                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)),
                                 contentScale = ContentScale.Crop,
-                                onLoading = { AvatarPlaceholder(acct.username, 110) },
-                                onFailure = { AvatarPlaceholder(acct.username, 110) },
+                                onLoading = { AvatarPlaceholder(acct.username, 96) },
+                                onFailure = { AvatarPlaceholder(acct.username, 96) },
                             )
                         } else if (acct != null && acct.avatarUri.isNotBlank()
                             && !acct.avatarUri.startsWith("http")) {
@@ -338,18 +499,18 @@ fun LaunchScreen() {
                                 androidx.compose.foundation.Image(
                                     bitmap = bmp,
                                     contentDescription = "头像",
-                                    modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)),
                                     contentScale = ContentScale.Crop,
                                 )
                             } else {
-                                AvatarPlaceholder(acct.username, 110)
+                                AvatarPlaceholder(acct.username, 96)
                             }
                         } else {
-                            AvatarPlaceholder(acct?.username ?: "?", 110)
+                            AvatarPlaceholder(acct?.username ?: "?", 96)
                         }
                     }
 
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(10.dp))
 
                     // 玩家名 + 左右切换箭头
                     Row(
@@ -705,7 +866,7 @@ fun LaunchScreen() {
                                         val process = withContext(Dispatchers.IO) { engine.execute(context) }
 
                                         LaunchState.updateProgress(95, "基岩版启动成功，正在移交进程监控…")
-                                        LaunchState.attachProcess(process, ver.id, bedrockLogFile)
+                                        LaunchState.attachProcess(process, ver.id, bedrockLogFile, GameEdition.Bedrock)
                                         attached = true
                                         launchMessage = "基岩版已启动: ${ver.id}"
                                     } catch (e: Exception) {
@@ -750,13 +911,37 @@ fun LaunchScreen() {
                                             accessToken = token,
                                             minecraftDir = s.minecraftDir,
                                             customJvmArgs = s.customJvmArgs,
-                                            windowWidth = s.windowWidth,
-                                            windowHeight = s.windowHeight,
+                                            windowWidth = if (s.javaGameWidth > 0) s.javaGameWidth else s.windowWidth,
+                                            windowHeight = if (s.javaGameHeight > 0) s.javaGameHeight else s.windowHeight,
                                             fullscreen = s.fullscreen,
                                             skinUri = if (acc?.type == AccountType.Offline) acc.skinUri else "",
                                             skinModel = if (acc?.type == AccountType.Offline) acc.skinModel else "classic",
                                             authServerUrl = acc?.authServerUrl ?: "",
                                             gcPolicy = s.gcPolicy,
+                                            jvmMetaspaceSize = s.jvmMetaspaceSize,
+                                            jvmReservedCodeCache = s.jvmReservedCodeCache,
+                                            jvmG1NewSizePercent = s.jvmG1NewSizePercent,
+                                            jvmG1MaxNewSizePercent = s.jvmG1MaxNewSizePercent,
+                                            jvmG1HeapRegionSize = s.jvmG1HeapRegionSize,
+                                            jvmG1GCPauseTarget = s.jvmG1GCPauseTarget,
+                                            jvmUseLargePages = s.jvmUseLargePages,
+                                            jvmAlwaysPreTouch = s.jvmAlwaysPreTouch,
+                                            jvmDisableExplicitGC = s.jvmDisableExplicitGC,
+                                            jvmParallelRefProcEnabled = s.jvmParallelRefProcEnabled,
+                                            jvmStringDedup = s.jvmStringDedup,
+                                            jvmThreadStackSize = s.jvmThreadStackSize,
+                                            jvmTieredCompilation = s.jvmTieredCompilation,
+                                            jvmInlineSize = s.jvmInlineSize,
+                                            jvmFreqInlineSize = s.jvmFreqInlineSize,
+                                            jvmLoopUnrollingLimit = s.jvmLoopUnrollingLimit,
+                                            jvmEnableIEEE = s.jvmEnableIEEE,
+                                            jvmNativeMemoryTracking = s.jvmNativeMemoryTracking,
+                                            launchDemoMode = s.launchDemoMode,
+                                            javaUseNativeGlfw = s.javaUseNativeGlfw,
+                                            javaUseNativeOpenAl = s.javaUseNativeOpenAl,
+                                            javaExtraGameArgs = s.javaExtraGameArgs,
+                                            javaQuickPlaySingleplayer = s.javaQuickPlaySingleplayer,
+                                            javaQuickPlayMultiplayer = s.javaQuickPlayMultiplayer,
                                         )
 
                                         val engine = JavaLaunchEngine()
@@ -905,7 +1090,7 @@ fun LaunchScreen() {
             shape = RoundedCornerShape(20.dp),
             title = { Text("选择登录方式", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     ElevatedCard(
                         onClick = {
                             showLoginDialog = false
@@ -920,12 +1105,15 @@ fun LaunchScreen() {
                             }
                         },
                         shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
                     ) {
-                        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(38.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Filled.Security, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                            }
                             Spacer(Modifier.width(12.dp))
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text("微软正版登录", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
                                 Text("Device Code Flow · 需要微软账号", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -939,12 +1127,15 @@ fun LaunchScreen() {
                             nameError = ""
                         },
                         shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
                     ) {
-                        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.WifiOff, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
+                        Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(38.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.tertiaryContainer), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Filled.WifiOff, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                            }
                             Spacer(Modifier.width(12.dp))
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text("离线模式", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
                                 Text("输入自定义玩家 ID", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -961,12 +1152,15 @@ fun LaunchScreen() {
                             tpError = ""
                         },
                         shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
                     ) {
-                        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.AccountCircle, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                        Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(38.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Filled.AccountCircle, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                            }
                             Spacer(Modifier.width(12.dp))
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text("第三方登录", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
                                 Text("LittleSkin 或其他 Yggdrasil API", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }

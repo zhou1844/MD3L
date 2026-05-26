@@ -32,6 +32,34 @@ data class LaunchContext(
     val skinUri: String = "",
     val skinModel: String = "classic",
     val authServerUrl: String = "", // 第三方登录 Yggdrasil API URL
+    val gcPolicy: String = "G1GC",
+    val accountType: AccountType = AccountType.Offline,
+    // Advanced JVM settings (from AppSettings)
+    val jvmMetaspaceSize: Int = 256,
+    val jvmReservedCodeCache: Int = 256,
+    val jvmG1NewSizePercent: Int = 20,
+    val jvmG1MaxNewSizePercent: Int = 50,
+    val jvmG1HeapRegionSize: Int = 16,
+    val jvmG1GCPauseTarget: Int = 50,
+    val jvmUseLargePages: Boolean = false,
+    val jvmAlwaysPreTouch: Boolean = true,
+    val jvmDisableExplicitGC: Boolean = true,
+    val jvmParallelRefProcEnabled: Boolean = true,
+    val jvmStringDedup: Boolean = true,
+    val jvmThreadStackSize: Int = 0,
+    val jvmTieredCompilation: Boolean = true,
+    val jvmInlineSize: Int = 325,
+    val jvmFreqInlineSize: Int = 325,
+    val jvmLoopUnrollingLimit: Int = 60,
+    val jvmEnableIEEE: Boolean = false,
+    val jvmNativeMemoryTracking: Boolean = false,
+    // Advanced game args
+    val launchDemoMode: Boolean = false,
+    val javaUseNativeGlfw: Boolean = false,
+    val javaUseNativeOpenAl: Boolean = false,
+    val javaExtraGameArgs: String = "",
+    val javaQuickPlaySingleplayer: String = "",
+    val javaQuickPlayMultiplayer: String = "",
 ) {
     val gameDir: File
         get() {

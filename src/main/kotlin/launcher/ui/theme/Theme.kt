@@ -195,6 +195,13 @@ val AccentNames = listOf(
 object ThemeState {
     var accent by mutableStateOf(AccentMonetPurple)
     var isDark by mutableStateOf(true)
+    var backgroundImagePath by mutableStateOf("")
+    var backgroundBlurRadius by mutableStateOf(20)
+    var backgroundBrightness by mutableStateOf(0.75f)  // 0=全黑, 1=原色
+    var uiPanelOpacity by mutableStateOf(0.75f)       // 0=全透明, 1=完全不透明
+    // 预加载的壁纸 bitmap（在 Main 启动时同步加载，消除首帧空白）
+    var cachedBgBitmap by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+    var cachedBgKey by mutableStateOf("")  // 仅 bgPath，模糊由 GPU layer 实时处理
 }
 
 // ── Build dark color scheme from accent ─────────────────────────────────────
@@ -294,11 +301,11 @@ fun MD3LTheme(content: @Composable () -> Unit) {
         colorScheme = animatedScheme,
         typography = Typography(),
         shapes = Shapes(
-            extraSmall = RoundedCornerShape(4.dp),
-            small = RoundedCornerShape(8.dp),
-            medium = RoundedCornerShape(12.dp),
-            large = RoundedCornerShape(16.dp),
-            extraLarge = RoundedCornerShape(24.dp),
+            extraSmall = RoundedCornerShape(8.dp),
+            small = RoundedCornerShape(12.dp),
+            medium = RoundedCornerShape(16.dp),
+            large = RoundedCornerShape(20.dp),
+            extraLarge = RoundedCornerShape(28.dp),
         ),
         content = content,
     )

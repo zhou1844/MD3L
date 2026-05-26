@@ -9,266 +9,250 @@ import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
-import org.jsoup.Jsoup
-import java.net.URLDecoder
+import java.net.HttpURLConnection
+import java.net.URL
 import java.net.URLEncoder
 
+/**
+ * CurseForge Bedrock Edition API
+ * gameId=78022 (Minecraft Bedrock)
+ * 通过 api.curse.tools 公开代理（无需 API Key）
+ *
+ * classId:
+ *   4984 = Addons（行为包/模组）
+ *   6929 = Texture Packs（材质/资源包）
+ *   6913 = Maps（地图）
+ *   6925 = Skins（皮肤）
+ */
 object BedrockResourceApi {
-    private const val BASE = "https://api.modrinth.com/v2"
+    private const val CF_PROXY = "http://api.curse.tools/v1"
+    private const val GAME_ID = 78022
+
+    // CurseForge Bedrock classId 映射
+    const val CLASS_ADDONS = 4984
+    const val CLASS_TEXTURE_PACKS = 6929
+    const val CLASS_MAPS = 6913
+    const val CLASS_SKINS = 6925
 
     private val client = HttpClient(CIO) {
-        engine { requestTimeout = 20_000 }
+        engine { requestTimeout = 25_000 }
     }
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun search(query: String, contentType: String, limit: Int = 30): List<ModrinthProject> = withContext(Dispatchers.IO) {
-        val curated = curatedBedrockBrowse(query, contentType)
-        val scraped = runCatching { searchMcpedl(query, contentType, limit) }.getOrDefault(emptyList())
-        (curated + scraped).distinctBy { it.slug }.take(limit)
+    /**
+     * 搜索 CurseForge Bedrock 资源。
+     * contentType: "addon" | "texture_pack" | "map" | "skin"
+     */
+    suspend fun search(
+        query: String,
+        contentType: String,
+        limit: Int = 30,
+        index: Int = 0,
+    ): List<CfBedrockProject> = withContext(Dispatchers.IO) {
+        val classId = contentTypeToClassId(contentType)
+        val actualQuery = if (query.isNotBlank() && containsChinese(query)) {
+            translateToEnglish(query) ?: query
+        } else query
+        runCatching {
+            val resp = client.get("$CF_PROXY/mods/search") {
+                parameter("gameId", GAME_ID)
+                parameter("classId", classId)
+                parameter("pageSize", limit)
+                parameter("index", index)
+                parameter("sortField", 2) // 2=Popularity
+                parameter("sortOrder", "desc")
+                if (actualQuery.isNotBlank()) parameter("searchFilter", actualQuery)
+                header("Accept", "application/json")
+                header("User-Agent", "MD3L-Launcher/1.3")
+            }
+            parseCfMods(resp.bodyAsText(), contentType)
+        }.getOrDefault(emptyList())
     }
 
-    private fun curatedBedrockBrowse(query: String, contentType: String): List<ModrinthProject> {
-        val q = query.trim()
-        val encoded = if (q.isNotBlank()) URLEncoder.encode(q, "UTF-8") else ""
-        fun entry(slug: String, title: String, desc: String) = ModrinthProject(
+    private val chineseRegex = Regex("[\u4e00-\u9fff]")
+    private fun containsChinese(text: String) = chineseRegex.containsMatchIn(text)
+    private fun translateToEnglish(text: String): String? = runCatching {
+        kotlinx.coroutines.runBlocking { MicrosoftTranslate.toEnglish(text) }
+    }.getOrNull()
+
+    /** 获取单个 mod 的文件列表 */
+    suspend fun getModFiles(modId: Int): List<CfBedrockFile> = withContext(Dispatchers.IO) {
+        runCatching {
+            val resp = client.get("$CF_PROXY/mods/$modId/files") {
+                parameter("pageSize", 20)
+                header("Accept", "application/json")
+                header("User-Agent", "MD3L-Launcher/1.3")
+            }
+            parseCfFiles(resp.bodyAsText())
+        }.getOrDefault(emptyList())
+    }
+
+    /** 获取单个 mod 详情 */
+    suspend fun getMod(modId: Int): CfBedrockProject? = withContext(Dispatchers.IO) {
+        runCatching {
+            val resp = client.get("$CF_PROXY/mods/$modId") {
+                header("Accept", "application/json")
+                header("User-Agent", "MD3L-Launcher/1.3")
+            }
+            val data = json.parseToJsonElement(resp.bodyAsText()).jsonObject["data"]?.jsonObject
+                ?: return@runCatching null
+            parseMod(data, "addon")
+        }.getOrNull()
+    }
+
+    private fun contentTypeToClassId(contentType: String): Int = when (contentType) {
+        "texture_pack" -> CLASS_TEXTURE_PACKS
+        "map" -> CLASS_MAPS
+        "skin" -> CLASS_SKINS
+        else -> CLASS_ADDONS // addon (default)
+    }
+
+    private fun parseCfMods(body: String, contentType: String): List<CfBedrockProject> {
+        val arr = json.parseToJsonElement(body).jsonObject["data"]?.jsonArray ?: return emptyList()
+        return arr.mapNotNull { el ->
+            runCatching { parseMod(el.jsonObject, contentType) }.getOrNull()
+        }
+    }
+
+    private fun parseMod(obj: kotlinx.serialization.json.JsonObject, contentType: String): CfBedrockProject {
+        val modId = obj["id"]?.jsonPrimitive?.intOrNull ?: 0
+        val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: ""
+        val slug = obj["slug"]?.jsonPrimitive?.contentOrNull ?: modId.toString()
+        val summary = obj["summary"]?.jsonPrimitive?.contentOrNull ?: ""
+        val downloads = obj["downloadCount"]?.jsonPrimitive?.longOrNull ?: 0L
+        val thumbUrl = obj["logo"]?.jsonObject?.get("thumbnailUrl")?.jsonPrimitive?.contentOrNull
+            ?: obj["logo"]?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull ?: ""
+        val author = obj["authors"]?.jsonArray?.firstOrNull()
+            ?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull ?: "CurseForge"
+        val categories = obj["categories"]?.jsonArray
+            ?.mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull } ?: emptyList()
+        val cfUrl = obj["links"]?.jsonObject?.get("websiteUrl")?.jsonPrimitive?.contentOrNull
+            ?: "https://www.curseforge.com/minecraft-bedrock"
+        // 最新文件
+        val latestFile = obj["latestFiles"]?.jsonArray?.firstOrNull()?.jsonObject
+        val downloadUrl = latestFile?.get("downloadUrl")?.jsonPrimitive?.contentOrNull ?: ""
+        val fileName = latestFile?.get("fileName")?.jsonPrimitive?.contentOrNull ?: ""
+        val fileSize = latestFile?.get("fileLength")?.jsonPrimitive?.longOrNull ?: 0L
+        val gameVersions = latestFile?.get("gameVersions")?.jsonArray
+            ?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+
+        return CfBedrockProject(
+            modId = modId,
             slug = slug,
-            title = title,
-            description = desc,
-            iconUrl = "",
-            downloads = 0,
-            categories = listOf("bedrock", "browse"),
-            projectType = contentType,
-            author = "在浏览器打开",
+            name = name,
+            summary = summary,
+            downloads = downloads,
+            iconUrl = thumbUrl,
+            author = author,
+            categories = categories,
+            contentType = contentType,
+            cfPageUrl = cfUrl,
+            latestDownloadUrl = downloadUrl,
+            latestFileName = fileName,
+            latestFileSize = fileSize,
+            gameVersions = gameVersions,
         )
-        return when (contentType) {
-            "bedrock_resourcepack" -> listOf(
-                entry(
-                    if (q.isBlank()) "https://mcpedl.com/category/texture-packs/" else "https://mcpedl.com/?s=$encoded",
-                    if (q.isBlank()) "MCPEDL · 材质包目录" else "MCPEDL · 搜索 “$q”",
-                    "点击下载按钮在浏览器中打开 MCPEDL，挑选材质包后会得到 .mcpack",
-                ),
-                entry("https://mcbedrock.com/texturepacks", "MCBedrock · 材质包", "MCBedrock 的基岩材质包合集，国内可访问"),
-                entry("https://www.9minecraft.net/category/minecraft-bedrock-resource-packs/", "9Minecraft · 基岩材质", "9Minecraft 基岩材质包列表"),
-            )
-            "bedrock_modpack" -> listOf(
-                entry(
-                    if (q.isBlank()) "https://mcpedl.com/category/mods/addons/" else "https://mcpedl.com/?s=$encoded",
-                    if (q.isBlank()) "MCPEDL · 整合/模组目录" else "MCPEDL · 搜索 “$q”",
-                    "MCPEDL Mods/Addons 分类，提供 .mcaddon / .mcpack",
-                ),
-                entry("https://mcbedrock.com/mods", "MCBedrock · 模组/整合", "国内可访问的基岩 Addons 站点"),
-                entry("https://www.9minecraft.net/category/minecraft-pe-mods/", "9Minecraft · PE Mods", "9Minecraft 基岩 PE Mods 合集"),
-            )
-            else -> listOf(
-                entry(
-                    if (q.isBlank()) "https://mcpedl.com/category/mods/addons/" else "https://mcpedl.com/?s=$encoded",
-                    if (q.isBlank()) "MCPEDL · 模组/Addon" else "MCPEDL · 搜索 “$q”",
-                    "MCPEDL Mods/Addons，下载 .mcaddon 后双击导入即可",
-                ),
-                entry("https://mcbedrock.com/mods", "MCBedrock · 模组/整合", "国内可访问"),
-                entry("https://www.9minecraft.net/category/minecraft-pe-mods/", "9Minecraft · PE Mods", "9Minecraft 基岩 PE Mods 合集"),
-            )
+    }
+
+    private fun parseSingleFile(obj: kotlinx.serialization.json.JsonObject): CfBedrockFile {
+        return CfBedrockFile(
+            fileId = obj["id"]?.jsonPrimitive?.intOrNull ?: 0,
+            fileName = obj["fileName"]?.jsonPrimitive?.contentOrNull ?: "",
+            displayName = obj["displayName"]?.jsonPrimitive?.contentOrNull ?: "",
+            downloadUrl = obj["downloadUrl"]?.jsonPrimitive?.contentOrNull ?: "",
+            fileSize = obj["fileLength"]?.jsonPrimitive?.longOrNull ?: 0L,
+            gameVersions = obj["gameVersions"]?.jsonArray
+                ?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList(),
+            releaseDate = obj["fileDate"]?.jsonPrimitive?.contentOrNull ?: "",
+            dependencies = obj["dependencies"]?.jsonArray?.mapNotNull { dEl ->
+                val dObj = dEl.jsonObject
+                val modId = dObj["modId"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+                val relationType = dObj["relationType"]?.jsonPrimitive?.intOrNull ?: 0
+                CfFileDependency(modId = modId, relationType = relationType)
+            } ?: emptyList(),
+        )
+    }
+
+    private fun parseCfFiles(body: String): List<CfBedrockFile> {
+        val arr = json.parseToJsonElement(body).jsonObject["data"]?.jsonArray ?: return emptyList()
+        return arr.mapNotNull { el ->
+            runCatching { parseSingleFile(el.jsonObject) }.getOrNull()
         }
     }
 
-    suspend fun getProjectVersions(projectUrl: String, fallbackTitle: String): List<ModrinthVersion> = withContext(Dispatchers.IO) {
-        if (projectUrl.startsWith("http://") || projectUrl.startsWith("https://")) {
-            return@withContext getWebProjectVersions(projectUrl, fallbackTitle)
-        }
-        try {
-            val resp = client.get("$BASE/project/$projectUrl/version") {
-                header("User-Agent", "MD3L/1.1 (https://github.com/zhou1844/MD3L)")
+    /**
+     * 获取某个文件的所有 required 依赖的最新可下载文件。
+     * relationType == 3 => required dependency
+     * 返回列表：(项目名, CfBedrockFile)
+     */
+    suspend fun getRequiredDependencyFiles(
+        file: CfBedrockFile,
+    ): List<Pair<String, CfBedrockFile>> = withContext(Dispatchers.IO) {
+        val result = mutableListOf<Pair<String, CfBedrockFile>>()
+        val requiredDeps = file.dependencies.filter { it.relationType == 3 }
+        for (dep in requiredDeps) {
+            runCatching {
+                // 取依赖项目信息
+                val modResp = client.get("$CF_PROXY/mods/${dep.modId}") {
+                    header("Accept", "application/json")
+                    header("User-Agent", "MD3L-Launcher/1.3")
+                }
+                val modData = json.parseToJsonElement(modResp.bodyAsText()).jsonObject["data"]?.jsonObject
+                    ?: return@runCatching
+                val depName = modData["name"]?.jsonPrimitive?.contentOrNull ?: "依赖模组"
+                // 取该依赖的文件列表，选第一个有下载链接的
+                val filesResp = client.get("$CF_PROXY/mods/${dep.modId}/files") {
+                    parameter("pageSize", 10)
+                    header("Accept", "application/json")
+                    header("User-Agent", "MD3L-Launcher/1.3")
+                }
+                val filesArr = json.parseToJsonElement(filesResp.bodyAsText()).jsonObject["data"]?.jsonArray
+                    ?: return@runCatching
+                val depFile = filesArr.mapNotNull { el ->
+                    runCatching { parseSingleFile(el.jsonObject) }.getOrNull()
+                }.firstOrNull { it.downloadUrl.isNotBlank() } ?: return@runCatching
+                result.add(depName to depFile)
             }
-            val versions = json.parseToJsonElement(resp.bodyAsText()).jsonArray.map { el ->
-                val obj = el.jsonObject
-                ModrinthVersion(
-                    id = obj["id"]?.jsonPrimitive?.contentOrNull ?: "",
-                    name = obj["name"]?.jsonPrimitive?.contentOrNull ?: "",
-                    versionNumber = obj["version_number"]?.jsonPrimitive?.contentOrNull ?: "",
-                    gameVersions = obj["game_versions"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList(),
-                    loaders = (obj["loaders"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()).ifEmpty { listOf("bedrock") },
-                    files = obj["files"]?.jsonArray?.mapNotNull { fEl ->
-                        val fObj = fEl.jsonObject
-                        val url = fObj["url"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                        val filename = fObj["filename"]?.jsonPrimitive?.contentOrNull ?: url.substringBefore('?').substringAfterLast('/')
-                        if (!isBedrockFile(filename)) return@mapNotNull null
-                        ModrinthFile(
-                            url = url,
-                            filename = filename,
-                            size = fObj["size"]?.jsonPrimitive?.longOrNull ?: 0,
-                            primary = fObj["primary"]?.jsonPrimitive?.booleanOrNull ?: false,
-                        )
-                    } ?: emptyList(),
-                )
-            }.filter { it.files.isNotEmpty() }
-            versions.ifEmpty {
-                listOf(
-                    ModrinthVersion(
-                        id = projectUrl,
-                        name = fallbackTitle,
-                        versionNumber = "Bedrock",
-                        gameVersions = emptyList(),
-                        loaders = listOf("bedrock"),
-                        files = emptyList(),
-                    )
-                )
-            }
-        } catch (_: Exception) {
-            emptyList()
         }
-    }
-
-    private suspend fun searchOnce(query: String, projectType: String, contentType: String, limit: Int): List<ModrinthProject> {
-        val facetGroups = buildList {
-            add(listOf("project_type:$projectType"))
-        }
-        val facets = facetGroups.joinToString(prefix = "[", postfix = "]") { group ->
-            group.joinToString(prefix = "[", postfix = "]") { "\"$it\"" }
-        }
-        val resp = client.get("$BASE/search") {
-            if (query.isNotBlank()) parameter("query", query)
-            parameter("facets", facets)
-            parameter("limit", limit)
-            header("User-Agent", "MD3L/1.1 (https://github.com/zhou1844/MD3L)")
-        }
-        val hits = json.parseToJsonElement(resp.bodyAsText()).jsonObject["hits"]?.jsonArray ?: return emptyList()
-        return hits.map { hit ->
-            val obj = hit.jsonObject
-            ModrinthProject(
-                slug = obj["slug"]?.jsonPrimitive?.contentOrNull ?: obj["project_id"]?.jsonPrimitive?.contentOrNull ?: "",
-                title = obj["title"]?.jsonPrimitive?.contentOrNull ?: "",
-                description = obj["description"]?.jsonPrimitive?.contentOrNull ?: "Modrinth Bedrock 资源",
-                iconUrl = obj["icon_url"]?.jsonPrimitive?.contentOrNull ?: "",
-                downloads = obj["downloads"]?.jsonPrimitive?.longOrNull ?: 0,
-                categories = (obj["categories"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()) + "bedrock",
-                projectType = contentType,
-                author = obj["author"]?.jsonPrimitive?.contentOrNull ?: "Modrinth",
-            )
-        }.filter { it.slug.isNotBlank() }
-    }
-
-    private suspend fun searchMcpedl(query: String, contentType: String, limit: Int): List<ModrinthProject> {
-        val url = if (query.isBlank()) {
-            when (contentType) {
-                "bedrock_resourcepack" -> "https://mcpedl.com/category/texture-packs/"
-                "bedrock_modpack" -> "https://mcpedl.com/category/mods/addons/"
-                else -> "https://mcpedl.com/category/mods/addons/"
-            }
-        } else {
-            "https://mcpedl.com/?s=${URLEncoder.encode(query, "UTF-8")}"
-        }
-        val html = fetchWeb(url)
-        val doc = Jsoup.parse(html, "https://mcpedl.com")
-        return doc.select("article a[href], .post a[href], .entry-title a[href], h2 a[href], h3 a[href]")
-            .mapNotNull { link ->
-                val href = link.absUrl("href").substringBefore("#")
-                if (!href.startsWith("https://mcpedl.com/") || href.contains("/category/") || href.contains("/tag/")) return@mapNotNull null
-                val title = link.text().trim().ifBlank { href.trimEnd('/').substringAfterLast('/').replace("-", " ") }
-                if (title.length < 3) return@mapNotNull null
-                ModrinthProject(
-                    slug = href,
-                    title = title,
-                    description = "MCPEDL · Minecraft Bedrock 资源",
-                    iconUrl = link.parents().firstOrNull()?.selectFirst("img[src],img[data-src]")?.let { img ->
-                        img.absUrl("data-src").ifBlank { img.absUrl("src") }
-                    }.orEmpty(),
-                    downloads = 0,
-                    categories = listOf("bedrock", "mcpedl"),
-                    projectType = contentType,
-                    author = "MCPEDL",
-                )
-            }
-            .distinctBy { it.slug }
-            .take(limit)
-    }
-
-    private suspend fun getWebProjectVersions(projectUrl: String, fallbackTitle: String): List<ModrinthVersion> {
-        return try {
-            val html = fetchWeb(projectUrl)
-            val directFiles = parseBedrockFiles(html)
-            val doc = Jsoup.parse(html, projectUrl)
-            val anchorFiles = doc.select("a[href]").mapNotNull { link ->
-                val href = link.absUrl("href").ifBlank { return@mapNotNull null }
-                if (!isBedrockFile(href.substringBefore('?'))) return@mapNotNull null
-                ModrinthFile(
-                    url = href,
-                    filename = fileNameFromUrl(href).ifBlank { link.text().ifBlank { "bedrock-pack.mcpack" } },
-                    size = 0,
-                    primary = false,
-                )
-            }
-            val files = (directFiles + anchorFiles).distinctBy { it.url }.ifEmpty {
-                listOf(ModrinthFile(url = projectUrl, filename = "打开 MCPEDL 下载页", size = 0, primary = true))
-            }.mapIndexed { index, file -> file.copy(primary = index == 0) }
-            listOf(
-                ModrinthVersion(
-                    id = projectUrl,
-                    name = doc.selectFirst("h1,.entry-title")?.text()?.takeIf { it.isNotBlank() } ?: fallbackTitle,
-                    versionNumber = "Bedrock",
-                    gameVersions = emptyList(),
-                    loaders = listOf("bedrock"),
-                    files = files,
-                )
-            )
-        } catch (_: Exception) {
-            listOf(
-                ModrinthVersion(
-                    id = projectUrl,
-                    name = fallbackTitle,
-                    versionNumber = "Bedrock",
-                    gameVersions = emptyList(),
-                    loaders = listOf("bedrock"),
-                    files = listOf(ModrinthFile(url = projectUrl, filename = "打开下载页面", size = 0, primary = true)),
-                )
-            )
-        }
-    }
-
-    private suspend fun fetchWeb(url: String): String {
-        return client.get(url) {
-            header("User-Agent", "Mozilla/5.0 MD3L/1.1")
-            header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-        }.bodyAsText()
-    }
-
-    private fun parseBedrockFiles(html: String): List<ModrinthFile> {
-        val regex = Regex("""https?://[^"'\s<>()]+?\.(?:mcpack|mcaddon|mcworld|mctemplate|zip)(?:\?[^"'\s<>()]*)?""", RegexOption.IGNORE_CASE)
-        return regex.findAll(html).mapIndexed { index, match ->
-            val url = htmlDecode(match.value)
-            ModrinthFile(
-                url = url,
-                filename = fileNameFromUrl(url).ifBlank { "bedrock-pack-${index + 1}.mcpack" },
-                size = 0,
-                primary = index == 0,
-            )
-        }.toList()
-    }
-
-    private fun fileNameFromUrl(url: String): String {
-        return URLDecoder.decode(url.substringBefore('?').substringAfterLast('/'), "UTF-8")
-    }
-
-    private fun htmlDecode(value: String): String {
-        return value
-            .replace("&amp;", "&")
-            .replace("&quot;", "\"")
-            .replace("&#39;", "'")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-    }
-
-    private fun isBedrockFile(filename: String): Boolean {
-        val clean = filename.substringBefore('?').lowercase()
-        return clean.endsWith(".mcpack") ||
-            clean.endsWith(".mcaddon") ||
-            clean.endsWith(".mcworld") ||
-            clean.endsWith(".mctemplate") ||
-            clean.endsWith(".zip")
+        result
     }
 }
+
+data class CfBedrockProject(
+    val modId: Int,
+    val slug: String,
+    val name: String,
+    val summary: String,
+    val downloads: Long,
+    val iconUrl: String,
+    val author: String,
+    val categories: List<String>,
+    val contentType: String,
+    val cfPageUrl: String,
+    val latestDownloadUrl: String,
+    val latestFileName: String,
+    val latestFileSize: Long,
+    val gameVersions: List<String>,
+)
+
+data class CfFileDependency(
+    val modId: Int,
+    val relationType: Int, // 1=embedded, 2=optional, 3=required, 4=tool, 5=incompatible, 6=include
+)
+
+data class CfBedrockFile(
+    val fileId: Int,
+    val fileName: String,
+    val displayName: String,
+    val downloadUrl: String,
+    val fileSize: Long,
+    val gameVersions: List<String>,
+    val releaseDate: String,
+    val dependencies: List<CfFileDependency> = emptyList(),
+)

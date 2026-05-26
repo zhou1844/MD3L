@@ -47,7 +47,7 @@ data class UpdateState(
 )
 
 object AutoUpdater {
-    const val CURRENT_VERSION = "1.3.5"
+    const val CURRENT_VERSION = "1.3.6"
     private const val GITEE_OWNER = "foolish-bird-crossing"
     private const val GITEE_REPO = "md3llauncher"
     private val API_URLS = listOf(

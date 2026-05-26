@@ -1,25 +1,57 @@
-# Gradle
-.gradle/
+# Android module — excluded from main launcher repo
+android/
+
+# Gradle build outputs
 build/
 build_tmp/
+.gradle/
+out/
+bin/
+
+# Compiled artifacts
+app.jar
+*.jar
+Hello.java
+Hello.class
+1.bat
+tmp_source.js
+*.zip
+
+# .NET build outputs
+tools/GdkExtractor/bin/
+tools/GdkExtractor/obj/
+tools/GdkExtractor/publish/
+tools/GdkExtractor/publish_sc/
+
+# Distribution / packaged runtime (too large for source repo)
 dist/
-dist-single/
+installer/
+
+# Loose build/reference scripts and binaries at repo root
+*.exe
+*.ps1
+*.cs
+*.log
+do
+final.exe
+stub.exe
+stub.cs
+temp.json
+install_profile.json
+find_in_jar.ps1
+first_entries.ps1
+read_entry.ps1
+read_manifest.ps1
+ref_*.cs
+ref_*.json
+scripts/warp-packer.exe
 
 # IDE
 .idea/
 *.iml
+*.iws
+*.ipr
 
 # OS
-Thumbs.db
 .DS_Store
-
-# Build artifacts
-*.exe
-*.jar
-*.zip
-*.log
-
-# Temp files
-temp.json
-*.temp
-*.class
+Thumbs.db

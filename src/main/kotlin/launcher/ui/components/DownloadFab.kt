@@ -34,6 +34,7 @@ import launcher.core.DownloadHub
 @Composable
 fun DownloadFab(
     modifier: Modifier = Modifier,
+    dragModifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     val tasks by DownloadHub.tasks.collectAsState()
@@ -65,7 +66,7 @@ fun DownloadFab(
 
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier
+            modifier = dragModifier
                 .size(56.dp)
                 .shadow(8.dp, CircleShape)
                 .clip(CircleShape)
