@@ -14,16 +14,6 @@ import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipFile
 
-/**
- * 基岩版静默安装管理器。
- *
- * 完整流水线：
- *   1. 直接 HTTP 下载 .appx 文件（不经过 DownloadManager，带完整日志）
- *   2. 通过 PowerShell Add-AppxPackage 安装到系统
- *   3. 安装完成后即可通过 COM 激活启动
- *
- * 通过 [installProgress] StateFlow 实时推送阶段+进度至 UI。
- */
 object BedrockDownloadManager {
 
     enum class WUDownloadSource(val label: String) {
@@ -70,14 +60,14 @@ object BedrockDownloadManager {
     private val _installProgress = MutableStateFlow(InstallProgress())
     val installProgress: StateFlow<InstallProgress> = _installProgress.asStateFlow()
 
-    // 全局下载状态（切换页面不丢失）
+    // 全局下载状态
     private val _downloadingVersions = MutableStateFlow<Set<String>>(emptySet())
     val downloadingVersions: StateFlow<Set<String>> = _downloadingVersions.asStateFlow()
 
     private val _downloadResults = MutableStateFlow<Map<String, String>>(emptyMap())
     val downloadResults: StateFlow<Map<String, String>> = _downloadResults.asStateFlow()
 
-    // 全局协程作用域 — 下载不随页面切换取消
+    // 全局协程作用域
     private val globalScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // 保存 Job 引用用于取消
@@ -259,8 +249,7 @@ object BedrockDownloadManager {
                 emit(versionKey, "downloading", "正在选择 GDK 下载源...", 0.02f)
                 resolvedUrl = chooseGdkDownloadUrl(ver.downloadUrls, source)
                     ?: run {
-                        // GdkLinks 数据库尚未收录此版本，尝试 Xbox 商店目录 API 动态解析
-                        emit(versionKey, "downloading", "GdkLinks 未收录，正在查询 Xbox 商店...", 0.03f)
+                                        emit(versionKey, "downloading", "GdkLinks 未收录，正在查询 Xbox 商店...", 0.03f)
                         resolveGdkUrlFromXboxCatalog(ver.name, ver.isPreview)
                     }
                     ?: return@withContext "下载失败: GDK 无下载链接（GdkLinks 和 Xbox 商店均未找到 ${ver.name}）"
@@ -274,8 +263,9 @@ object BedrockDownloadManager {
                             resolvedUrl = mcResolved.downloadUrl
                             fileSize = mcResolved.fileSize
                             resolvedFileName = mcResolved.fileName.ifBlank { resolvedFileName }
-                        } else {
-                            emit(versionKey, "downloading", "MCAPPX 无匹配，回退官方源...", 0.04f)
+                        } else if (ver.uuid.isBlank()) {
+                                emit(versionKey, "error", "该版本 (${ver.name}) 在 MCAPPX 镜像库中未找到精确匹配，且缺少 WU UUID，无法下载", 0f)
+                            return@withContext "下载失败: ${ver.name} 未收录于 MCAPPX 镜像，且缺少 WU UUID。请前往 mcappx.com 手动确认版本是否存在，或选择其他版本。"
                         }
                     }
                     else -> Unit
@@ -283,13 +273,26 @@ object BedrockDownloadManager {
 
                 if (resolvedUrl.isBlank()) {
                     if (ver.uuid.isBlank()) {
-                        emit(versionKey, "error", "该版本未提供 WU UUID，且镜像源未命中，请切换下载源或刷新版本库", 0f)
-                        return@withContext "下载失败: 缺少 WU UUID"
+                        emit(versionKey, "error", "该版本 (${ver.name}) 缺少 WU UUID 且 MCAPPX 精确匹配无结果", 0f)
+                        return@withContext "下载失败: ${ver.name} 缺少 WU UUID 且未收录于 MCAPPX 镜像，无法下载"
                     }
                     emit(versionKey, "downloading", "正在解析 Appx/UWP 下载链接...", 0.02f)
-                    val resolved = WUDownloadClient.resolveDownloadUrl(ver.uuid)
-                    resolvedUrl = resolved.first
-                    fileSize = resolved.second
+                    val wuResult = runCatching { WUDownloadClient.resolveDownloadUrl(ver.uuid) }.getOrNull()
+                    if (wuResult != null) {
+                        resolvedUrl = wuResult.first
+                        fileSize = wuResult.second
+                    } else {
+                        emit(versionKey, "downloading", "WU 已下架，尝试 MCAPPX 最近版本...", 0.03f)
+                        val fallback = resolveWuVersionFromMcAppxFuzzy(ver)
+                        if (fallback != null) {
+                            resolvedUrl = fallback.downloadUrl
+                            fileSize = fallback.fileSize
+                            resolvedFileName = fallback.fileName.ifBlank { resolvedFileName }
+                        } else {
+                            emit(versionKey, "error", "该版本已从 WU 下架且 MCAPPX 无法找到匹配版本", 0f)
+                            return@withContext "下载失败: ${ver.name} 已从 Windows Update 下架，MCAPPX 镜像中也未找到。请尝试附近版本。"
+                        }
+                    }
                 }
             }
 
@@ -343,10 +346,35 @@ object BedrockDownloadManager {
     private suspend fun resolveWuVersionFromMcAppx(ver: WUDownloadClient.WUVersion): McAppxClient.BedrockVersion? {
         return runCatching {
             val list = McAppxClient.fetchVersions()
-            val matched = list.firstOrNull { it.version == ver.name && it.isPreview == ver.isPreview }
-                ?: list.firstOrNull { it.version == ver.name }
-                ?: return null
+            fun normalizeVersion(v: String): List<Int> = v.split(".").mapNotNull { it.toIntOrNull() }
+            fun exactMatch(a: String, b: String): Boolean {
+                val aa = normalizeVersion(a)
+                val bb = normalizeVersion(b)
+                if (aa == bb) return true
+                val maxLen = maxOf(aa.size, bb.size)
+                val pa = aa + List(maxLen - aa.size) { 0 }
+                val pb = bb + List(maxLen - bb.size) { 0 }
+                return pa == pb
+            }
+            val matched = list.firstOrNull { exactMatch(it.version, ver.name) && it.isPreview == ver.isPreview }
+                ?: list.firstOrNull { exactMatch(it.version, ver.name) }
+                ?: return@runCatching null
             McAppxClient.resolveDownloadUrl(matched)
+        }.getOrNull()
+    }
+
+    private suspend fun resolveWuVersionFromMcAppxFuzzy(ver: WUDownloadClient.WUVersion): McAppxClient.BedrockVersion? {
+        return runCatching {
+            val list = McAppxClient.fetchVersions().filter { it.isPreview == ver.isPreview }
+            if (list.isEmpty()) return@runCatching null
+            fun toNum(v: String): Long {
+                val parts = v.split(".").mapNotNull { it.toIntOrNull() }
+                return parts.take(4).foldIndexed(0L) { i, acc, n -> acc + n.toLong() * (1_000_000L shl ((3 - i) * 20)) }
+            }
+            val target = toNum(ver.name)
+            val nearest = list.minByOrNull { kotlin.math.abs(toNum(it.version) - target) }
+                ?: return@runCatching null
+            McAppxClient.resolveDownloadUrl(nearest)
         }.getOrNull()
     }
 
@@ -372,15 +400,10 @@ object BedrockDownloadManager {
         }
     }
 
-    /**
-     * 并行探测所有候选 URL 的响应延迟，返回最快的。
-     * 优先 .cn 源，同等延迟时 cn 优先。
-     */
     private fun pickFastestGdkUrl(urls: List<String>): String? {
         if (urls.isEmpty()) return null
         if (urls.size == 1) return urls.first()
 
-        // 构造候选：先 cn 后 com，去重
         val candidates = (
             urls.filter { "xboxlive.cn" in it } +
             urls.filter { "xboxlive.com" in it } +
@@ -413,12 +436,7 @@ object BedrockDownloadManager {
             ?: candidates.firstOrNull()
     }
 
-    /**
-     * 通过 Xbox Marketplace 目录 API 动态解析 GDK msixvc 下载链接。
-     * 用于 GdkLinks 数据库尚未收录的新版本（如刚发布的 26.x）。
-     */
     private suspend fun resolveGdkUrlFromXboxCatalog(versionName: String, isPreview: Boolean): String? = withContext(Dispatchers.IO) {
-        // Minecraft Windows (GDK) 的商店 product ID
         val productId = if (isPreview) "9p5x4qvlc2xr" else "9nblggh2jhxj"
         val candidates = listOf(
             "https://displaycatalog.mp.microsoft.com/v7.0/products/$productId?ms-cv=0&fieldsTemplate=Details&market=US&languages=en-US",
@@ -440,10 +458,8 @@ object BedrockDownloadManager {
                 // 优先匹配版本号，再 fallback 到任意 msixvc
                 val urlRegex = Regex(""""Uri"\s*:\s*"(https?://[^"]+\.msixvc[^"]*)"""", RegexOption.IGNORE_CASE)
                 val allUrls = urlRegex.findAll(json).map { it.groupValues[1] }.toList()
-                // 尝试精确匹配版本号
                 val versionMatch = allUrls.firstOrNull { versionName in it }
                 if (versionMatch != null) return@withContext versionMatch
-                // fallback: 任意 msixvc，优先 cn 源
                 allUrls.firstOrNull { "xboxlive.cn" in it }
                     ?: allUrls.firstOrNull { "xboxlive.com" in it }
                     ?: allUrls.firstOrNull()
@@ -483,7 +499,6 @@ object BedrockDownloadManager {
 
                 when (result) {
                     DownloadResult.CLOUDFLARE_BLOCKED, DownloadResult.FAILED -> {
-                        // 直接下载失败（Cloudflare 或网络问题），使用后台 Edge 下载
                         println("[BDM] 直接下载失败，启用后台 Edge 下载")
                         emit(versionKey, "downloading", "正在启动后台下载引擎...", 0.05f)
 
@@ -502,7 +517,6 @@ object BedrockDownloadManager {
                             return@withContext "安装失败: 下载超时"
                         }
 
-                        // 如果下载的文件名和预期不同，重命名
                         if (downloaded.name != targetFile.name) {
                             downloaded.copyTo(targetFile, overwrite = true)
                             downloaded.delete()
@@ -515,7 +529,6 @@ object BedrockDownloadManager {
                 }
             }
 
-            // ── Phase 2: 安装 ────────────────────────────────────────────
             installLocalFile(targetFile, entry.version, versionKey, settings)
         } catch (e: CancellationException) {
             throw e
@@ -527,23 +540,11 @@ object BedrockDownloadManager {
         }
     }
 
-    /**
-     * GDK (MSIXVC) 安装流程：
-     *
-     *  优先路径（无需 Store 授权）：
-     *    内置 GdkExtractor.exe（打包在 resources/runtime/）基于 BedrockLauncher.Core (MIT)，
-     *    使用纯 C# 实现的 XTS-AES 解密器直接解密解压 MSIXVC，
-     *    无需系统已安装游戏，无需 Xbox DRM license。
-     *
-     *  回退路径（需要 Store 已安装过一次）：
-     *    Add-AppxPackage 让系统解密安装到 C:\XboxGames，再 robocopy 复制。
-     */
     private fun installGdk(
         file: File, version: String, versionKey: String, settings: AppSettings,
     ): String {
         val versionDir = File(settings.minecraftDir, "bedrock_versions/$version")
 
-        // ── 优先：用内置 GdkExtractor.exe 直接解密解压（无需 Store 授权）────────
         emit(versionKey, "installing", "正在查找解压组件...", 0.52f)
         val gdkExe = findGdkExtractorExe()
         if (gdkExe != null) {
@@ -553,7 +554,7 @@ object BedrockDownloadManager {
             if (versionDir.exists()) versionDir.deleteRecursively()
             versionDir.mkdirs()
 
-            val rc = callGdkExtractor(gdkExe, file.absolutePath, versionDir.absolutePath, version, versionKey)
+            val (rc, errOut) = callGdkExtractor(gdkExe, file.absolutePath, versionDir.absolutePath, version, versionKey)
             if (rc == 0) {
                 File(versionDir, "AppxSignature.p7x").takeIf { it.exists() }?.delete()
                 val manifest = File(versionDir, "AppxManifest.xml")
@@ -565,104 +566,29 @@ object BedrockDownloadManager {
                     emit(versionKey, "done", "GDK 安装完成: $version", 1f)
                     return "安装完成: $version"
                 }
-                println("[BDM-GDK] GdkExtractor 解压后目录不完整，回退到 Add-AppxPackage")
+                val msg = "GDK 解压完成但目录不完整，请重试"
+                emit(versionKey, "error", msg, 0f)
+                return "安装失败: $msg"
             } else {
-                println("[BDM-GDK] GdkExtractor.exe 返回 rc=$rc，回退到 Add-AppxPackage")
+                versionDir.deleteRecursively()
+                val msg = "GDK 解压失败 (exit=$rc): ${errOut.trim().lines().lastOrNull { it.isNotBlank() } ?: errOut.take(200)}"
+                emit(versionKey, "error", msg, 0f)
+                return "安装失败: $msg"
             }
-            versionDir.deleteRecursively()
-            versionDir.mkdirs()
         }
 
-        // ── 回退：Add-AppxPackage（需要系统已有 Xbox DRM license）──────────────
-        emit(versionKey, "installing", "正在通过系统安装 GDK 包（需要 Xbox 授权）...", 0.58f)
-        val filePath = file.absolutePath.replace("'", "''")
-
-        val installScript = """
-            ${'$'}ErrorActionPreference = 'Stop'
-            try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
-            try {
-                Add-AppxPackage -Path '$filePath' -ForceApplicationShutdown -ForceUpdateFromAnyVersion -ErrorAction Stop
-                Write-Output 'INSTALL_OK'
-            } catch {
-                Write-Output "INSTALL_FAIL: ${'$'}(${'$'}_.Exception.Message)"
-                exit 1
-            }
-        """.trimIndent()
-
-        val proc = ProcessBuilder("powershell", "-NoProfile", "-Command", installScript)
-            .redirectErrorStream(true).start()
-        val installOut = proc.inputStream.bufferedReader().readText().trim()
-        proc.waitFor()
-        println("[BDM-GDK] Add-AppxPackage exit=${proc.exitValue()}: $installOut")
-
-        if (proc.exitValue() != 0) {
-            val hint = "\n\n提示：GDK 版本安装需要 Xbox 解密授权。\n" +
-                "方案A：安装 LeviLauncher（免费开源）后重试，本启动器会自动借用其解压组件。\n" +
-                "方案B：先从 Microsoft Store 安装一次正版 Minecraft，再重试。"
-            emit(versionKey, "error", "GDK 安装失败: ${installOut.take(150)}$hint", 0f)
-            return "安装失败: ${installOut.take(150)}$hint"
-        }
-
-        // 从系统安装位置复制到版本目录
-        emit(versionKey, "installing", "正在查找并复制游戏文件...", 0.75f)
-        val locScript = """
-            ${'$'}pkg = Get-AppxPackage | Where-Object { ${'$'}_.Name -like '*Minecraft*' -and ${'$'}_.Name -notlike '*Education*' -and ${'$'}_.Name -notlike '*Creator*' } | Sort-Object -Property Version -Descending | Select-Object -First 1
-            if (${'$'}pkg) { Write-Output ${'$'}pkg.InstallLocation }
-        """.trimIndent()
-        val locProc = ProcessBuilder("powershell", "-NoProfile", "-Command", locScript)
-            .redirectErrorStream(true).start()
-        val locOut = locProc.inputStream.bufferedReader().readText().trim()
-        locProc.waitFor()
-
-        val installLocation = listOf(
-            "C:\\XboxGames\\Minecraft Bedrock Edition\\Content",
-            "C:\\XboxGames\\Minecraft\\Content",
-            "C:\\XboxGames\\Minecraft",
-        ).firstOrNull { File(it, "Minecraft.Windows.exe").exists() }
-            ?: locOut.lines().firstOrNull { it.isNotBlank() && File(it.trim(), "Minecraft.Windows.exe").exists() }?.trim()
-
-        if (installLocation == null) {
-            emit(versionKey, "error", "GDK 安装完成但未找到游戏目录（$locOut）", 0f)
-            return "安装失败: 找不到游戏目录"
-        }
-
-        val copyProc = ProcessBuilder(
-            "robocopy", installLocation, versionDir.absolutePath,
-            "/E", "/R:0", "/W:0", "/MT:16", "/NFL", "/NDL", "/NJH", "/NJS", "/NP"
-        ).redirectErrorStream(true).start()
-        copyProc.inputStream.bufferedReader().readText()
-        copyProc.waitFor()
-        if (copyProc.exitValue() > 7) {
-            emit(versionKey, "error", "GDK 文件复制失败 (robocopy exit=${copyProc.exitValue()})", 0f)
-            return "安装失败: 文件复制失败"
-        }
-
-        val manifest = File(versionDir, "AppxManifest.xml")
-        val exe = File(versionDir, "Minecraft.Windows.exe")
-        if (!manifest.exists() || !exe.exists()) {
-            emit(versionKey, "error", "版本目录不完整", 0f)
-            return "安装失败: 版本目录不完整"
-        }
-
-        emit(versionKey, "installing", "正在安装基岩运行依赖...", 0.95f)
-        ensureFrameworkDeps(versionKey)
-        markInstalledVersion(settings, version, file)
-        emit(versionKey, "done", "GDK 安装完成: $version", 1f)
-        return "安装完成: $version"
+        val msg = "未找到 GdkExtractor 解压组件，无法安装 GDK 版本"
+        emit(versionKey, "error", msg, 0f)
+        return "安装失败: $msg"
     }
 
-    /**
-     * 查找内置的 GdkExtractor.exe（打包在 resources/runtime/ 里）。
-     * 运行时从 jar 解压到临时目录使用。
-     */
     private fun findGdkExtractorExe(): File? {
-        // 先看是否已解压到缓存目录
         val cacheDir = File(System.getProperty("java.io.tmpdir"), "md3l1_runtime")
         val cached = File(cacheDir, "GdkExtractor.exe")
-        if (cached.isFile && cached.length() > 1_000_000) return cached
 
-        // 从 classpath 资源解压
-        val stream = javaClass.classLoader.getResourceAsStream("runtime/GdkExtractor.exe") ?: return null
+        val stream = javaClass.classLoader.getResourceAsStream("runtime/GdkExtractor.exe") ?: run {
+            return if (cached.isFile && cached.length() > 1_000_000) cached else null
+        }
         cacheDir.mkdirs()
         try {
             stream.use { s -> cached.outputStream().use { s.copyTo(it) } }
@@ -673,50 +599,44 @@ object BedrockDownloadManager {
         return if (cached.isFile && cached.length() > 1_000_000) cached else null
     }
 
-    /**
-     * 调用 GdkExtractor.exe 解密解压 MSIXVC。
-     * 返回 exit code（0 = 成功）。
-     * GdkExtractor.exe 使用 BedrockLauncher.Core（MIT）内置 XTS-AES 解密，无需 Store 授权。
-     */
     private fun callGdkExtractor(
         exe: File, msixvcPath: String, outDir: String, version: String, versionKey: String,
-    ): Int {
+    ): Pair<Int, String> {
         val gameType = if (version.contains("preview", ignoreCase = true) ||
             version.contains("beta", ignoreCase = true)) "preview" else "release"
         return try {
             val proc = ProcessBuilder(exe.absolutePath, msixvcPath, outDir, gameType)
                 .redirectErrorStream(true).start()
 
-            // 实时读输出并更新进度
             val reader = proc.inputStream.bufferedReader()
             var lastLine = ""
+            val allOutput = StringBuilder()
             reader.forEachLine { line ->
                 lastLine = line
+                allOutput.appendLine(line)
                 println("[GdkExtractor] $line")
                 if (line.startsWith("PROGRESS:")) {
                     val pct = line.removePrefix("PROGRESS:").trim().toFloatOrNull()
                     if (pct != null) emit(versionKey, "installing", "解压中 ${pct.toInt()}%...", 0.55f + pct / 100f * 0.35f)
                 } else if (line.startsWith("STATE:")) {
-                    emit(versionKey, "installing", "${line.removePrefix("STATE:")}", 0.8f)
+                    emit(versionKey, "installing", line.removePrefix("STATE:").trim(), 0.8f)
+                } else if (line.startsWith("ERROR:")) {
+                    emit(versionKey, "installing", line.removePrefix("ERROR:").trim(), 0.6f)
                 }
             }
             proc.waitFor(15 * 60, java.util.concurrent.TimeUnit.SECONDS)
             val exit = proc.exitValue()
             println("[BDM-GDK] GdkExtractor exit=$exit, last=$lastLine")
-            exit
+            Pair(exit, allOutput.takeLast(300).toString())
         } catch (e: Exception) {
             println("[BDM-GDK] GdkExtractor 调用异常: ${e.message}")
-            1
+            Pair(1, e.message ?: "未知异常")
         }
     }
 
-    /**
-     * 安装 .appx / .msixbundle（UWP 非加密包）：直接解压到版本目录。
-     */
     private fun installAppx(
         file: File, version: String, versionKey: String, settings: AppSettings,
     ): String {
-        // ── Phase 1: 解压到启动器自己的版本目录，确保多版本隔离 ───────────────
         emit(versionKey, "installing", "正在解压到版本目录 $version...", 0.5f)
         val extractDir = File(settings.minecraftDir, "bedrock_versions/$version")
         if (extractDir.exists()) extractDir.deleteRecursively()
@@ -771,12 +691,7 @@ object BedrockDownloadManager {
         )
     }
 
-    /**
-     * 自动下载安装 UWP 框架依赖（VCLibs + .NET Native Runtime/Framework）。
-     * 这些是 Bedrock 注册/运行必需的框架包。
-     */
     private fun ensureFrameworkDeps(versionKey: String) {
-        // 需要安装的框架 appx 包（仅 x64）
         data class Dep(val name: String, val pkgPrefix: String, val url: String)
         val deps = listOf(
             Dep("VCLibs 14.00 UWPDesktop",
@@ -787,7 +702,6 @@ object BedrockDownloadManager {
                 "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx"),
         )
 
-        // 获取已安装包名
         val installed: Set<String> = try {
             val proc = ProcessBuilder("powershell", "-NoProfile", "-Command",
                 "Get-AppxPackage | ForEach-Object { Write-Output \$_.Name }")
@@ -829,9 +743,6 @@ object BedrockDownloadManager {
         }
     }
 
-    /**
-     * 安全解压：Java ZipFile 优先，失败则 fallback 到 Windows 自带 tar.exe
-     */
     private fun safeExtract(zipFile: File, targetDir: File, versionKey: String): Boolean {
         try {
             emit(versionKey, "installing", "正在高速解压...", 0.6f)
@@ -872,10 +783,6 @@ object BedrockDownloadManager {
         return false
     }
 
-    /**
-     * 安装本地 .appx / .exe 文件。
-     * 可从 download() 调用，也可直接传入已下载的文件。
-     */
     private fun installLocalFile(
         file: File, version: String, versionKey: String, settings: AppSettings,
     ): String {
@@ -885,7 +792,6 @@ object BedrockDownloadManager {
                 return installAppx(file, version, versionKey, settings)
             }
             "exe" -> {
-                // MCAPPX 的 exe 是安装器壳，内含 appx —— 提取出来静默安装
                 emit(versionKey, "installing", "正在从安装器中提取 .appx...", 0.3f)
                 val extractDir = File(file.parentFile, "extract_${System.currentTimeMillis()}")
                 extractDir.mkdirs()
@@ -899,7 +805,6 @@ object BedrockDownloadManager {
                     ).redirectErrorStream(true).start()
                     val output = proc.inputStream.bufferedReader().readText()
                     val exitCode = proc.waitFor()
-                    // 清理临时解压目录
                     try { extractDir.deleteRecursively() } catch (_: Exception) {}
                     if (exitCode != 0) {
                         println("[BDM] Add-AppxPackage 失败 (exit=$exitCode): $output")
@@ -908,7 +813,6 @@ object BedrockDownloadManager {
                     }
                     println("[BDM] exe → appx → Add-AppxPackage 成功")
                 } else {
-                    // 提取失败，最后手段：静默运行 exe
                     println("[BDM] 无法提取 appx，尝试静默运行 exe")
                     try { extractDir.deleteRecursively() } catch (_: Exception) {}
                     emit(versionKey, "installing", "正在静默运行安装器...", 0.5f)
@@ -929,14 +833,6 @@ object BedrockDownloadManager {
         return "安装完成: $version"
     }
 
-    /**
-     * 浏览器下载 + 自动监控方案。
-     * 1) 记录 Downloads 文件夹现有文件
-     * 2) 用浏览器打开下载页
-     * 3) 轮询 Downloads 文件夹检测新 .appx 文件
-     * 4) 等待文件大小稳定（下载完成）
-     * 5) 自动调用 Add-AppxPackage 安装
-     */
     suspend fun downloadViaBrowser(
         detailPageUrl: String,
         version: String,
@@ -946,17 +842,14 @@ object BedrockDownloadManager {
             val downloadsDir = File(System.getProperty("user.home"), "Downloads")
             val appxExts = setOf("appx", "msixbundle", "appxbundle")
 
-            // 记录现有文件
             val existingFiles = downloadsDir.listFiles()
                 ?.filter { it.extension.lowercase() in appxExts }
                 ?.map { it.absolutePath }
                 ?.toSet() ?: emptySet()
 
-            // 打开浏览器
             emit(versionKey, "downloading", "正在打开浏览器下载页...", 0f)
             openInBrowser(detailPageUrl)
 
-            // 轮询检测新文件（最多等 10 分钟）
             emit(versionKey, "downloading", "等待浏览器下载中... 请在浏览器中点击下载", 0.05f)
             var newFile: File? = null
             val deadline = System.currentTimeMillis() + 10 * 60 * 1000L // 10 min
@@ -967,7 +860,6 @@ object BedrockDownloadManager {
                     ?.filter { it.extension.lowercase() in appxExts && it.absolutePath !in existingFiles }
                     ?: emptyList()
 
-                // 也检测 .crdownload / .partial / .tmp 表示下载进行中
                 val downloading = downloadsDir.listFiles()
                     ?.any { it.name.contains("Minecraft", ignoreCase = true) &&
                             (it.extension == "crdownload" || it.extension == "partial" || it.extension == "tmp") }
@@ -983,13 +875,11 @@ object BedrockDownloadManager {
                 } ?: currentFiles.firstOrNull()
 
                 if (mcFile != null && mcFile.length() > 1024 * 1024) {
-                    // 等待文件大小稳定（下载完成）
                     val size1 = mcFile.length()
                     emit(versionKey, "downloading", "检测到文件: ${mcFile.name} (${"%.1f".format(size1 / 1048576.0)} MB)...", 0.5f)
                     Thread.sleep(3000)
                     val size2 = mcFile.length()
                     if (size1 == size2) {
-                        // 大小稳定，下载完成
                         newFile = mcFile
                         break
                     }
@@ -1004,7 +894,6 @@ object BedrockDownloadManager {
 
             println("[BDM] 检测到下载文件: ${newFile.absolutePath} (${newFile.length()} bytes)")
 
-            // 复制到缓存目录
             val settings = AppSettings.load()
             val cacheDir = File(settings.minecraftDir, "bedrock_versions/cache")
             cacheDir.mkdirs()
@@ -1012,7 +901,6 @@ object BedrockDownloadManager {
             emit(versionKey, "installing", "正在复制文件到缓存...", 0.7f)
             newFile.copyTo(cachedFile, overwrite = true)
 
-            // 安装
             installLocalFile(cachedFile, version, versionKey, settings)
         } catch (e: Exception) {
             e.printStackTrace()

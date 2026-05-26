@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>功能特性 — MD3L</title>
+<link rel="icon" href="icon.png"/>
+<link rel="stylesheet" href="md3.css"/>
+<style>
+.page-hero {
+  padding:96px 0 56px;
+  margin-top:64px;
+  background: radial-gradient(ellipse 70% 50% at 50% 0%,
+    color-mix(in srgb,var(--md-primary-container) 30%,transparent),transparent 65%);
+}
+.page-hero-inner { max-width:640px; }
+
+/* Feature grid */
+.feat-grid {
+  display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+  gap:16px; margin-top:48px;
+}
+.feat-card {
+  background:var(--md-surface-c);
+  border:1px solid var(--md-outline-var);
+  border-radius:var(--r-xl); padding:28px;
+  transition:background .2s,transform .2s;
+}
+.feat-card:hover { background:var(--md-surface-c-high); transform:translateY(-3px); }
+.feat-icon {
+  width:52px; height:52px;
+  border-radius:var(--r-l);
+  background:var(--md-primary-container);
+  display:flex; align-items:center; justify-content:center;
+  font-size:26px; margin-bottom:18px;
+}
+.feat-card h3 { font-size:16px; font-weight:600; margin-bottom:8px; }
+.feat-card p { font-size:14px; line-height:1.72; color:var(--md-on-surface-var); }
+.feat-tag {
+  display:inline-block; margin-top:12px;
+  background:var(--md-secondary-container);
+  color:var(--md-on-secondary-container);
+  font-size:11px; font-weight:600;
+  padding:3px 10px; border-radius:var(--r-full);
+}
+
+/* Comparison table */
+.compare-wrap { overflow-x:auto; margin-top:48px; }
+table.compare {
+  width:100%; border-collapse:collapse;
+  background:var(--md-surface-c); border-radius:var(--r-xl);
+  overflow:hidden; border:1px solid var(--md-outline-var);
+}
+table.compare th, table.compare td {
+  padding:14px 20px; font-size:14px;
+  border-bottom:1px solid var(--md-outline-var);
+  text-align:left;
+}
+table.compare thead th {
+  background:var(--md-surface-c-high);
+  font-weight:600; color:var(--md-on-surface);
+}
+table.compare td:first-child { color:var(--md-on-surface-var); font-weight:500; }
+table.compare tr:last-child td { border-bottom:none; }
+.check { color:#4caf50; font-size:18px; }
+.cross { color:var(--md-outline); font-size:18px; }
+.partial { color:var(--md-tertiary); font-size:14px; }
+
+/* Showcase rows */
+.showcase-rows { margin-top:48px; display:flex; flex-direction:column; gap:56px; }
+.sc-row {
+  display:grid; grid-template-columns:1fr 1fr;
+  gap:40px; align-items:center;
+}
+.sc-row.rev { direction:rtl; }
+.sc-row.rev > * { direction:ltr; }
+.sc-img {
+  border-radius:var(--r-xl); overflow:hidden;
+  border:1px solid var(--md-outline-var);
+  box-shadow:0 2px 4px rgba(0,0,0,.3),0 4px 8px 2px rgba(0,0,0,.15);
+  cursor:pointer; transition:transform .2s;
+}
+.sc-img:hover { transform:scale(1.015); }
+.sc-img img { width:100%; }
+.sc-text .section-label { margin-bottom:6px; }
+.sc-text h3 { font-size:22px; font-weight:700; margin-bottom:12px; }
+.sc-text p { font-size:15px; line-height:1.8; color:var(--md-on-surface-var); margin-bottom:14px; }
+.chip-row { display:flex; flex-wrap:wrap; gap:8px; }
+
+@media(max-width:700px){
+  .sc-row,.sc-row.rev { grid-template-columns:1fr; direction:ltr; }
+}
+</style>
+</head>
+<body>
+<header class="top-app-bar"></header>
+<nav class="mobile-nav"></nav>
+
+<!-- PAGE HERO -->
+<div class="page-hero">
+  <div class="container">
+    <div class="page-hero-inner">
+      <p class="section-label reveal">功能特性</p>
+      <h1 class="section-title reveal" style="font-size:clamp(32px,5vw,48px)">为玩家打造的<br/>每一个细节</h1>
+      <p class="section-body reveal">MD3L 覆盖 Minecraft 启动全流程，从账号到模组，从下载到自定义，一切触手可及。</p>
+    </div>
+  </div>
+</div>
+
+<!-- FEATURE CARDS -->
+<section class="section" style="padding-top:48px">
+  <div class="container">
+    <p class="section-label reveal">核心能力</p>
+    <h2 class="section-title reveal">完整功能列表</h2>
+    <div class="feat-grid">
+      <div class="feat-card reveal">
+        <div class="feat-icon">☕</div>
+        <h3>Java 版全版本支持</h3>
+        <p>从 Minecraft 1.0 到最新版本均可下载安装，支持 Forge、NeoForge、Fabric、Quilt 等全部主流加载器，.mrpack 整合包一键导入。</p>
+        <span class="feat-tag">Java Edition</span>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon">🟩</div>
+        <h3>基岩版原生启动</h3>
+        <p>通过 MSIX / GDK 直接安装并启动基岩版，支持正式版与预览版混装，版本切换极速；同时兼容本地账号模式，自动处理依赖运行时。</p>
+        <span class="feat-tag">Bedrock Edition</span>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon">👤</div>
+        <h3>多账号管理</h3>
+        <p>支持微软正版账号（OAuth 登录）、离线账号自定义用户名、Yggdrasil 第三方账号（LittleSkin / AuthMe 等），头像皮肤自动抓取并缓存。</p>
+        <span class="feat-tag">账号</span>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon">📦</div>
+        <h3>模组 &amp; 资源中心</h3>
+        <p>内置 Modrinth / CurseForge 双源搜索，支持中文关键词自动翻译，可按加载器（Fabric/Forge/NeoForge/Quilt）和类型（模组/光影/材质包/整合包）精确筛选，一键下载安装。</p>
+        <span class="feat-tag">模组</span>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon">⚡</div>
+        <h3>智能下载加速</h3>
+        <p>多线程并发下载，自动选择 BMCLAPI 等国内镜像源，内置断点续传与失败重试机制，确保游戏资源稳定高速下载。</p>
+        <span class="feat-tag">下载</span>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon">🔄</div>
+        <h3>自动更新</h3>
+        <p>启动时自动检查 GitHub 最新 Release，若有新版本则弹出更新对话框，一键下载安装，无需手动下载覆盖。</p>
+        <span class="feat-tag">更新</span>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon">☕</div>
+        <h3>Java 运行时管理</h3>
+        <p>自动扫描系统已安装的所有 Java，根据游戏版本智能匹配推荐 JRE，也支持手动指定任意 Java 路径。</p>
+        <span class="feat-tag">Java</span>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon">📁</div>
+        <h3>便携式数据存储</h3>
+        <p>所有账号、设置、崩溃日志等数据存储在启动器同目录下的 data 文件夹，完全便携，旧版 ~/.md3l 数据首次启动自动迁移。</p>
+        <span class="feat-tag">便携</span>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon">🎨</div>
+        <h3>个性化主题</h3>
+        <p>深色 / 亮色模式一键切换，内置多种主题配色供选择，支持设置自定义背景图片，遵循 Material Design 3 动态色彩规范。</p>
+        <span class="feat-tag">外观</span>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon">🖱️</div>
+        <h3>拖拽导入</h3>
+        <p>直接将 .mrpack、.zip 整合包文件拖拽到启动器窗口即可触发导入流程，支持管理员权限下的拖拽兼容处理。</p>
+        <span class="feat-tag">易用性</span>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon">🐛</div>
+        <h3>崩溃日志记录</h3>
+        <p>游戏崩溃时自动捕获并保存完整 JVM 日志，基岩版崩溃日志同步记录，方便排查问题或反馈给开发者。</p>
+        <span class="feat-tag">调试</span>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon">🔒</div>
+        <h3>管理员权限支持</h3>
+        <p>启动器请求管理员权限运行，确保基岩版 MSIX 安装、运行时配置等操作顺利完成，无需手动右键以管理员身份运行。</p>
+        <span class="feat-tag">系统</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SHOWCASE -->
+<section class="section" style="background:var(--md-surface-c-low)">
+  <div class="container">
+    <p class="section-label reveal">界面展示</p>
+    <h2 class="section-title reveal">截图一览</h2>
+    <div class="showcase-rows">
+      <div class="sc-row reveal">
+        <div class="sc-img" onclick="openLightbox('screenshot.png')"><img src="screenshot.png" alt="主界面"/></div>
+        <div class="sc-text">
+          <p class="section-label">首页</p>
+          <h3>主界面</h3>
+          <p>左侧导航栏快速切换启动/版本/下载/模组/设置，右侧展示当前账号与皮肤，底部选择版本一键启动，中央区域展示 Minecraft 官方资讯。</p>
+          <div class="chip-row">
+            <span class="chip">账号管理</span><span class="chip">MC 资讯</span><span class="chip">快速启动</span>
+          </div>
+        </div>
+      </div>
+      <div class="sc-row rev reveal">
+        <div class="sc-img" onclick="openLightbox('screenshot2.png')"><img src="screenshot2.png" alt="下载中心"/></div>
+        <div class="sc-text">
+          <p class="section-label">下载</p>
+          <h3>下载中心</h3>
+          <p>Java 版与基岩版统一管理，BMCLAPI 镜像加速，正式版 / 测试版 / 预览版任意切换，搜索版本号快速定位，一键安装。</p>
+          <div class="chip-row">
+            <span class="chip">Java 版</span><span class="chip">基岩版</span><span class="chip">镜像加速</span>
+          </div>
+        </div>
+      </div>
+      <div class="sc-row reveal">
+        <div class="sc-img" onclick="openLightbox('screenshot3.png')"><img src="screenshot3.png" alt="模组中心"/></div>
+        <div class="sc-text">
+          <p class="section-label">模组</p>
+          <h3>模组 &amp; 资源中心</h3>
+          <p>接入 Modrinth / CurseForge，支持中文自动翻译搜索，可按加载器和资源类型精确筛选，点击卡片查看详情并下载安装到目标版本。</p>
+          <div class="chip-row">
+            <span class="chip">Modrinth</span><span class="chip">CurseForge</span><span class="chip">中文搜索</span>
+          </div>
+        </div>
+      </div>
+      <div class="sc-row rev reveal">
+        <div class="sc-img" onclick="openLightbox('screenshot4.png')"><img src="screenshot4.png" alt="设置"/></div>
+        <div class="sc-text">
+          <p class="section-label">设置</p>
+          <h3>个性化设置</h3>
+          <p>深色 / 亮色模式切换，多种主题配色随心选，背景图片自定义，Java 路径灵活配置，所有修改即时生效自动保存。</p>
+          <div class="chip-row">
+            <span class="chip">深色模式</span><span class="chip">主题配色</span><span class="chip">自定义背景</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- COMPARISON TABLE -->
+<section class="section">
+  <div class="container">
+    <p class="section-label reveal">对比</p>
+    <h2 class="section-title reveal">与其他启动器对比</h2>
+    <div class="compare-wrap reveal">
+      <table class="compare">
+        <thead>
+          <tr>
+            <th>功能</th>
+            <th>MD3L</th>
+            <th>PCL2</th>
+            <th>HMCL</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Java 版启动</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+          <tr><td>基岩版启动</td><td><span class="check">✓</span></td><td><span class="cross">✗</span></td><td><span class="cross">✗</span></td></tr>
+          <tr><td>模组资源中心</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+          <tr><td>中文搜索翻译</td><td><span class="check">✓</span></td><td><span class="cross">✗</span></td><td><span class="cross">✗</span></td></tr>
+          <tr><td>Yggdrasil 第三方账号</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+          <tr><td>Material Design 3 界面</td><td><span class="check">✓</span></td><td><span class="cross">✗</span></td><td><span class="cross">✗</span></td></tr>
+          <tr><td>便携数据目录</td><td><span class="check">✓</span></td><td><span class="partial">部分</span></td><td><span class="partial">部分</span></td></tr>
+          <tr><td>完全免费开源</td><td><span class="check">✓</span></td><td><span class="cross">✗</span></td><td><span class="check">✓</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<footer class="site-footer"><div class="container"></div></footer>
+<a class="fab" href="download.html"><span class="ms">download</span><span class="label">下载</span></a>
+<div class="lightbox" id="lightbox" onclick="closeLightbox()"><img src="" alt=""/></div>
+<script src="nav.js"></script>
+</body>
+</html>

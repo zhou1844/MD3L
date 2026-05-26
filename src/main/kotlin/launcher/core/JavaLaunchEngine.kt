@@ -6,10 +6,6 @@ import java.security.MessageDigest
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-/**
- * Java Edition 启动引擎。
- * 从 LaunchManager 中解耦，职责单一：根据 [LaunchContext] 构建命令行并启动进程。
- */
 class JavaLaunchEngine : ILaunchEngine {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -646,21 +642,87 @@ class JavaLaunchEngine : ILaunchEngine {
         val args = mutableListOf<String>()
         val nativesDir = context.nativesDir.absolutePath
 
-        args.add("-Xmx${context.memoryMb}m")
-        args.add("-Xms${context.memoryMb / 2}m")
+        val xmx = context.memoryMb
+        val xms = if (xmx >= 4096) xmx / 2 else 512.coerceAtMost(xmx)
+        args.add("-Xmx${xmx}m")
+        args.add("-Xms${xms}m")
+        if (context.jvmThreadStackSize > 0) args.add("-Xss${context.jvmThreadStackSize}k")
         args.add("-Djava.library.path=$nativesDir")
         args.add("-Dminecraft.launcher.brand=MD3L")
-        args.add("-Dminecraft.launcher.version=1.1.0")
+        args.add("-Dminecraft.launcher.version=1.3.6")
         args.add("-Dfile.encoding=UTF-8")
         args.add("-Dsun.stdout.encoding=UTF-8")
         args.add("-Dsun.stderr.encoding=UTF-8")
         args.add("-Duser.language=zh")
         args.add("-Duser.country=CN")
+        // Advanced JVM flags from settings
+        if (context.jvmMetaspaceSize > 0)     args.add("-XX:MetaspaceSize=${context.jvmMetaspaceSize}m")
+        if (context.jvmReservedCodeCache > 0) args.add("-XX:ReservedCodeCacheSize=${context.jvmReservedCodeCache}m")
+        if (!context.jvmTieredCompilation)    args.add("-XX:-TieredCompilation")
+        if (context.jvmInlineSize != 325)     args.add("-XX:MaxInlineSize=${context.jvmInlineSize}")
+        if (context.jvmFreqInlineSize != 325) args.add("-XX:FreqInlineSize=${context.jvmFreqInlineSize}")
+        if (context.jvmLoopUnrollingLimit != 60) args.add("-XX:LoopUnrollingLimit=${context.jvmLoopUnrollingLimit}")
+        if (context.jvmEnableIEEE)             args.add("-XX:+UseStrictFP")
+        if (context.jvmNativeMemoryTracking)   args.add("-XX:NativeMemoryTracking=summary")
+        if (context.jvmUseLargePages)          args.add("-XX:+UseLargePages")
 
-        if (context.customJvmArgs.isNotBlank()) {
-            context.customJvmArgs.split("\\s+".toRegex())
-                .filter { it.isNotBlank() }
-                .forEach { args.add(it) }
+        // ── GC 策略 ──────────────────────────────────────────────────────────
+        val userArgs = context.customJvmArgs.split("\\s+".toRegex()).filter { it.isNotBlank() }
+        val hasCustomGc = userArgs.any { it.startsWith("-XX:+Use") && it.contains("GC") }
+        if (!hasCustomGc) {
+            val g1ns = context.jvmG1NewSizePercent
+            val g1ms = context.jvmG1MaxNewSizePercent
+            val g1rs = context.jvmG1HeapRegionSize
+            val g1gt = context.jvmG1GCPauseTarget
+            when (context.gcPolicy) {
+                "G1GC" -> {
+                    args.add("-XX:+UseG1GC")
+                    args.add("-XX:+UnlockExperimentalVMOptions")
+                    args.add("-XX:G1NewSizePercent=$g1ns")
+                    args.add("-XX:G1MaxNewSizePercent=$g1ms")
+                    args.add("-XX:G1ReservePercent=20")
+                    args.add("-XX:MaxGCPauseMillis=$g1gt")
+                    args.add("-XX:G1HeapRegionSize=${g1rs}m")
+                    if (context.jvmParallelRefProcEnabled) args.add("-XX:+ParallelRefProcEnabled")
+                    if (context.jvmDisableExplicitGC)      args.add("-XX:+DisableExplicitGC")
+                    if (context.jvmAlwaysPreTouch)         args.add("-XX:+AlwaysPreTouch")
+                    if (context.jvmStringDedup)            args.add("-XX:+UseStringDeduplication")
+                    if (xmx >= 4096) {
+                        args.add("-XX:G1HeapWastePercent=5")
+                        args.add("-XX:G1MixedGCCountTarget=4")
+                        args.add("-XX:InitiatingHeapOccupancyPercent=15")
+                        args.add("-XX:G1MixedGCLiveThresholdPercent=90")
+                        args.add("-XX:SurvivorRatio=32")
+                        args.add("-XX:MaxTenuringThreshold=1")
+                    }
+                }
+                "ZGC" -> {
+                    args.add("-XX:+UseZGC")
+                    args.add("-XX:+UnlockExperimentalVMOptions")
+                    if (context.jvmDisableExplicitGC) args.add("-XX:+DisableExplicitGC")
+                    if (context.jvmAlwaysPreTouch)    args.add("-XX:+AlwaysPreTouch")
+                    args.add("-XX:ZUncommitDelay=60")
+                }
+                "ShenandoahGC" -> {
+                    args.add("-XX:+UseShenandoahGC")
+                    args.add("-XX:+UnlockExperimentalVMOptions")
+                    args.add("-XX:ShenandoahGCMode=iu")
+                    if (context.jvmDisableExplicitGC) args.add("-XX:+DisableExplicitGC")
+                    if (context.jvmAlwaysPreTouch)    args.add("-XX:+AlwaysPreTouch")
+                }
+                "ParallelGC" -> {
+                    args.add("-XX:+UseParallelGC")
+                    if (context.jvmDisableExplicitGC) args.add("-XX:+DisableExplicitGC")
+                    if (context.jvmAlwaysPreTouch)    args.add("-XX:+AlwaysPreTouch")
+                }
+                "SerialGC" -> args.add("-XX:+UseSerialGC")
+            }
+        }
+
+        if (userArgs.isNotEmpty()) {
+            // 过滤掉 GC 策略重复标志（防止与上面的冲突），其他参数原样加入
+            val gcFlags = setOf("-XX:+UseG1GC", "-XX:+UseZGC", "-XX:+UseShenandoahGC", "-XX:+UseParallelGC", "-XX:+UseSerialGC")
+            userArgs.filter { it !in gcFlags }.forEach { args.add(it) }
         }
 
         // 如果是第三方登录，添加 authlib-injector
@@ -779,6 +841,18 @@ class JavaLaunchEngine : ILaunchEngine {
         args.add("--width"); args.add(context.windowWidth.toString())
         args.add("--height"); args.add(context.windowHeight.toString())
         if (context.fullscreen) args.add("--fullscreen")
+        if (context.launchDemoMode) args.add("--demo")
+        if (context.javaUseNativeGlfw) args.add("--useNativeGlfw")
+        if (context.javaUseNativeOpenAl) args.add("--useNativeOpenAL")
+        if (context.javaQuickPlaySingleplayer.isNotBlank()) {
+            args.add("--quickPlaySingleplayer"); args.add(context.javaQuickPlaySingleplayer)
+        }
+        if (context.javaQuickPlayMultiplayer.isNotBlank()) {
+            args.add("--quickPlayMultiplayer"); args.add(context.javaQuickPlayMultiplayer)
+        }
+        if (context.javaExtraGameArgs.isNotBlank()) {
+            context.javaExtraGameArgs.split("\\s+".toRegex()).filter { it.isNotBlank() }.forEach { args.add(it) }
+        }
 
         // 强制中文
         if ("--lang" !in args) {

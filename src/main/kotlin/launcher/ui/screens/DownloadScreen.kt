@@ -3,6 +3,7 @@ package launcher.ui.screens
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -280,62 +281,54 @@ fun DownloadScreen() {
     var editionTab by DownloadScreenState.editionTab
 
     Column(modifier = Modifier.fillMaxSize()) {
-        Text(
-            "下载中心",
-            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            "BMCLAPI 镜像加速 · 点击版本进入配置页",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(12.dp))
+        // ── 标题区 ────────────────────────────────────────────────────────────
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier.size(44.dp).clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.CloudDownload, null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text("下载中心", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+                Text("BMCLAPI 镜像加速 · 点击版本进入配置页", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Spacer(Modifier.height(14.dp))
 
         DownloadProgressBanner()
 
-        // ── 全局双核 Tab：Java 版 / 基岩版 ────────────────────────────────────
-        TabRow(
-            selectedTabIndex = EditionTab.entries.indexOf(editionTab),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            contentColor = MaterialTheme.colorScheme.primary,
-            indicator = {},
-            divider = {},
-            modifier = Modifier.clip(RoundedCornerShape(12.dp)),
+        // ── 版本切换：Java / 基岩版 ───────────────────────────────────────────
+        Row(
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
         ) {
             EditionTab.entries.forEach { tab ->
-                Tab(
-                    selected = editionTab == tab,
-                    onClick = { editionTab = tab },
-                    modifier = Modifier.clip(RoundedCornerShape(12.dp))
-                        .background(
-                            if (editionTab == tab) MaterialTheme.colorScheme.primaryContainer
-                            else Color.Transparent
-                        ),
+                val selected = editionTab == tab
+                Box(
+                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(16.dp))
+                        .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
+                        .clickable { editionTab = tab }
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Row(
-                        modifier = Modifier.padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             when (tab) {
-                                EditionTab.Java -> Icons.Filled.Code
-                                EditionTab.Bedrock -> Icons.Filled.ViewInAr
+                                EditionTab.Java -> Icons.Filled.Terminal
+                                EditionTab.Bedrock -> Icons.Filled.Layers
                             },
                             contentDescription = null,
                             modifier = Modifier.size(18.dp),
-                            tint = if (editionTab == tab)
-                                MaterialTheme.colorScheme.onPrimaryContainer
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
                             tab.label,
                             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                            color = if (editionTab == tab)
-                                MaterialTheme.colorScheme.onPrimaryContainer
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -343,7 +336,6 @@ fun DownloadScreen() {
         }
         Spacer(Modifier.height(12.dp))
 
-        // ── 分发到对应 Tab 内容 ───────────────────────────────────────────────
         when (editionTab) {
             EditionTab.Java -> JavaDownloadContent()
             EditionTab.Bedrock -> BedrockDownloadContent()
@@ -396,79 +388,77 @@ private fun JavaDownloadContent() {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ── 分类 Tabs ──────────────────────────────────────────────────────
-        ScrollableTabRow(
-            selectedTabIndex = JavaVersionTab.entries.indexOf(selectedTab),
-            containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.primary,
-            edgePadding = 0.dp,
-            divider = {},
-        ) {
+        // ── 分类 Pills ─────────────────────────────────────────────────────
+        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             JavaVersionTab.entries.forEach { tab ->
-                Tab(
-                    selected = selectedTab == tab,
-                    onClick = { selectedTab = tab },
-                    text = {
+                item(key = tab.name) {
+                    val sel = selectedTab == tab
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(if (sel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .clickable { selectedTab = tab }
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            BlockIcon(tab, size = 24)
+                            BlockIcon(tab, size = 20)
                             Spacer(Modifier.width(6.dp))
-                            Text(tab.label, style = MaterialTheme.typography.labelMedium)
+                            Text(
+                                tab.label,
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal),
+                                color = if (sel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
-                    },
-                )
+                    }
+                }
             }
         }
         Spacer(Modifier.height(10.dp))
 
-        // ── 搜索栏 ───────────────────────────────────────────────────────────
+        // ── 搜索栏 ────────────────────────────────────────────────────────────
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("搜索版本号...") },
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+            placeholder = { Text("搜索 Java 版本号…") },
+            leadingIcon = { Icon(Icons.Filled.Search, null, modifier = Modifier.size(20.dp)) },
+            trailingIcon = { if (searchQuery.isNotBlank()) IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Filled.Clear, null, modifier = Modifier.size(18.dp)) } },
             singleLine = true,
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth(),
-            textStyle = MaterialTheme.typography.bodySmall,
+            textStyle = MaterialTheme.typography.bodyMedium,
         )
         Spacer(Modifier.height(10.dp))
 
-        // ── 版本列表 ──────────────────────────────────────────────────────────
+        // ── 版本列表 ────────────────────────────────────────────────────────────
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
-                    Spacer(Modifier.height(8.dp))
-                    Text("获取版本列表...", style = MaterialTheme.typography.bodySmall)
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator(modifier = Modifier.size(36.dp), strokeWidth = 3.dp)
+                    Text("获取 Java 版本列表…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         } else if (filtered.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Filled.Inbox, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
-                    Spacer(Modifier.height(8.dp))
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.size(80.dp).clip(RoundedCornerShape(28.dp)).background(
+                        if (remoteVersions.isEmpty()) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                        else MaterialTheme.colorScheme.surfaceContainerHighest
+                    ), contentAlignment = Alignment.Center) {
+                        Icon(if (remoteVersions.isEmpty()) Icons.Filled.WifiOff else Icons.Filled.Inbox, null,
+                            modifier = Modifier.size(40.dp),
+                            tint = if (remoteVersions.isEmpty()) MaterialTheme.colorScheme.error.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                    }
                     if (remoteVersions.isEmpty()) {
-                        Text("获取版本列表失败", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-                        if (loadError.isNotBlank()) {
-                            Spacer(Modifier.height(4.dp))
-                            Text(loadError, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Spacer(Modifier.height(12.dp))
-                        FilledTonalButton(onClick = {
-                            isLoading = true
-                            loadError = ""
-                            scope.launch {
-                                remoteVersions = VersionManifest.fetchVersionList()
-                                loadError = VersionManifest.lastError
-                                isLoading = false
-                            }
-                        }) {
-                            Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("重试")
-                        }
+                        Text("获取版本列表失败", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                        if (loadError.isNotBlank()) Text(loadError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                        FilledTonalButton(
+                            onClick = { isLoading = true; loadError = ""; scope.launch { remoteVersions = VersionManifest.fetchVersionList(); loadError = VersionManifest.lastError; isLoading = false } },
+                            shape = RoundedCornerShape(16.dp),
+                        ) { Icon(Icons.Filled.Refresh, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("重试") }
                     } else {
-                        Text("无结果", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("无匹配结果", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("试试其他关键词", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                     }
                 }
             }
@@ -482,7 +472,7 @@ private fun JavaDownloadContent() {
                 items(filtered, key = { it.id }) { version ->
                     ElevatedCard(
                         onClick = { Navigator.navigate(Route.VersionDetail(version)) },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth(),
                         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
                         colors = CardDefaults.elevatedCardColors(
@@ -490,7 +480,7 @@ private fun JavaDownloadContent() {
                         ),
                     ) {
                         Row(
-                            modifier = Modifier.padding(12.dp),
+                            modifier = Modifier.padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             BlockIcon(selectedTab, size = 36)
@@ -585,35 +575,36 @@ private fun BedrockDownloadContent() {
     )
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ── 基岩版子 Tab ───────────────────────────────────────────────────
-        ScrollableTabRow(
-            selectedTabIndex = BedrockSubTab.entries.indexOf(bedrockSubTab),
-            containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.tertiary,
-            edgePadding = 0.dp,
-            divider = {},
-        ) {
+        // ── 基岩版分类 Pills ───────────────────────────────────────────────
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BedrockSubTab.entries.forEach { tab ->
-                Tab(
-                    selected = bedrockSubTab == tab,
-                    onClick = { bedrockSubTab = tab },
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                when (tab) {
-                                    BedrockSubTab.Release -> Icons.Filled.Verified
-                                    BedrockSubTab.Preview -> Icons.Filled.Science
-                                },
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = if (bedrockSubTab == tab) MaterialTheme.colorScheme.tertiary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(tab.label, style = MaterialTheme.typography.labelMedium)
-                        }
-                    },
-                )
+                val sel = bedrockSubTab == tab
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(if (sel) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .clickable { bedrockSubTab = tab }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            when (tab) {
+                                BedrockSubTab.Release -> Icons.Filled.Verified
+                                BedrockSubTab.Preview -> Icons.Filled.Science
+                            },
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = if (sel) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            tab.label,
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal),
+                            color = if (sel) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
         Spacer(Modifier.height(10.dp))
@@ -622,35 +613,41 @@ private fun BedrockDownloadContent() {
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("搜索基岩版版本号...") },
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+            placeholder = { Text("搜索基岩版版本号…") },
+            leadingIcon = { Icon(Icons.Filled.Search, null, modifier = Modifier.size(20.dp)) },
+            trailingIcon = { if (searchQuery.isNotBlank()) IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Filled.Clear, null, modifier = Modifier.size(18.dp)) } },
             singleLine = true,
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth(),
-            textStyle = MaterialTheme.typography.bodySmall,
+            textStyle = MaterialTheme.typography.bodyMedium,
         )
         Spacer(Modifier.height(10.dp))
 
         // ── 版本列表 ───────────────────────────────────────────────────────
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 3.dp, color = MaterialTheme.colorScheme.tertiary)
-                    Spacer(Modifier.height(8.dp))
-                    Text("正在获取版本列表...", style = MaterialTheme.typography.bodySmall)
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator(modifier = Modifier.size(36.dp), strokeWidth = 3.dp, color = MaterialTheme.colorScheme.tertiary)
+                    Text("获取基岩版版本列表…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         } else if (filtered.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Filled.ViewInAr, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
-                    Spacer(Modifier.height(8.dp))
-                    Text("暂无可用基岩版版本", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (loadError.isNotBlank()) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(loadError, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(
+                        Modifier.size(80.dp).clip(RoundedCornerShape(28.dp)).background(
+                            if (loadError.isNotBlank()) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                            else MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
+                        ), contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            if (loadError.isNotBlank()) Icons.Filled.WifiOff else Icons.Filled.ViewInAr, null,
+                            modifier = Modifier.size(40.dp),
+                            tint = if (loadError.isNotBlank()) MaterialTheme.colorScheme.error.copy(alpha = 0.7f) else MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f),
+                        )
                     }
-                    Spacer(Modifier.height(8.dp))
+                    Text(if (loadError.isNotBlank()) "获取失败" else "暂无可用基岩版版本", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                    if (loadError.isNotBlank()) Text(loadError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                     FilledTonalButton(
                         onClick = {
                             isLoading = true; loadError = ""
@@ -662,11 +659,11 @@ private fun BedrockDownloadContent() {
                                 isLoading = false
                             }
                         },
-                        shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(16.dp),
                     ) {
-                        Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Filled.Refresh, null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("重试", style = MaterialTheme.typography.labelSmall)
+                        Text("重试")
                     }
                 }
             }
@@ -674,7 +671,7 @@ private fun BedrockDownloadContent() {
             Box(modifier = Modifier.fillMaxSize()) {
             LazyColumn(
                 state = listState,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxSize().padding(end = 8.dp),
             ) {
                 items(filtered, key = { "${it.name}_${it.packageType}" }) { ver ->
@@ -684,7 +681,7 @@ private fun BedrockDownloadContent() {
 
                     ElevatedCard(
                         onClick = { if (!isDownloading) Navigator.navigate(Route.BedrockVersionDetail(ver)) },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth(),
                         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
                         colors = CardDefaults.elevatedCardColors(

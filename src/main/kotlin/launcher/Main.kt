@@ -234,11 +234,12 @@ private fun FrameWindowScope.AppWindow(
     val scope = rememberCoroutineScope()
 
     fun launchModpackImport(files: List<File>) {
+        val acceptedExts = setOf("zip", "mrpack", "md3l", "md3lbackup")
         val packFiles = files.filter {
-            it.isFile && (it.extension.equals("zip", ignoreCase = true) || it.extension.equals("mrpack", ignoreCase = true))
+            it.isFile && it.extension.lowercase() in acceptedExts
         }
         if (packFiles.isEmpty()) {
-            dropMessage = "请拖入 .zip 或 .mrpack 整合包文件"
+            dropMessage = "请拖入 .zip / .mrpack / .md3l / .md3lbackup 文件"
             return
         }
 
@@ -249,34 +250,31 @@ private fun FrameWindowScope.AppWindow(
                 return@launch
             }
             for (packFile in packFiles) {
-                val importTaskId = "drag_import_${packFile.absolutePath.hashCode()}_${System.currentTimeMillis()}"
-                DownloadHub.upsert(DownloadHub.HubTask(
-                    id = importTaskId,
-                    name = "导入整合包 ${packFile.name}",
-                    type = DownloadHub.TaskType.ResourceDownload,
-                    step = "准备导入整合包",
-                    fraction = 0f,
-                ))
+                val ext = packFile.extension.lowercase()
                 println("[DragImport] 拖入文件: ${packFile.absolutePath}")
-                val result = ModpackManager.importMrpack(packFile, settings.minecraftDir) { step, fraction ->
-                    DownloadHub.upsert(DownloadHub.HubTask(
-                        id = importTaskId,
-                        name = "导入整合包 ${packFile.name}",
-                        type = DownloadHub.TaskType.ResourceDownload,
-                        step = step,
-                        fraction = fraction.coerceIn(0f, 1f),
-                    ))
+                when (ext) {
+                    "md3lbackup" -> {
+                        val importTaskId = "drag_restore_${packFile.absolutePath.hashCode()}_${System.currentTimeMillis()}"
+                        DownloadHub.upsert(DownloadHub.HubTask(id = importTaskId, name = "恢复备份 ${packFile.name}", type = DownloadHub.TaskType.ResourceDownload, step = "准备恢复备份", fraction = 0f))
+                        val result = launcher.core.BedrockExportManager.restoreBackup(packFile, settings.minecraftDir) { msg ->
+                            DownloadHub.upsert(DownloadHub.HubTask(id = importTaskId, name = "恢复备份 ${packFile.name}", type = DownloadHub.TaskType.ResourceDownload, step = msg, fraction = 0.5f))
+                        }
+                        DownloadHub.upsert(DownloadHub.HubTask(id = importTaskId, name = "恢复备份 ${packFile.name}", type = DownloadHub.TaskType.ResourceDownload, status = if ("成功" in result) DownloadHub.TaskStatus.Done else DownloadHub.TaskStatus.Error, step = result, fraction = if ("成功" in result) 1f else 0f, error = if ("成功" in result) "" else result))
+                        dropMessage = result
+                    }
+                    "md3l" -> {
+                        dropMessage = "已收到 .md3l 整合包，请在版本管理页面选择目标版本后导入"
+                    }
+                    else -> {
+                        val importTaskId = "drag_import_${packFile.absolutePath.hashCode()}_${System.currentTimeMillis()}"
+                        DownloadHub.upsert(DownloadHub.HubTask(id = importTaskId, name = "导入整合包 ${packFile.name}", type = DownloadHub.TaskType.ResourceDownload, step = "准备导入整合包", fraction = 0f))
+                        val result = ModpackManager.importMrpack(packFile, settings.minecraftDir) { step, fraction ->
+                            DownloadHub.upsert(DownloadHub.HubTask(id = importTaskId, name = "导入整合包 ${packFile.name}", type = DownloadHub.TaskType.ResourceDownload, step = step, fraction = fraction.coerceIn(0f, 1f)))
+                        }
+                        DownloadHub.upsert(DownloadHub.HubTask(id = importTaskId, name = "导入整合包 ${packFile.name}", type = DownloadHub.TaskType.ResourceDownload, status = if ("成功" in result) DownloadHub.TaskStatus.Done else DownloadHub.TaskStatus.Error, step = result, fraction = if ("成功" in result) 1f else 0f, error = if ("成功" in result) "" else result))
+                        dropMessage = result
+                    }
                 }
-                DownloadHub.upsert(DownloadHub.HubTask(
-                    id = importTaskId,
-                    name = "导入整合包 ${packFile.name}",
-                    type = DownloadHub.TaskType.ResourceDownload,
-                    status = if ("成功" in result) DownloadHub.TaskStatus.Done else DownloadHub.TaskStatus.Error,
-                    step = result,
-                    fraction = if ("成功" in result) 1f else 0f,
-                    error = if ("成功" in result) "" else result,
-                ))
-                dropMessage = result
             }
         }
     }
@@ -291,9 +289,10 @@ private fun FrameWindowScope.AppWindow(
             }.getOrNull().orEmpty()
         }
 
+        val acceptedExtsMain = setOf("zip", "mrpack", "md3l", "md3lbackup")
         fun canAccept(transferable: Transferable?): Boolean {
             return droppedFiles(transferable).any {
-                it.isFile && (it.extension.equals("zip", ignoreCase = true) || it.extension.equals("mrpack", ignoreCase = true))
+                it.isFile && it.extension.lowercase() in acceptedExtsMain
             }
         }
 

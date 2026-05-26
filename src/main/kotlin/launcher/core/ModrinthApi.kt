@@ -28,6 +28,13 @@ data class ModrinthProject(
 )
 
 @Serializable
+data class ModrinthDependency(
+    val versionId: String = "",
+    val projectId: String = "",
+    val dependencyType: String = "", // "required", "optional", "incompatible", "embedded"
+)
+
+@Serializable
 data class ModrinthVersion(
     val id: String = "",
     val name: String = "",
@@ -35,6 +42,8 @@ data class ModrinthVersion(
     val gameVersions: List<String> = emptyList(),
     val loaders: List<String> = emptyList(),
     val files: List<ModrinthFile> = emptyList(),
+    val dependencies: List<ModrinthDependency> = emptyList(),
+    val projectId: String = "",
 )
 
 @Serializable
@@ -337,11 +346,97 @@ object ModrinthApi {
                             primary = fObj["primary"]?.jsonPrimitive?.booleanOrNull ?: false,
                         )
                     } ?: emptyList(),
+                    dependencies = obj["dependencies"]?.jsonArray?.map { dEl ->
+                        val dObj = dEl.jsonObject
+                        ModrinthDependency(
+                            versionId = dObj["version_id"]?.jsonPrimitive?.contentOrNull ?: "",
+                            projectId = dObj["project_id"]?.jsonPrimitive?.contentOrNull ?: "",
+                            dependencyType = dObj["dependency_type"]?.jsonPrimitive?.contentOrNull ?: "",
+                        )
+                    } ?: emptyList(),
+                    projectId = obj["project_id"]?.jsonPrimitive?.contentOrNull ?: "",
                 )
             }
         } catch (e: Exception) {
             emptyList()
         }
+    }
+
+    /**
+     * 解析 version 的所有 required 依赖，返回每个依赖的 (项目名, 下载文件)。
+     * 仅递归 required 类型，最多两层，避免无限循环。
+     * gameVersions / loaders 用于匹配最佳版本。
+     */
+    suspend fun resolveDependencyFiles(
+        version: ModrinthVersion,
+        preferGameVersion: String = "",
+        preferLoader: String = "",
+    ): List<Pair<String, ModrinthFile>> = withContext(Dispatchers.IO) {
+        val result = mutableListOf<Pair<String, ModrinthFile>>()
+        val visited = mutableSetOf(version.projectId)
+
+        suspend fun fetchDep(dep: ModrinthDependency, depth: Int) {
+            if (depth > 2) return
+            if (dep.dependencyType != "required") return
+
+            // 优先直接用 versionId
+            val depVersion: ModrinthVersion? = if (dep.versionId.isNotBlank()) {
+                runCatching {
+                    val resp = client.get("$BASE/version/${dep.versionId}") {
+                        header("User-Agent", "MD3L/1.1 (https://github.com/yunoniaoduza)")
+                    }
+                    val obj = json.parseToJsonElement(resp.bodyAsText()).jsonObject
+                    val pid = obj["project_id"]?.jsonPrimitive?.contentOrNull ?: ""
+                    if (pid in visited) return@runCatching null
+                    visited.add(pid)
+                    ModrinthVersion(
+                        id = obj["id"]?.jsonPrimitive?.contentOrNull ?: "",
+                        name = obj["name"]?.jsonPrimitive?.contentOrNull ?: "",
+                        versionNumber = obj["version_number"]?.jsonPrimitive?.contentOrNull ?: "",
+                        gameVersions = obj["game_versions"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList(),
+                        loaders = obj["loaders"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList(),
+                        files = obj["files"]?.jsonArray?.map { fEl ->
+                            val fObj = fEl.jsonObject
+                            ModrinthFile(
+                                url = fObj["url"]?.jsonPrimitive?.contentOrNull ?: "",
+                                filename = fObj["filename"]?.jsonPrimitive?.contentOrNull ?: "",
+                                size = fObj["size"]?.jsonPrimitive?.longOrNull ?: 0,
+                                primary = fObj["primary"]?.jsonPrimitive?.booleanOrNull ?: false,
+                            )
+                        } ?: emptyList(),
+                        dependencies = obj["dependencies"]?.jsonArray?.map { dEl ->
+                            val dObj = dEl.jsonObject
+                            ModrinthDependency(
+                                versionId = dObj["version_id"]?.jsonPrimitive?.contentOrNull ?: "",
+                                projectId = dObj["project_id"]?.jsonPrimitive?.contentOrNull ?: "",
+                                dependencyType = dObj["dependency_type"]?.jsonPrimitive?.contentOrNull ?: "",
+                            )
+                        } ?: emptyList(),
+                        projectId = pid,
+                    )
+                }.getOrNull()
+            } else if (dep.projectId.isNotBlank()) {
+                if (dep.projectId in visited) return
+                visited.add(dep.projectId)
+                // 取该项目的版本列表，选最佳匹配
+                val versions = getProjectVersions(dep.projectId)
+                versions.firstOrNull { v ->
+                    (preferGameVersion.isBlank() || preferGameVersion in v.gameVersions) &&
+                    (preferLoader.isBlank() || preferLoader in v.loaders)
+                } ?: versions.firstOrNull()
+            } else null
+
+            val file = depVersion?.files?.firstOrNull { it.primary } ?: depVersion?.files?.firstOrNull()
+            if (file != null && depVersion != null) {
+                val name = depVersion.name.ifBlank { file.filename }
+                result.add(name to file)
+                // 递归
+                depVersion.dependencies.forEach { fetchDep(it, depth + 1) }
+            }
+        }
+
+        version.dependencies.forEach { fetchDep(it, 0) }
+        result
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -354,16 +449,7 @@ object ModrinthApi {
 
     private fun translateToEnglish(text: String): String? {
         return try {
-            val encoded = URLEncoder.encode(text, "UTF-8")
-            val url = "https://api.mymemory.translated.net/get?q=$encoded&langpair=zh|en"
-            val conn = URL(url).openConnection() as HttpURLConnection
-            conn.connectTimeout = 5_000
-            conn.readTimeout = 5_000
-            conn.setRequestProperty("User-Agent", "MD3L/1.1")
-            val body = conn.inputStream.bufferedReader().use { it.readText() }
-            conn.disconnect()
-            val root = json.parseToJsonElement(body).jsonObject
-            val translated = root["responseData"]?.jsonObject?.get("translatedText")?.jsonPrimitive?.contentOrNull
+            val translated = kotlinx.coroutines.runBlocking { MicrosoftTranslate.toEnglish(text) }
             println("[Translate] '$text' => '$translated'")
             translated?.takeIf { it.isNotBlank() && !it.equals(text, ignoreCase = true) }
         } catch (e: Exception) {

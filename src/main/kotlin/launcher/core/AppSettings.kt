@@ -34,6 +34,63 @@ data class AppSettings(
     val backgroundBlurRadius: Int = 20,
     val backgroundBrightness: Float = 0.75f,
     val uiPanelOpacity: Float = 0.75f,
+    // 基岩版专项设置
+    val bedrockPreheatEnabled: Boolean = true,
+    val bedrockVersionIsolation: Boolean = true,
+    val bedrockFastSwitchEnabled: Boolean = true,
+    val bedrockSkipRegistrationIfCached: Boolean = true,
+    val bedrockForceRegisterEveryLaunch: Boolean = false,
+    val bedrockPackageCacheTtlMinutes: Int = 5,
+    val bedrockAutoMigrateOnFirstLaunch: Boolean = true,
+    val bedrockShowRegistrationLog: Boolean = false,
+    // Java版高级设置 — GC 调优
+    val jvmMetaspaceSize: Int = 256,
+    val jvmReservedCodeCache: Int = 256,
+    val jvmG1NewSizePercent: Int = 20,
+    val jvmG1MaxNewSizePercent: Int = 50,
+    val jvmG1HeapRegionSize: Int = 16,
+    val jvmG1GCPauseTarget: Int = 50,
+    val jvmUseLargePages: Boolean = false,
+    val jvmAlwaysPreTouch: Boolean = true,
+    val jvmDisableExplicitGC: Boolean = true,
+    val jvmParallelRefProcEnabled: Boolean = true,
+    val jvmEnableAggressiveOpts: Boolean = false,
+    val jvmStringDedup: Boolean = true,
+    val jvmUseZGC: Boolean = false,
+    // Java版高级设置 — 启动行为
+    val launchDemoMode: Boolean = false,
+    val skipVersionCheck: Boolean = false,
+    val javaGameWidth: Int = 0,
+    val javaGameHeight: Int = 0,
+    val javaUseNativeGlfw: Boolean = false,
+    val javaUseNativeOpenAl: Boolean = false,
+    val javaEnableNarratorOnStart: Boolean = false,
+    val javaQuickPlayPath: String = "",
+    val javaQuickPlaySingleplayer: String = "",
+    val javaQuickPlayMultiplayer: String = "",
+    val javaExtraGameArgs: String = "",
+    // Java版高级设置 — JVM 运行时
+    val jvmThreadStackSize: Int = 0,       // -Xss, KB; 0=default
+    val jvmEnableJit: Boolean = true,
+    val jvmTieredCompilation: Boolean = true,
+    val jvmInlineSize: Int = 325,           // -XX:MaxInlineSize
+    val jvmFreqInlineSize: Int = 325,       // -XX:FreqInlineSize
+    val jvmLoopUnrollingLimit: Int = 60,    // -XX:LoopUnrollingLimit
+    val jvmEnableIEEE: Boolean = false,     // -XX:+UseStrictFP
+    val jvmNativeMemoryTracking: Boolean = false,
+    // 基岩版高级设置 — 版本管理
+    val bedrockMigrateFromProfilesOnOpen: Boolean = true,
+    val bedrockMaxParallelInstalls: Int = 2,
+    val bedrockSkipHashVerify: Boolean = false,
+    val bedrockKeepCacheAfterInstall: Boolean = true,
+    val bedrockJunctionFallbackCopy: Boolean = false,
+    // 基岩版高级设置 — 游戏行为
+    val bedrockFpsLimit: Int = 0,           // 0=unlimited
+    val bedrockRenderDistance: Int = 0,     // 0=default
+    val bedrockGraphicsMode: String = "fancy",
+    val bedrockShowCoordinates: Boolean = false,
+    val bedrockHideHud: Boolean = false,
+    val bedrockSimulationDistance: Int = 0,
 ) {
     companion object {
         private val json = Json {

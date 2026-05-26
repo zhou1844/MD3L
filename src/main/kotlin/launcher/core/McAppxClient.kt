@@ -6,22 +6,16 @@ import kotlinx.serialization.json.*
 import java.net.HttpURLConnection
 import java.net.URL
 
-/**
- * 基岩版安装包获取器 —— 基于 MCAPPX 版本库 (mcappx.com)。
- *
- * 架构:
- * 1. fetchVersions() — 单次 GET search_index.json 获取全部 386+ 版本列表（<1秒）
- * 2. resolveDownloadUrl() — 点击下载时按需 GET 版本详情页，提取 dl.mcappx.com CDN 链接
- *
- * 零第三方 HTTP 依赖：纯 java.net.HttpURLConnection。
- */
 object McAppxClient {
 
-    private const val SEARCH_INDEX = "https://www.mcappx.com/search/search_index.json"
-    private const val MCAPPX_BASE = "https://www.mcappx.com/"
-    private const val PREFERRED_REGION = "jp"
-    private const val CONNECT_TIMEOUT = 10_000
-    private const val READ_TIMEOUT = 15_000
+    private val V2_SOURCES = listOf(
+        "https://data.mcappx.com/v2/bedrock.json",
+        "https://mcappx.52caecb8.er.aliyun-esa.net",
+        "https://mcappx.chlna6666.com",
+        "https://api.chlna6666.com/api/v1/bedrock/mcappx",
+    )
+    private const val CONNECT_TIMEOUT = 12_000
+    private const val READ_TIMEOUT    = 20_000
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -33,99 +27,43 @@ object McAppxClient {
         val isPreview: Boolean = false,
         val fileSize: Long = -1L,
         val detailPath: String = "",
+        val metaData: List<String> = emptyList(),
+        val md5: String = "",
     )
 
-    // ═══════════════════════════════════════════════════════════════════════
-    //  公共 API — 版本列表（瞬间返回）
-    // ═══════════════════════════════════════════════════════════════════════
-
     suspend fun fetchVersions(): List<BedrockVersion> = withContext(Dispatchers.IO) {
-        println("[MCAPPX] 正在获取版本索引...")
-        val body = httpGet(SEARCH_INDEX)
-        val root = json.parseToJsonElement(body).jsonObject
-        val docs = root["docs"]?.jsonArray ?: return@withContext emptyList()
-
-        val titleRegex = Regex("""^(Release|Preview)\s+(.+?)(?:¶.*)?$""")
-        val versions = mutableListOf<BedrockVersion>()
-
-        for (doc in docs) {
-            val obj = doc.jsonObject
-            val location = obj["location"]?.jsonPrimitive?.contentOrNull ?: continue
-            val title = obj["title"]?.jsonPrimitive?.contentOrNull ?: continue
-
-            if (!location.startsWith("bedrock/")) continue
-            val match = titleRegex.find(title) ?: continue
-
-            val type = match.groupValues[1]
-            val ver = match.groupValues[2].trim()
-            val isPreview = type == "Preview"
-            val groupPath = location.substringBefore("#")
-            val detailPath = "$groupPath$ver/"
-
-            versions.add(
-                BedrockVersion(
-                    version = ver,
-                    isPreview = isPreview,
-                    detailPath = detailPath,
-                )
-            )
+        for (url in V2_SOURCES) {
+            val result = runCatching { parseV2Json(httpGet(url)) }.getOrNull()
+            if (!result.isNullOrEmpty()) {
+                println("[MCAPPX] 版本库加载成功 (${result.size} 个版本) from $url")
+                return@withContext result
+            }
         }
-
-        println("[MCAPPX] 索引解析完成: ${versions.size} 个版本")
-
-        versions.distinctBy { "${it.version}_${it.isPreview}" }
-            .sortedWith(compareByDescending<BedrockVersion> { versionSortKey(it.version) }
-                .thenBy { it.isPreview })
+        println("[MCAPPX] 所有镜像源均失败，返回空列表")
+        emptyList()
     }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    //  按需解析下载链接（点击下载时调用）
-    // ═══════════════════════════════════════════════════════════════════════
 
     suspend fun resolveDownloadUrl(version: BedrockVersion): BedrockVersion = withContext(Dispatchers.IO) {
         if (version.downloadUrl.isNotBlank()) return@withContext version
 
-        val pageUrl = "$MCAPPX_BASE${version.detailPath}"
-        println("[MCAPPX] 解析下载链接: $pageUrl")
-        val html = httpGet(pageUrl)
-
-        // 提取 dl.mcappx.com 下载链接
-        val linkRegex = Regex("""https://dl\.mcappx\.com/[^"]+""")
-        val allLinks = linkRegex.findAll(html).map { it.value }.toList()
-
-        if (allLinks.isEmpty()) {
-            throw RuntimeException("版本页未找到下载链接: ${version.version}")
+        val meta = version.metaData.lastOrNull()
+        if (meta != null && meta.startsWith("http")) {
+            val ext = meta.substringAfterLast('.').lowercase().let {
+                if (it.length <= 8) it else "appx"
+            }
+            val fileName = "Minecraft-Bedrock-${version.version}-x64.$ext"
+            println("[MCAPPX] 直链: $fileName => $meta")
+            return@withContext version.copy(downloadUrl = meta, fileName = fileName)
         }
 
-        // 优先亚太 CDN 节点
-        val preferred = allLinks.find { it.endsWith("-$PREFERRED_REGION") }
-            ?: allLinks.find { it.endsWith("-tw") }
-            ?: allLinks.first()
+        if (meta != null && meta.isNotBlank()) {
+            val (url, size) = WUDownloadClient.resolveDownloadUrl(meta)
+            val fileName = "Minecraft-Bedrock-${version.version}-x64.appx"
+            println("[MCAPPX] WU SOAP: $fileName ($size bytes) => $url")
+            return@withContext version.copy(downloadUrl = url, fileName = fileName, fileSize = size)
+        }
 
-        // 提取文件大小
-        val sizeRegex = Regex("""([\d.,]+)\s*(GB|MB)""")
-        val sizeMatch = sizeRegex.find(html)
-        val fileSize = if (sizeMatch != null) {
-            val v = sizeMatch.groupValues[1].replace(",", "").toDouble()
-            when (sizeMatch.groupValues[2]) {
-                "GB" -> (v * 1_073_741_824).toLong()
-                "MB" -> (v * 1_048_576).toLong()
-                else -> -1L
-            }
-        } else -1L
-
-        // 检测包类型 (exe/appx)
-        val typeRegex = Regex("""/\s*(exe|appx|msixbundle|appxbundle)""", RegexOption.IGNORE_CASE)
-        val pkgExt = typeRegex.find(html)?.groupValues?.get(1)?.lowercase() ?: "exe"
-        val fileName = "Minecraft-Bedrock-${version.version}-x64.$pkgExt"
-
-        println("[MCAPPX] 已解析: $fileName ($fileSize bytes) => $preferred")
-
-        version.copy(
-            downloadUrl = preferred,
-            fileName = fileName,
-            fileSize = fileSize,
-        )
+        throw RuntimeException("版本 ${version.version} 无有效 MetaData")
     }
 
     fun toDownloadEntry(version: BedrockVersion): BedrockVersionCatalog.BedrockVersionEntry {
@@ -138,32 +76,60 @@ object McAppxClient {
         )
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    //  版本号排序键 — 数值化比较
-    // ═══════════════════════════════════════════════════════════════════════
+    private fun parseV2Json(body: String): List<BedrockVersion> {
+        val root = json.parseToJsonElement(body).jsonObject
+        val versionsObj = root.entries
+            .firstOrNull { it.key != "CreationTime" && it.value is JsonObject }
+            ?.value?.jsonObject ?: return emptyList()
 
-    private fun versionSortKey(version: String): String {
-        return version.split(".")
-            .joinToString(".") { it.toIntOrNull()?.toString()?.padStart(6, '0') ?: it }
+        val result = mutableListOf<BedrockVersion>()
+        for ((versionId, buildElem) in versionsObj) {
+            val build = buildElem.jsonObject
+            val gameType  = build["Type"]?.jsonPrimitive?.contentOrNull?.lowercase() ?: "release"
+            val isPreview = gameType == "preview" || gameType == "beta"
+
+            val variations = build["Variations"]?.jsonArray ?: continue
+            for (varElem in variations) {
+                val varObj  = varElem.jsonObject
+                val arch    = varObj["Arch"]?.jsonPrimitive?.contentOrNull?.lowercase() ?: "x64"
+                if (arch != "x64") continue
+
+                val metaData = varObj["MetaData"]?.jsonArray
+                    ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                    ?: emptyList()
+                if (metaData.isEmpty()) continue
+
+                val md5 = varObj["MD5"]?.jsonPrimitive?.contentOrNull ?: ""
+
+                result += BedrockVersion(
+                    version   = versionId,
+                    arch      = "x64",
+                    isPreview = isPreview,
+                    metaData  = metaData,
+                    md5       = md5,
+                )
+            }
+        }
+
+        return result
+            .distinctBy { "${it.version}_${it.isPreview}" }
+            .sortedWith(compareByDescending<BedrockVersion> { versionSortKey(it.version) }
+                .thenBy { it.isPreview })
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    //  HTTP 工具
-    // ═══════════════════════════════════════════════════════════════════════
+    private fun versionSortKey(version: String): String =
+        version.split(".").joinToString(".") { it.toIntOrNull()?.toString()?.padStart(6, '0') ?: it }
 
     private fun httpGet(url: String): String {
         val conn = URL(url).openConnection() as HttpURLConnection
         try {
             conn.requestMethod = "GET"
             conn.connectTimeout = CONNECT_TIMEOUT
-            conn.readTimeout = READ_TIMEOUT
+            conn.readTimeout    = READ_TIMEOUT
             conn.instanceFollowRedirects = true
-            conn.setRequestProperty("User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0.0.0")
+            conn.setRequestProperty("User-Agent", "mcappx_developer")
             val code = conn.responseCode
-            if (code !in 200..299) {
-                throw RuntimeException("HTTP $code for $url")
-            }
+            if (code !in 200..299) throw RuntimeException("HTTP $code for $url")
             return conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
         } finally {
             conn.disconnect()

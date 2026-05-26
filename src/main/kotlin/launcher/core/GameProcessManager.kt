@@ -45,12 +45,13 @@ object GameProcessManager {
      * @param process 游戏进程句柄
      * @param versionId 启动的版本 ID（用于 UI 显示）
      */
-    fun attachProcess(process: Process, versionId: String = "", logFile: File? = null) {
+    fun attachProcess(process: Process, versionId: String = "", logFile: File? = null, edition: GameEdition = GameEdition.Java) {
         _activeProcess.value = process
         _processInfo.value = ProcessInfo(
             versionId = versionId,
             startTimeMs = System.currentTimeMillis(),
             logFile = logFile?.absolutePath.orEmpty(),
+            edition = edition,
         )
         _statusMessage.value = "游戏运行中: $versionId"
         _launchProgress.value = 85
@@ -99,6 +100,8 @@ object GameProcessManager {
                 val elapsed = System.currentTimeMillis() - (_processInfo.value.startTimeMs)
                 val elapsedSec = elapsed / 1000
 
+                val sessionEdition = _processInfo.value.edition
+                PlayerStats.recordSession(sessionEdition, elapsedSec, versionId, crashed = exitCode != 0)
                 if (exitCode != 0) {
                     val allOutput = synchronized(lastLines) { lastLines.joinToString("\n") }
                     val tail = allOutput.lines().takeLast(18).joinToString("\n")
@@ -184,6 +187,7 @@ object GameProcessManager {
         val versionId: String = "",
         val startTimeMs: Long = 0L,
         val logFile: String = "",
+        val edition: GameEdition = GameEdition.Java,
     )
 
     data class CrashReport(

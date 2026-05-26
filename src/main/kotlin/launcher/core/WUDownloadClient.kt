@@ -50,7 +50,7 @@ object WUDownloadClient {
             }
             return true
         }
-        val displayLabel: String get() = "$typeName · ${if (isGdk) "GDK / MSIXVC" else "Appx / UWP"} · MCMrARM"
+        val displayLabel: String get() = "$typeName · ${if (isGdk) "GDK / MSIXVC" else "Appx / UWP"}"
     }
 
     private val UWP_VERSION_URLS = listOf(
