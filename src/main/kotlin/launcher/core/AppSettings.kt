@@ -117,7 +117,6 @@ data class AppSettings(
     val uiCompactMode: Boolean = false,     // 减少各组件间距
     val uiShowVersionBadge: Boolean = true, // 侧边栏底部显示版本号
     val uiCornerRadius: Int = 16,           // dp，全局圆角半径
-    val customAccentColor: Long = -1L,      // ARGB，-1 = 未自定义，使用预设色板
 ) {
     companion object {
         private val json = Json {

@@ -39,9 +39,6 @@ fun SettingsScreen() {
     var gcExpanded by remember { mutableStateOf(false) }
     var autoSaveJob by remember { mutableStateOf<Job?>(null) }
     var selectedTab by remember { mutableStateOf(0) }
-    var showCustomColorDialog by remember { mutableStateOf(false) }
-    var customColorHexInput by remember { mutableStateOf("CFBCFF") }
-
     val gcOptions = listOf("G1GC", "ZGC", "ShenandoahGC", "ParallelGC", "SerialGC")
     val isEn = ThemeState.language == "en"
     val tabs = listOf(
@@ -64,7 +61,6 @@ fun SettingsScreen() {
         ThemeState.uiShowVersionBadge = settings.uiShowVersionBadge
         ThemeState.uiCornerRadius = settings.uiCornerRadius
         ThemeState.uiSidebarWidth = settings.uiSidebarWidth
-        ThemeState.customAccentColor = settings.customAccentColor
         javaInstallations = JavaScanner.findAll()
         isScanning = false
     }
@@ -197,138 +193,37 @@ fun SettingsScreen() {
                                 Spacer(Modifier.height(16.dp))
                                 Text(if (isEn) "Accent Color" else "主题色", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
                                 Spacer(Modifier.height(8.dp))
-                                // 预设色板行
-                                val isCustomActive = settings.customAccentColor != -1L
-                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    AllAccents.forEachIndexed { index, accent ->
-                                        val isSelected = !isCustomActive && settings.accentIndex == index
-                                        Box(
-                                            modifier = Modifier.size(40.dp).clip(CircleShape).background(accent.primary)
-                                                .then(if (isSelected) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier)
-                                                .clickable {
-                                                    ThemeState.accent = accent
-                                                    ThemeState.customAccentColor = -1L
-                                                    autoSave(settings.copy(accentIndex = index, customAccentColor = -1L))
-                                                },
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            if (isSelected) Icon(Icons.Filled.Check, null, tint = accent.onPrimary, modifier = Modifier.size(18.dp))
-                                        }
-                                    }
-                                    // 自定义选色按钮
-                                    val customColor = if (isCustomActive) Color(settings.customAccentColor.toULong()) else MaterialTheme.colorScheme.surfaceContainerHighest
-                                    Box(
-                                        modifier = Modifier.size(40.dp).clip(CircleShape)
-                                            .background(customColor)
-                                            .then(if (isCustomActive) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier.border(1.dp, MaterialTheme.colorScheme.outline, CircleShape))
-                                            .clickable {
-                                                val hex = if (isCustomActive) "%06X".format(settings.customAccentColor and 0xFFFFFF) else "CFBCFF"
-                                                showCustomColorDialog = true
-                                                customColorHexInput = hex
-                                            },
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        if (isCustomActive) {
-                                            val lum = 0.2126f * ((settings.customAccentColor shr 16 and 0xFF) / 255f) +
-                                                      0.7152f * ((settings.customAccentColor shr 8  and 0xFF) / 255f) +
-                                                      0.0722f * ((settings.customAccentColor        and 0xFF) / 255f)
-                                            Icon(Icons.Filled.Check, null, tint = if (lum < 0.5f) Color.White else Color(0.10f, 0.10f, 0.10f), modifier = Modifier.size(18.dp))
-                                        }
-                                        else Icon(Icons.Filled.Add, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                                    }
-                                }
-                                Spacer(Modifier.height(4.dp))
-                                val accentNamesEn = listOf("Monet Purple","Geek Blue","Mint Green","Amber Orange","Coral Red","Celadon Cyan","Graphite Blue")
-                                Text(
-                                    if (isCustomActive) (if (isEn) "Custom: #%06X".format(settings.customAccentColor and 0xFFFFFF) else "自定义：#%06X".format(settings.customAccentColor and 0xFFFFFF))
-                                    else if (isEn) accentNamesEn.getOrElse(settings.accentIndex){"Monet Purple"} else AccentNames.getOrElse(settings.accentIndex){"莫奈紫"},
-                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                val accentNamesEn = listOf(
+                                    "Monet Purple","Geek Blue","Mint Green","Amber Orange","Coral Red","Celadon Cyan","Graphite Blue",
+                                    "Stardust Rose","Abyss Indigo","Jade Moss","Warm Sand","Moonlight","Aurora"
                                 )
-                                // 自定义选色对话框
-                                if (showCustomColorDialog) {
-                                    androidx.compose.ui.window.Dialog(onDismissRequest = { showCustomColorDialog = false }) {
-                                        Surface(shape = RoundedCornerShape(24.dp), tonalElevation = 6.dp, modifier = Modifier.width(320.dp)) {
-                                            Column(modifier = Modifier.padding(24.dp)) {
-                                                Text(if (isEn) "Custom Accent Color" else "自定义主题色", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
-                                                Spacer(Modifier.height(16.dp))
-                                                // 预览色块
-                                                val previewArgb = customColorHexInput.padStart(6,'0').takeLast(6).toLongOrNull(16)
-                                                val previewColor = if (previewArgb != null) Color((0xFF000000L or previewArgb).toULong()) else MaterialTheme.colorScheme.surfaceVariant
-                                                Box(modifier = Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(12.dp)).background(previewColor))
-                                                Spacer(Modifier.height(16.dp))
-                                                // 彩虹滑块：H / S / V
-                                                fun rgbToHsv(ri: Int, gi: Int, bi: Int): FloatArray {
-                                                    val r = ri / 255f; val g = gi / 255f; val b = bi / 255f
-                                                    val mx = maxOf(r, g, b); val mn = minOf(r, g, b); val d = mx - mn
-                                                    val h = when {
-                                                        d == 0f -> 0f
-                                                        mx == r -> 60f * (((g - b) / d) % 6f)
-                                                        mx == g -> 60f * ((b - r) / d + 2f)
-                                                        else    -> 60f * ((r - g) / d + 4f)
-                                                    }.let { if (it < 0) it + 360f else it }
-                                                    return floatArrayOf(h, if (mx == 0f) 0f else d / mx, mx)
-                                                }
-                                                fun hsvToHex(h: Float, s: Float, v: Float): String {
-                                                    val c = v * s; val x = c * (1f - kotlin.math.abs((h / 60f) % 2f - 1f)); val m = v - c
-                                                    val (r1, g1, b1) = when ((h / 60f).toInt() % 6) {
-                                                        0 -> Triple(c, x, 0f); 1 -> Triple(x, c, 0f); 2 -> Triple(0f, c, x)
-                                                        3 -> Triple(0f, x, c); 4 -> Triple(x, 0f, c); else -> Triple(c, 0f, x)
-                                                    }
-                                                    return "%02X%02X%02X".format(((r1+m)*255).toInt().coerceIn(0,255), ((g1+m)*255).toInt().coerceIn(0,255), ((b1+m)*255).toInt().coerceIn(0,255))
-                                                }
-                                                val hsv = remember(customColorHexInput) {
-                                                    val argb = customColorHexInput.padStart(6,'0').takeLast(6).toLongOrNull(16)
-                                                    if (argb != null) rgbToHsv(((argb shr 16) and 0xFF).toInt(), ((argb shr 8) and 0xFF).toInt(), (argb and 0xFF).toInt())
-                                                    else floatArrayOf(0f, 1f, 1f)
-                                                }
-                                                var hue by remember(customColorHexInput) { mutableStateOf(hsv[0]) }
-                                                var sat by remember(customColorHexInput) { mutableStateOf(hsv[1]) }
-                                                var value by remember(customColorHexInput) { mutableStateOf(hsv[2]) }
-                                                Text(if (isEn) "Hue: ${hue.toInt()}°" else "色相: ${hue.toInt()}°", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                Slider(value = hue, onValueChange = { hue = it; customColorHexInput = hsvToHex(it, sat, value) }, valueRange = 0f..360f, modifier = Modifier.fillMaxWidth(),
-                                                    colors = SliderDefaults.colors(thumbColor = previewColor, activeTrackColor = previewColor))
-                                                Text(if (isEn) "Saturation: ${(sat*100).toInt()}%" else "饱和度: ${(sat*100).toInt()}%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                Slider(value = sat, onValueChange = { sat = it; customColorHexInput = hsvToHex(hue, it, value) }, valueRange = 0f..1f, modifier = Modifier.fillMaxWidth(),
-                                                    colors = SliderDefaults.colors(thumbColor = previewColor, activeTrackColor = previewColor))
-                                                Text(if (isEn) "Brightness: ${(value*100).toInt()}%" else "亮度: ${(value*100).toInt()}%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                Slider(value = value, onValueChange = { value = it; customColorHexInput = hsvToHex(hue, sat, it) }, valueRange = 0f..1f, modifier = Modifier.fillMaxWidth(),
-                                                    colors = SliderDefaults.colors(thumbColor = previewColor, activeTrackColor = previewColor))
-                                                Spacer(Modifier.height(8.dp))
-                                                // HEX输入
-                                                OutlinedTextField(
-                                                    value = "#$customColorHexInput",
-                                                    onValueChange = { v ->
-                                                        val clean = v.trimStart('#').filter { it.isLetterOrDigit() }.uppercase().take(6)
-                                                        customColorHexInput = clean
-                                                    },
-                                                    label = { Text("HEX") },
-                                                    singleLine = true,
-                                                    shape = RoundedCornerShape(12.dp),
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                )
-                                                Spacer(Modifier.height(16.dp))
-                                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    OutlinedButton(onClick = { showCustomColorDialog = false }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
-                                                        Text(if (isEn) "Cancel" else "取消")
-                                                    }
-                                                    Button(
-                                                        onClick = {
-                                                            val argb = customColorHexInput.padStart(6,'0').takeLast(6).toLongOrNull(16)
-                                                            if (argb != null) {
-                                                                val full = 0xFF000000L or argb
-                                                                ThemeState.customAccentColor = full
-                                                                autoSave(settings.copy(customAccentColor = full))
-                                                            }
-                                                            showCustomColorDialog = false
+                                // 第一行 7 个 + 第二行 6 个
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    listOf(0..6, 7..12).forEach { range ->
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            range.forEach { index ->
+                                                val accent = AllAccents.getOrNull(index) ?: return@forEach
+                                                val isSelected = settings.accentIndex == index
+                                                Box(
+                                                    modifier = Modifier.size(36.dp).clip(CircleShape).background(accent.primary)
+                                                        .then(if (isSelected) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier)
+                                                        .clickable {
+                                                            ThemeState.accent = accent
+                                                            autoSave(settings.copy(accentIndex = index))
                                                         },
-                                                        modifier = Modifier.weight(1f),
-                                                        shape = RoundedCornerShape(12.dp),
-                                                    ) { Text(if (isEn) "Apply" else "应用") }
+                                                    contentAlignment = Alignment.Center,
+                                                ) {
+                                                    if (isSelected) Icon(Icons.Filled.Check, null, tint = accent.onPrimary, modifier = Modifier.size(16.dp))
                                                 }
                                             }
                                         }
                                     }
                                 }
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    if (isEn) accentNamesEn.getOrElse(settings.accentIndex){"Monet Purple"} else AccentNames.getOrElse(settings.accentIndex){"莫奈紫"},
+                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                                 Spacer(Modifier.height(16.dp))
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                                 Spacer(Modifier.height(16.dp))
@@ -559,7 +454,6 @@ fun SettingsScreen() {
                                         ThemeState.uiShowVersionBadge = true
                                         ThemeState.uiCornerRadius = 16
                                         ThemeState.uiSidebarWidth = 80
-                                        ThemeState.customAccentColor = -1L
                                         AppSettings.save(d)
                                     }
                                 },
