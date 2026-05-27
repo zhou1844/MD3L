@@ -43,6 +43,7 @@ import launcher.ui.nav.Screen
 import launcher.ui.nav.primaryTab
 import launcher.ui.screens.*
 import launcher.ui.theme.ThemeState
+import launcher.core.AutoUpdater
 import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.io.File
@@ -172,15 +173,19 @@ fun MainLayout(modifier: Modifier = Modifier) {
 
     Row(modifier = Modifier.fillMaxSize()) {
         // ── Left: Custom Sidebar ──────────────────────────────────────────────
+        val sidebarWidthDp = ThemeState.uiSidebarWidth.dp
+        val compactPad = if (ThemeState.uiCompactMode) 6.dp else 10.dp
+        val cornerR = ThemeState.uiCornerRadius.dp
+        val isEn = ThemeState.language == "en"
         Column(
             modifier = Modifier
                 .fillMaxHeight()
-                .width(80.dp)
+                .width(sidebarWidthDp)
                 .padding(vertical = 8.dp, horizontal = 4.dp)
-                .clip(RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(cornerR))
                 .background(railContainerColor)
                 .alpha(if (uiLocked) 0.5f else 1f)
-                .padding(vertical = 10.dp, horizontal = 4.dp),
+                .padding(vertical = compactPad, horizontal = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(4.dp))
@@ -190,11 +195,23 @@ fun MainLayout(modifier: Modifier = Modifier) {
                     screen = screen,
                     selected = selected,
                     locked = uiLocked,
+                    label = if (isEn) screen.labelEn else screen.label,
+                    cornerRadius = cornerR,
+                    compact = ThemeState.uiCompactMode,
                     onClick = { if (!uiLocked) Navigator.navigatePrimary(screen) },
                 )
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(if (ThemeState.uiCompactMode) 1.dp else 2.dp))
             }
             Spacer(Modifier.weight(1f))
+            if (ThemeState.uiShowVersionBadge) {
+                Text(
+                    text = "v${AutoUpdater.CURRENT_VERSION}",
+                    style = androidx.compose.material3.MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    maxLines = 1,
+                )
+                Spacer(Modifier.height(4.dp))
+            }
         }
 
         // ── Right: Main content with Crossfade + 悬浮球 ──────────────────
@@ -204,7 +221,7 @@ fun MainLayout(modifier: Modifier = Modifier) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp)
-                .clip(RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(cornerR))
                 .background(contentBgColor)
                 .onSizeChanged { fabContainerW = it.width; fabContainerH = it.height },
         ) {
@@ -224,47 +241,54 @@ fun MainLayout(modifier: Modifier = Modifier) {
                     val toSub   = isPrimaryRoute(initialState) && !isPrimaryRoute(targetState)
                     val fromSub = !isPrimaryRoute(initialState) && isPrimaryRoute(targetState)
 
-                    when {
-                        toSub -> {
-                            // 进入子页面：内容从右侧滑入（Shared Axis X Forward）
-                            val enter = slideInHorizontally(
-                                initialOffsetX = { (it * 0.25f).toInt() },
-                                animationSpec = tween(350, easing = md3EmphasizedDecelerate)
-                            ) + fadeIn(tween(200, easing = md3EmphasizedDecelerate))
-                            val exit = slideOutHorizontally(
-                                targetOffsetX = { -(it * 0.1f).toInt() },
-                                animationSpec = tween(200, easing = md3EmphasizedAccelerate)
-                            ) + fadeOut(tween(150, easing = md3EmphasizedAccelerate))
-                            enter togetherWith exit
-                        }
-                        fromSub -> {
-                            // 返回主页面：内容从左侧滑入（Shared Axis X Backward）
-                            val enter = slideInHorizontally(
-                                initialOffsetX = { -(it * 0.1f).toInt() },
-                                animationSpec = tween(350, easing = md3EmphasizedDecelerate)
-                            ) + fadeIn(tween(200, easing = md3EmphasizedDecelerate))
-                            val exit = slideOutHorizontally(
-                                targetOffsetX = { (it * 0.25f).toInt() },
-                                animationSpec = tween(200, easing = md3EmphasizedAccelerate)
-                            ) + fadeOut(tween(150, easing = md3EmphasizedAccelerate))
-                            enter togetherWith exit
-                        }
-                        else -> {
-                            // 主 Tab 间切换：MD3 Fade Through
-                            // 退场先缩小淡出，进场从略小放大淡入，形成「穿越」感
-                            val enter = fadeIn(
-                                animationSpec = tween(220, delayMillis = 90, easing = md3EmphasizedDecelerate)
-                            ) + scaleIn(
-                                initialScale = 0.92f,
-                                animationSpec = tween(300, delayMillis = 90, easing = md3EmphasizedDecelerate)
-                            )
-                            val exit = fadeOut(
-                                animationSpec = tween(90, easing = md3EmphasizedAccelerate)
-                            ) + scaleOut(
-                                targetScale = 0.96f,
-                                animationSpec = tween(90, easing = md3EmphasizedAccelerate)
-                            )
-                            enter togetherWith exit
+                    val spd = ThemeState.uiAnimationSpeed
+                    if (spd == 0f) {
+                        EnterTransition.None togetherWith ExitTransition.None
+                    } else {
+                        val sub350 = (350 / spd).toInt()
+                        val sub200 = (200 / spd).toInt()
+                        val sub150 = (150 / spd).toInt()
+                        val sub220 = (220 / spd).toInt()
+                        val sub300 = (300 / spd).toInt()
+                        val sub90  = (90  / spd).toInt()
+                        when {
+                            toSub -> {
+                                val enter = slideInHorizontally(
+                                    initialOffsetX = { (it * 0.25f).toInt() },
+                                    animationSpec = tween(sub350, easing = md3EmphasizedDecelerate)
+                                ) + fadeIn(tween(sub200, easing = md3EmphasizedDecelerate))
+                                val exit = slideOutHorizontally(
+                                    targetOffsetX = { -(it * 0.1f).toInt() },
+                                    animationSpec = tween(sub200, easing = md3EmphasizedAccelerate)
+                                ) + fadeOut(tween(sub150, easing = md3EmphasizedAccelerate))
+                                enter togetherWith exit
+                            }
+                            fromSub -> {
+                                val enter = slideInHorizontally(
+                                    initialOffsetX = { -(it * 0.1f).toInt() },
+                                    animationSpec = tween(sub350, easing = md3EmphasizedDecelerate)
+                                ) + fadeIn(tween(sub200, easing = md3EmphasizedDecelerate))
+                                val exit = slideOutHorizontally(
+                                    targetOffsetX = { (it * 0.25f).toInt() },
+                                    animationSpec = tween(sub200, easing = md3EmphasizedAccelerate)
+                                ) + fadeOut(tween(sub150, easing = md3EmphasizedAccelerate))
+                                enter togetherWith exit
+                            }
+                            else -> {
+                                val enter = fadeIn(
+                                    animationSpec = tween(sub220, delayMillis = (90 / spd).toInt(), easing = md3EmphasizedDecelerate)
+                                ) + scaleIn(
+                                    initialScale = 0.92f,
+                                    animationSpec = tween(sub300, delayMillis = (90 / spd).toInt(), easing = md3EmphasizedDecelerate)
+                                )
+                                val exit = fadeOut(
+                                    animationSpec = tween(sub90, easing = md3EmphasizedAccelerate)
+                                ) + scaleOut(
+                                    targetScale = 0.96f,
+                                    animationSpec = tween(sub90, easing = md3EmphasizedAccelerate)
+                                )
+                                enter togetherWith exit
+                            }
                         }
                     }
                 },
@@ -326,6 +350,9 @@ private fun SidebarNavItem(
     screen: launcher.ui.nav.Screen,
     selected: Boolean,
     locked: Boolean,
+    label: String = screen.label,
+    cornerRadius: androidx.compose.ui.unit.Dp = 12.dp,
+    compact: Boolean = false,
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -351,7 +378,7 @@ private fun SidebarNavItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(cornerRadius))
             .onPointerEvent(PointerEventType.Enter) { isHovered = true }
             .onPointerEvent(PointerEventType.Exit)  { isHovered = false }
             .clickable(
@@ -360,25 +387,25 @@ private fun SidebarNavItem(
                 enabled = !locked,
                 onClick = onClick,
             )
-            .padding(vertical = 4.dp),
+            .padding(vertical = if (compact) 2.dp else 4.dp),
     ) {
         Box(
             modifier = Modifier
-                .size(44.dp)
-                .clip(RoundedCornerShape(12.dp))
+                .size(if (compact) 38.dp else 44.dp)
+                .clip(RoundedCornerShape(cornerRadius))
                 .background(containerColor),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = screen.icon,
-                contentDescription = screen.label,
-                modifier = Modifier.size(22.dp),
+                contentDescription = label,
+                modifier = Modifier.size(if (compact) 19.dp else 22.dp),
                 tint = iconTint,
             )
         }
-        Spacer(Modifier.height(3.dp))
+        Spacer(Modifier.height(if (compact) 1.dp else 3.dp))
         Text(
-            text = screen.label,
+            text = label,
             style = MaterialTheme.typography.labelSmall.copy(
                 fontSize = 10.sp,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
