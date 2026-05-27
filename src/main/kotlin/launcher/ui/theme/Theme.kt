@@ -172,6 +172,108 @@ val AccentGraphiteBlue = AccentPalette(
     inversePrimary = Color(0xFF4A5893),
 )
 
+// 星尘玫瑰 (Stardust Rose) — 紫粉混合 ───────────────────────────────────────
+val AccentStardustRose = AccentPalette(
+    primary = Color(0xFFE8A0C4),
+    onPrimary = Color(0xFF4A1535),
+    primaryContainer = Color(0xFF662B4C),
+    onPrimaryContainer = Color(0xFFFFD8EA),
+    secondary = Color(0xFFD4B8C8),
+    onSecondary = Color(0xFF3D2533),
+    secondaryContainer = Color(0xFF553B4A),
+    onSecondaryContainer = Color(0xFFF0D4E4),
+    tertiary = Color(0xFFB8B0E8),
+    onTertiary = Color(0xFF2E2754),
+    tertiaryContainer = Color(0xFF443D6C),
+    onTertiaryContainer = Color(0xFFDEDAFF),
+    inversePrimary = Color(0xFF9A3060),
+)
+
+// 深海靛蓝 (Abyss Indigo) — 蓝紫混合 ───────────────────────────────────────
+val AccentAbyssIndigo = AccentPalette(
+    primary = Color(0xFF8CB8FF),
+    onPrimary = Color(0xFF003060),
+    primaryContainer = Color(0xFF1A4580),
+    onPrimaryContainer = Color(0xFFD6E8FF),
+    secondary = Color(0xFFAABBDD),
+    onSecondary = Color(0xFF1A2B44),
+    secondaryContainer = Color(0xFF30425C),
+    onSecondaryContainer = Color(0xFFCCDCF4),
+    tertiary = Color(0xFFAA9EE8),
+    onTertiary = Color(0xFF281E55),
+    tertiaryContainer = Color(0xFF3E346D),
+    onTertiaryContainer = Color(0xFFE0DAFF),
+    inversePrimary = Color(0xFF1A5CAA),
+)
+
+// 碧玉苔绿 (Jade Moss) — 绿青混合 ──────────────────────────────────────────
+val AccentJadeMoss = AccentPalette(
+    primary = Color(0xFF88D4AA),
+    onPrimary = Color(0xFF003824),
+    primaryContainer = Color(0xFF005238),
+    onPrimaryContainer = Color(0xFFA8F0C8),
+    secondary = Color(0xFFA0C8B0),
+    onSecondary = Color(0xFF1A3028),
+    secondaryContainer = Color(0xFF2F4A3C),
+    onSecondaryContainer = Color(0xFFBCE4CC),
+    tertiary = Color(0xFF88CCC8),
+    onTertiary = Color(0xFF003634),
+    tertiaryContainer = Color(0xFF00504D),
+    onTertiaryContainer = Color(0xFFA4E8E4),
+    inversePrimary = Color(0xFF006A44),
+)
+
+// 暖沙棕 (Warm Sand) — 橙黄混合去色 ────────────────────────────────────────
+val AccentWarmSand = AccentPalette(
+    primary = Color(0xFFD4B896),
+    onPrimary = Color(0xFF3C2410),
+    primaryContainer = Color(0xFF553824),
+    onPrimaryContainer = Color(0xFFF2D8BC),
+    secondary = Color(0xFFC8AA90),
+    onSecondary = Color(0xFF342010),
+    secondaryContainer = Color(0xFF4C3020),
+    onSecondaryContainer = Color(0xFFE8C8A8),
+    tertiary = Color(0xFFC0B4A0),
+    onTertiary = Color(0xFF2E2418),
+    tertiaryContainer = Color(0xFF443830),
+    onTertiaryContainer = Color(0xFFDDD0C0),
+    inversePrimary = Color(0xFF8A5A30),
+)
+
+// 月光银灰 (Moonlight) — 全去色冷调 ─────────────────────────────────────────
+val AccentMoonlight = AccentPalette(
+    primary = Color(0xFFBCC4D0),
+    onPrimary = Color(0xFF263040),
+    primaryContainer = Color(0xFF3A4455),
+    onPrimaryContainer = Color(0xFFD8E2EE),
+    secondary = Color(0xFFB0B8C4),
+    onSecondary = Color(0xFF222C38),
+    secondaryContainer = Color(0xFF353F4C),
+    onSecondaryContainer = Color(0xFFCCD4E0),
+    tertiary = Color(0xFFB8C0C8),
+    onTertiary = Color(0xFF242C34),
+    tertiaryContainer = Color(0xFF384048),
+    onTertiaryContainer = Color(0xFFD4DCE4),
+    inversePrimary = Color(0xFF5A6878),
+)
+
+// 极光极光 (Aurora) — 绿紫渐变混合 ──────────────────────────────────────────
+val AccentAurora = AccentPalette(
+    primary = Color(0xFF90E0C0),
+    onPrimary = Color(0xFF003828),
+    primaryContainer = Color(0xFF00523C),
+    onPrimaryContainer = Color(0xFFACFCDC),
+    secondary = Color(0xFFC0A8E0),
+    onSecondary = Color(0xFF2C1A50),
+    secondaryContainer = Color(0xFF422E68),
+    onSecondaryContainer = Color(0xFFDCC8F8),
+    tertiary = Color(0xFF80CCE8),
+    onTertiary = Color(0xFF003550),
+    tertiaryContainer = Color(0xFF004D70),
+    onTertiaryContainer = Color(0xFFB4E8FF),
+    inversePrimary = Color(0xFF007A54),
+)
+
 val AllAccents = listOf(
     AccentMonetPurple,
     AccentGeekBlue,
@@ -180,15 +282,16 @@ val AllAccents = listOf(
     AccentCoralRed,
     AccentCeladonCyan,
     AccentGraphiteBlue,
+    AccentStardustRose,
+    AccentAbyssIndigo,
+    AccentJadeMoss,
+    AccentWarmSand,
+    AccentMoonlight,
+    AccentAurora,
 )
 val AccentNames = listOf(
-    "莫奈紫",
-    "极客蓝",
-    "薄荷绿",
-    "琥珀橙",
-    "珊瑚红",
-    "青瓷青",
-    "石墨蓝",
+    "莫奈紫", "极客蓝", "薄荷绿", "琥珀橙", "珊瑚红", "青瓷青", "石墨蓝",
+    "星尘玫瑰", "深海靛蓝", "碧玉苔绿", "暖沙棕", "月光银灰", "极光",
 )
 
 // ── Global accent state ─────────────────────────────────────────────────────
@@ -206,7 +309,6 @@ object ThemeState {
     var uiShowVersionBadge by mutableStateOf(true)    // 侧边栏版本号
     var uiCornerRadius by mutableStateOf(16)          // 全局圆角 dp
     var uiSidebarWidth by mutableStateOf(80)          // 侧边栏宽度 dp
-    var customAccentColor by mutableStateOf(-1L)      // ARGB Long，-1 = 不使用自定义色
     // 预加载的壁纸 bitmap（在 Main 启动时同步加载，消除首帧空白）
     var cachedBgBitmap by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
     var cachedBgKey by mutableStateOf("")  // 仅 bgPath，模糊由 GPU layer 实时处理
@@ -299,81 +401,10 @@ fun animateColorScheme(target: ColorScheme): ColorScheme {
     )
 }
 
-// ── Derive AccentPalette from arbitrary ARGB color ──────────────────────────
-fun accentFromColor(argb: Long): AccentPalette {
-    val base = Color(argb.toULong())
-    // Extract HSL-like components via luminance blending for MD3-compatible tones
-    val r = (argb shr 16 and 0xFF) / 255f
-    val g = (argb shr 8  and 0xFF) / 255f
-    val b = (argb        and 0xFF) / 255f
-    val lum = 0.2126f * r + 0.7152f * g + 0.0722f * b
-    // On-color: white for dark surfaces, dark base tint for light
-    val onBase    = if (lum < 0.4f) Color(0xFFFFFFFF) else Color(0xFF1A1A1A)
-    // Container: darker/lighter variant of base
-    val container = Color(
-        red   = (r * 0.55f).coerceIn(0f, 1f),
-        green = (g * 0.55f).coerceIn(0f, 1f),
-        blue  = (b * 0.55f).coerceIn(0f, 1f),
-        alpha = 1f,
-    )
-    val onContainer = Color(
-        red   = (r * 0.9f + 0.6f).coerceIn(0f, 1f),
-        green = (g * 0.9f + 0.6f).coerceIn(0f, 1f),
-        blue  = (b * 0.9f + 0.6f).coerceIn(0f, 1f),
-        alpha = 1f,
-    )
-    // Secondary: desaturated version
-    val avg = (r + g + b) / 3f
-    val sec = Color(
-        red   = (r * 0.6f + avg * 0.4f).coerceIn(0f, 1f),
-        green = (g * 0.6f + avg * 0.4f).coerceIn(0f, 1f),
-        blue  = (b * 0.6f + avg * 0.4f).coerceIn(0f, 1f),
-        alpha = 1f,
-    )
-    val secContainer = Color(
-        red   = (r * 0.3f + 0.15f).coerceIn(0f, 1f),
-        green = (g * 0.3f + 0.15f).coerceIn(0f, 1f),
-        blue  = (b * 0.3f + 0.15f).coerceIn(0f, 1f),
-        alpha = 1f,
-    )
-    // Tertiary: complementary hue shift (rotate ~120° via channel shift)
-    val ter = Color(
-        red   = (g * 0.8f + 0.1f).coerceIn(0f, 1f),
-        green = (b * 0.8f + 0.1f).coerceIn(0f, 1f),
-        blue  = (r * 0.8f + 0.1f).coerceIn(0f, 1f),
-        alpha = 1f,
-    )
-    val terContainer = Color(
-        red   = (g * 0.45f).coerceIn(0f, 1f),
-        green = (b * 0.45f).coerceIn(0f, 1f),
-        blue  = (r * 0.45f).coerceIn(0f, 1f),
-        alpha = 1f,
-    )
-    val inverse = Color(
-        red   = (r * 0.7f).coerceIn(0f, 1f),
-        green = (g * 0.7f).coerceIn(0f, 1f),
-        blue  = (b * 0.7f).coerceIn(0f, 1f),
-        alpha = 1f,
-    )
-    return AccentPalette(
-        primary = base, onPrimary = onBase,
-        primaryContainer = container, onPrimaryContainer = onContainer,
-        secondary = sec, onSecondary = onBase,
-        secondaryContainer = secContainer, onSecondaryContainer = onContainer,
-        tertiary = ter, onTertiary = onBase,
-        tertiaryContainer = terContainer, onTertiaryContainer = onContainer,
-        inversePrimary = inverse,
-    )
-}
-
 // ── Main theme composable ───────────────────────────────────────────────────
 @Composable
 fun MD3LTheme(content: @Composable () -> Unit) {
-    val effectiveAccent = if (ThemeState.customAccentColor != -1L)
-        accentFromColor(ThemeState.customAccentColor)
-    else
-        ThemeState.accent
-    val baseScheme = if (ThemeState.isDark) buildDarkScheme(effectiveAccent) else buildLightScheme(effectiveAccent)
+    val baseScheme = if (ThemeState.isDark) buildDarkScheme(ThemeState.accent) else buildLightScheme(ThemeState.accent)
     val animatedScheme = animateColorScheme(baseScheme)
 
     MaterialTheme(
