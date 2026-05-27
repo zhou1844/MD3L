@@ -37,6 +37,7 @@ import java.util.zip.ZipOutputStream
 @Composable
 fun BedrockWorldManagerScreen(versionId: String, versionDir: String) {
     val scope = rememberCoroutineScope()
+    val isEn = launcher.ui.theme.ThemeState.language == "en"
 
     data class WorldEntry(
         val name: String,
@@ -96,8 +97,8 @@ fun BedrockWorldManagerScreen(versionId: String, versionDir: String) {
             }
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text("地图管理", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
-                Text("版本: $versionId", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (isEn) "World Manager" else "地图管理", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
+                Text((if (isEn) "Version: " else "版本: ") + versionId, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             FilledTonalButton(
                 onClick = {
@@ -113,7 +114,7 @@ fun BedrockWorldManagerScreen(versionId: String, versionDir: String) {
             ) {
                 Icon(Icons.Filled.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("导入地图")
+                Text(if (isEn) "Import World" else "导入地图")
             }
             Spacer(Modifier.width(6.dp))
             IconButton(onClick = { refresh() }) {
@@ -155,7 +156,7 @@ fun BedrockWorldManagerScreen(versionId: String, versionDir: String) {
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
                     )
                     Spacer(Modifier.height(8.dp))
-                    Text("暂无地图存档", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (isEn) "No worlds found" else "暂无地图存档", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(8.dp))
                     FilledTonalButton(
                         onClick = {
@@ -171,7 +172,7 @@ fun BedrockWorldManagerScreen(versionId: String, versionDir: String) {
                     ) {
                         Icon(Icons.Filled.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("导入地图")
+                        Text(if (isEn) "Import World" else "导入地图")
                     }
                 }
             }
@@ -310,8 +311,8 @@ fun BedrockWorldManagerScreen(versionId: String, versionDir: String) {
     if (target != null) {
         AlertDialog(
             onDismissRequest = { confirmDeleteTarget = null },
-            title = { Text("删除「${target.levelName}」？") },
-            text = { Text("此操作不可恢复，将永久删除该地图存档目录。") },
+            title = { Text(if (isEn) "Delete \"${target.levelName}\"?" else "删除「${target.levelName}」？") },
+            text = { Text(if (isEn) "This action is irreversible and will permanently delete the world folder." else "此操作不可恢复，将永久删除该地图存档目录。") },
             confirmButton = {
                 Button(
                     onClick = {
@@ -319,16 +320,16 @@ fun BedrockWorldManagerScreen(versionId: String, versionDir: String) {
                         scope.launch(Dispatchers.IO) {
                             val deleted = target.dir.deleteRecursively()
                             withContext(Dispatchers.Main) {
-                                statusMessage = if (deleted) "已删除: ${target.levelName}" else "删除失败"
+                                statusMessage = if (deleted) (if (isEn) "Deleted: ${target.levelName}" else "已删除: ${target.levelName}") else (if (isEn) "Delete failed" else "删除失败")
                                 refresh()
                             }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                ) { Text("删除") }
+                ) { Text(if (isEn) "Delete" else "删除") }
             },
             dismissButton = {
-                TextButton(onClick = { confirmDeleteTarget = null }) { Text("取消") }
+                TextButton(onClick = { confirmDeleteTarget = null }) { Text(if (isEn) "Cancel" else "取消") }
             },
         )
     }
