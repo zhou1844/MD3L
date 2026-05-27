@@ -39,9 +39,16 @@ fun SettingsScreen() {
     var gcExpanded by remember { mutableStateOf(false) }
     var autoSaveJob by remember { mutableStateOf<Job?>(null) }
     var selectedTab by remember { mutableStateOf(0) }
+    var showCustomColorDialog by remember { mutableStateOf(false) }
+    var customColorHexInput by remember { mutableStateOf("CFBCFF") }
 
     val gcOptions = listOf("G1GC", "ZGC", "ShenandoahGC", "ParallelGC", "SerialGC")
-    val tabs = listOf("通用" to Icons.Filled.Tune, "Java 版" to Icons.Filled.Coffee, "基岩版" to Icons.Filled.Diamond)
+    val isEn = ThemeState.language == "en"
+    val tabs = listOf(
+        (if (isEn) "General" else "通用") to Icons.Filled.Tune,
+        (if (isEn) "Java" else "Java 版") to Icons.Filled.Coffee,
+        (if (isEn) "Bedrock" else "基岩版") to Icons.Filled.Diamond,
+    )
 
     LaunchedEffect(Unit) {
         settings = AppSettings.load()
@@ -50,6 +57,14 @@ fun SettingsScreen() {
         ThemeState.backgroundBlurRadius = settings.backgroundBlurRadius
         ThemeState.backgroundBrightness = settings.backgroundBrightness
         ThemeState.uiPanelOpacity = settings.uiPanelOpacity
+        ThemeState.language = settings.language
+        ThemeState.uiAnimationSpeed = settings.uiAnimationSpeed
+        ThemeState.uiFontScale = settings.uiFontScale
+        ThemeState.uiCompactMode = settings.uiCompactMode
+        ThemeState.uiShowVersionBadge = settings.uiShowVersionBadge
+        ThemeState.uiCornerRadius = settings.uiCornerRadius
+        ThemeState.uiSidebarWidth = settings.uiSidebarWidth
+        ThemeState.customAccentColor = settings.customAccentColor
         javaInstallations = JavaScanner.findAll()
         isScanning = false
     }
@@ -127,8 +142,34 @@ fun SettingsScreen() {
                     when (selectedTab) {
                         // ════════════════════════════════════════ 通用 ═══
                         0 -> {
+                            // ── 语言 ─────────────────────────────────────
+                            SettingsSection(if (isEn) "Language" else "语言", Icons.Filled.Language) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    listOf("zh" to "中文", "en" to "English").forEach { (code, label) ->
+                                        val sel = settings.language == code
+                                        Surface(
+                                            modifier = Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable {
+                                                ThemeState.language = code
+                                                autoSave(settings.copy(language = code))
+                                            },
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = if (sel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                        ) {
+                                            Row(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                if (sel) Icon(Icons.Filled.Check, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                                                else Spacer(Modifier.size(16.dp))
+                                                Spacer(Modifier.width(8.dp))
+                                                Text(label, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal),
+                                                    color = if (sel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(12.dp))
+
                             // ── 外观 ────────────────────────────────────
-                            SettingsSection("外观", Icons.Filled.Palette) {
+                            SettingsSection(if (isEn) "Appearance" else "外观", Icons.Filled.Palette) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
@@ -147,34 +188,151 @@ fun SettingsScreen() {
                                     )
                                     Spacer(Modifier.width(12.dp))
                                     Column {
-                                        Text("深色模式", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
-                                        Text("切换亮色或暗色主题", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(if (isEn) "Dark Mode" else "深色模式", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
+                                        Text(if (isEn) "Switch between light and dark theme" else "切换亮色或暗色主题", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
                                 Spacer(Modifier.height(16.dp))
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                                 Spacer(Modifier.height(16.dp))
-                                Text("主题色", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
+                                Text(if (isEn) "Accent Color" else "主题色", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
                                 Spacer(Modifier.height(8.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                // 预设色板行
+                                val isCustomActive = settings.customAccentColor != -1L
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                                     AllAccents.forEachIndexed { index, accent ->
-                                        val isSelected = settings.accentIndex == index
+                                        val isSelected = !isCustomActive && settings.accentIndex == index
                                         Box(
-                                            modifier = Modifier.size(44.dp).clip(CircleShape).background(accent.primary)
+                                            modifier = Modifier.size(40.dp).clip(CircleShape).background(accent.primary)
                                                 .then(if (isSelected) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier)
-                                                .clickable { ThemeState.accent = accent; autoSave(settings.copy(accentIndex = index)) },
+                                                .clickable {
+                                                    ThemeState.accent = accent
+                                                    ThemeState.customAccentColor = -1L
+                                                    autoSave(settings.copy(accentIndex = index, customAccentColor = -1L))
+                                                },
                                             contentAlignment = Alignment.Center,
                                         ) {
-                                            if (isSelected) Icon(Icons.Filled.Check, contentDescription = null, tint = accent.onPrimary, modifier = Modifier.size(20.dp))
+                                            if (isSelected) Icon(Icons.Filled.Check, null, tint = accent.onPrimary, modifier = Modifier.size(18.dp))
                                         }
+                                    }
+                                    // 自定义选色按钮
+                                    val customColor = if (isCustomActive) Color(settings.customAccentColor.toULong()) else MaterialTheme.colorScheme.surfaceContainerHighest
+                                    Box(
+                                        modifier = Modifier.size(40.dp).clip(CircleShape)
+                                            .background(customColor)
+                                            .then(if (isCustomActive) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier.border(1.dp, MaterialTheme.colorScheme.outline, CircleShape))
+                                            .clickable {
+                                                val hex = if (isCustomActive) "%06X".format(settings.customAccentColor and 0xFFFFFF) else "CFBCFF"
+                                                showCustomColorDialog = true
+                                                customColorHexInput = hex
+                                            },
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        if (isCustomActive) {
+                                            val lum = 0.2126f * ((settings.customAccentColor shr 16 and 0xFF) / 255f) +
+                                                      0.7152f * ((settings.customAccentColor shr 8  and 0xFF) / 255f) +
+                                                      0.0722f * ((settings.customAccentColor        and 0xFF) / 255f)
+                                            Icon(Icons.Filled.Check, null, tint = if (lum < 0.5f) Color.White else Color(0.10f, 0.10f, 0.10f), modifier = Modifier.size(18.dp))
+                                        }
+                                        else Icon(Icons.Filled.Add, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                                     }
                                 }
                                 Spacer(Modifier.height(4.dp))
-                                Text(AccentNames.getOrElse(settings.accentIndex) { "莫奈紫" }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                val accentNamesEn = listOf("Monet Purple","Geek Blue","Mint Green","Amber Orange","Coral Red","Celadon Cyan","Graphite Blue")
+                                Text(
+                                    if (isCustomActive) (if (isEn) "Custom: #%06X".format(settings.customAccentColor and 0xFFFFFF) else "自定义：#%06X".format(settings.customAccentColor and 0xFFFFFF))
+                                    else if (isEn) accentNamesEn.getOrElse(settings.accentIndex){"Monet Purple"} else AccentNames.getOrElse(settings.accentIndex){"莫奈紫"},
+                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                // 自定义选色对话框
+                                if (showCustomColorDialog) {
+                                    androidx.compose.ui.window.Dialog(onDismissRequest = { showCustomColorDialog = false }) {
+                                        Surface(shape = RoundedCornerShape(24.dp), tonalElevation = 6.dp, modifier = Modifier.width(320.dp)) {
+                                            Column(modifier = Modifier.padding(24.dp)) {
+                                                Text(if (isEn) "Custom Accent Color" else "自定义主题色", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                                                Spacer(Modifier.height(16.dp))
+                                                // 预览色块
+                                                val previewArgb = customColorHexInput.padStart(6,'0').takeLast(6).toLongOrNull(16)
+                                                val previewColor = if (previewArgb != null) Color((0xFF000000L or previewArgb).toULong()) else MaterialTheme.colorScheme.surfaceVariant
+                                                Box(modifier = Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(12.dp)).background(previewColor))
+                                                Spacer(Modifier.height(16.dp))
+                                                // 彩虹滑块：H / S / V
+                                                fun rgbToHsv(ri: Int, gi: Int, bi: Int): FloatArray {
+                                                    val r = ri / 255f; val g = gi / 255f; val b = bi / 255f
+                                                    val mx = maxOf(r, g, b); val mn = minOf(r, g, b); val d = mx - mn
+                                                    val h = when {
+                                                        d == 0f -> 0f
+                                                        mx == r -> 60f * (((g - b) / d) % 6f)
+                                                        mx == g -> 60f * ((b - r) / d + 2f)
+                                                        else    -> 60f * ((r - g) / d + 4f)
+                                                    }.let { if (it < 0) it + 360f else it }
+                                                    return floatArrayOf(h, if (mx == 0f) 0f else d / mx, mx)
+                                                }
+                                                fun hsvToHex(h: Float, s: Float, v: Float): String {
+                                                    val c = v * s; val x = c * (1f - kotlin.math.abs((h / 60f) % 2f - 1f)); val m = v - c
+                                                    val (r1, g1, b1) = when ((h / 60f).toInt() % 6) {
+                                                        0 -> Triple(c, x, 0f); 1 -> Triple(x, c, 0f); 2 -> Triple(0f, c, x)
+                                                        3 -> Triple(0f, x, c); 4 -> Triple(x, 0f, c); else -> Triple(c, 0f, x)
+                                                    }
+                                                    return "%02X%02X%02X".format(((r1+m)*255).toInt().coerceIn(0,255), ((g1+m)*255).toInt().coerceIn(0,255), ((b1+m)*255).toInt().coerceIn(0,255))
+                                                }
+                                                val hsv = remember(customColorHexInput) {
+                                                    val argb = customColorHexInput.padStart(6,'0').takeLast(6).toLongOrNull(16)
+                                                    if (argb != null) rgbToHsv(((argb shr 16) and 0xFF).toInt(), ((argb shr 8) and 0xFF).toInt(), (argb and 0xFF).toInt())
+                                                    else floatArrayOf(0f, 1f, 1f)
+                                                }
+                                                var hue by remember(customColorHexInput) { mutableStateOf(hsv[0]) }
+                                                var sat by remember(customColorHexInput) { mutableStateOf(hsv[1]) }
+                                                var value by remember(customColorHexInput) { mutableStateOf(hsv[2]) }
+                                                Text(if (isEn) "Hue: ${hue.toInt()}°" else "色相: ${hue.toInt()}°", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                Slider(value = hue, onValueChange = { hue = it; customColorHexInput = hsvToHex(it, sat, value) }, valueRange = 0f..360f, modifier = Modifier.fillMaxWidth(),
+                                                    colors = SliderDefaults.colors(thumbColor = previewColor, activeTrackColor = previewColor))
+                                                Text(if (isEn) "Saturation: ${(sat*100).toInt()}%" else "饱和度: ${(sat*100).toInt()}%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                Slider(value = sat, onValueChange = { sat = it; customColorHexInput = hsvToHex(hue, it, value) }, valueRange = 0f..1f, modifier = Modifier.fillMaxWidth(),
+                                                    colors = SliderDefaults.colors(thumbColor = previewColor, activeTrackColor = previewColor))
+                                                Text(if (isEn) "Brightness: ${(value*100).toInt()}%" else "亮度: ${(value*100).toInt()}%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                Slider(value = value, onValueChange = { value = it; customColorHexInput = hsvToHex(hue, sat, it) }, valueRange = 0f..1f, modifier = Modifier.fillMaxWidth(),
+                                                    colors = SliderDefaults.colors(thumbColor = previewColor, activeTrackColor = previewColor))
+                                                Spacer(Modifier.height(8.dp))
+                                                // HEX输入
+                                                OutlinedTextField(
+                                                    value = "#$customColorHexInput",
+                                                    onValueChange = { v ->
+                                                        val clean = v.trimStart('#').filter { it.isLetterOrDigit() }.uppercase().take(6)
+                                                        customColorHexInput = clean
+                                                    },
+                                                    label = { Text("HEX") },
+                                                    singleLine = true,
+                                                    shape = RoundedCornerShape(12.dp),
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                )
+                                                Spacer(Modifier.height(16.dp))
+                                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                    OutlinedButton(onClick = { showCustomColorDialog = false }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
+                                                        Text(if (isEn) "Cancel" else "取消")
+                                                    }
+                                                    Button(
+                                                        onClick = {
+                                                            val argb = customColorHexInput.padStart(6,'0').takeLast(6).toLongOrNull(16)
+                                                            if (argb != null) {
+                                                                val full = 0xFF000000L or argb
+                                                                ThemeState.customAccentColor = full
+                                                                autoSave(settings.copy(customAccentColor = full))
+                                                            }
+                                                            showCustomColorDialog = false
+                                                        },
+                                                        modifier = Modifier.weight(1f),
+                                                        shape = RoundedCornerShape(12.dp),
+                                                    ) { Text(if (isEn) "Apply" else "应用") }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                                 Spacer(Modifier.height(16.dp))
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                                 Spacer(Modifier.height(16.dp))
-                                Text("背景图片", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
+                                Text(if (isEn) "Background Image" else "背景图片", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
                                 Spacer(Modifier.height(8.dp))
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                     OutlinedTextField(
@@ -204,7 +362,7 @@ fun SettingsScreen() {
                                             }
                                         },
                                         shape = RoundedCornerShape(12.dp),
-                                    ) { Icon(Icons.Filled.Image, contentDescription = null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("选择") }
+                                    ) { Icon(Icons.Filled.Image, contentDescription = null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(if (isEn) "Browse" else "选择") }
                                     if (settings.backgroundImagePath.isNotBlank()) {
                                         Spacer(Modifier.width(6.dp))
                                         FilledTonalButton(
@@ -216,20 +374,20 @@ fun SettingsScreen() {
                                 }
                                 if (settings.backgroundImagePath.isNotBlank()) {
                                     Spacer(Modifier.height(12.dp))
-                                    Text("模糊强度  ${settings.backgroundBlurRadius}px", style = MaterialTheme.typography.bodySmall)
+                                    Text(if (isEn) "Blur  ${settings.backgroundBlurRadius}px" else "模糊强度  ${settings.backgroundBlurRadius}px", style = MaterialTheme.typography.bodySmall)
                                     Slider(
                                         value = settings.backgroundBlurRadius.toFloat(),
                                         onValueChange = { v -> val iv = v.toInt(); settings = settings.copy(backgroundBlurRadius = iv); ThemeState.backgroundBlurRadius = iv },
                                         onValueChangeFinished = { autoSave(settings.copy(backgroundBlurRadius = settings.backgroundBlurRadius)) },
                                         valueRange = 0f..60f, steps = 59, modifier = Modifier.fillMaxWidth(),
                                     )
-                                    Text("亮度  ${"%.0f".format(settings.backgroundBrightness * 100)}%", style = MaterialTheme.typography.bodySmall)
+                                    Text(if (isEn) "Brightness  ${"%.0f".format(settings.backgroundBrightness * 100)}%" else "亮度  ${"%.0f".format(settings.backgroundBrightness * 100)}%", style = MaterialTheme.typography.bodySmall)
                                     Slider(
                                         value = settings.backgroundBrightness,
                                         onValueChange = { ThemeState.backgroundBrightness = it; autoSave(settings.copy(backgroundBrightness = it)) },
                                         valueRange = 0.1f..1f, modifier = Modifier.fillMaxWidth(),
                                     )
-                                    Text("组件不透明度  ${"%.0f".format(settings.uiPanelOpacity * 100)}%", style = MaterialTheme.typography.bodySmall)
+                                    Text(if (isEn) "Panel Opacity  ${"%.0f".format(settings.uiPanelOpacity * 100)}%" else "组件不透明度  ${"%.0f".format(settings.uiPanelOpacity * 100)}%", style = MaterialTheme.typography.bodySmall)
                                     Slider(
                                         value = settings.uiPanelOpacity,
                                         onValueChange = { settings = settings.copy(uiPanelOpacity = it); ThemeState.uiPanelOpacity = it; autoSave(settings.copy(uiPanelOpacity = it)) },
@@ -239,12 +397,62 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
+                            // ── 界面布局 ──────────────────────────────────
+                            SettingsSection(if (isEn) "Layout & Density" else "界面布局与密度", Icons.Filled.Dashboard) {
+                                Text(if (isEn) "Sidebar width: ${settings.uiSidebarWidth} dp" else "侧边栏宽度: ${settings.uiSidebarWidth} dp", style = MaterialTheme.typography.bodySmall)
+                                Slider(value = settings.uiSidebarWidth.toFloat(), onValueChange = { v ->
+                                    val iv = v.toInt(); ThemeState.uiSidebarWidth = iv; autoSave(settings.copy(uiSidebarWidth = iv))
+                                }, valueRange = 64f..120f, steps = 55, modifier = Modifier.fillMaxWidth())
+                                Text(if (isEn) "Corner radius: ${settings.uiCornerRadius} dp" else "全局圆角: ${settings.uiCornerRadius} dp", style = MaterialTheme.typography.bodySmall)
+                                Slider(value = settings.uiCornerRadius.toFloat(), onValueChange = { v ->
+                                    val iv = v.toInt(); ThemeState.uiCornerRadius = iv; autoSave(settings.copy(uiCornerRadius = iv))
+                                }, valueRange = 0f..32f, steps = 31, modifier = Modifier.fillMaxWidth())
+                                Text(if (isEn) "Font scale: ${"%.1f".format(settings.uiFontScale)}×" else "字体缩放: ${"%.1f".format(settings.uiFontScale)}×", style = MaterialTheme.typography.bodySmall)
+                                Slider(value = settings.uiFontScale, onValueChange = { v ->
+                                    ThemeState.uiFontScale = v; autoSave(settings.copy(uiFontScale = v))
+                                }, valueRange = 0.8f..1.4f, steps = 11, modifier = Modifier.fillMaxWidth())
+                                Spacer(Modifier.height(6.dp))
+                                SettingsToggleRow(
+                                    title = if (isEn) "Compact Mode" else "紧凑模式",
+                                    subtitle = if (isEn) "Reduce spacing between UI elements" else "减少各组件间距，在小屏幕上展示更多内容",
+                                    checked = settings.uiCompactMode,
+                                    onCheckedChange = { ThemeState.uiCompactMode = it; autoSave(settings.copy(uiCompactMode = it)) },
+                                )
+                            }
+                            Spacer(Modifier.height(12.dp))
+
+                            // ── 动效 ─────────────────────────────────────
+                            SettingsSection(if (isEn) "Animation" else "动效", Icons.Filled.SlowMotionVideo) {
+                                Text(
+                                    if (isEn) "Animation speed: ${when { settings.uiAnimationSpeed == 0f -> "Off"; settings.uiAnimationSpeed < 0.8f -> "${"%.1f".format(settings.uiAnimationSpeed)}× (Reduced)"; settings.uiAnimationSpeed > 1.2f -> "${"%.1f".format(settings.uiAnimationSpeed)}× (Fast)"; else -> "${"%.1f".format(settings.uiAnimationSpeed)}×" }}"
+                                    else "动画速度: ${when { settings.uiAnimationSpeed == 0f -> "关闭"; settings.uiAnimationSpeed < 0.8f -> "${"%.1f".format(settings.uiAnimationSpeed)}×（减弱）"; settings.uiAnimationSpeed > 1.2f -> "${"%.1f".format(settings.uiAnimationSpeed)}×（加速）"; else -> "${"%.1f".format(settings.uiAnimationSpeed)}×" }}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                Slider(value = settings.uiAnimationSpeed, onValueChange = { v ->
+                                    ThemeState.uiAnimationSpeed = v; autoSave(settings.copy(uiAnimationSpeed = v))
+                                }, valueRange = 0f..2f, steps = 19, modifier = Modifier.fillMaxWidth())
+                                Text(if (isEn) "0 = all animations disabled · 1.0 = default · 2.0 = 2× speed" else "0 = 关闭所有动画 · 1.0 = 默认 · 2.0 = 两倍速",
+                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Spacer(Modifier.height(12.dp))
+
+                            // ── 内容显示 ──────────────────────────────────
+                            SettingsSection(if (isEn) "Content Display" else "内容显示", Icons.Filled.Visibility) {
+                                SettingsToggleRow(
+                                    title = if (isEn) "Show version badge in sidebar" else "侧边栏显示版本号徽章",
+                                    subtitle = if (isEn) "Shows launcher version number at the bottom of the sidebar" else "在侧边栏底部显示当前启动器版本号",
+                                    checked = settings.uiShowVersionBadge,
+                                    onCheckedChange = { ThemeState.uiShowVersionBadge = it; autoSave(settings.copy(uiShowVersionBadge = it)) },
+                                )
+                            }
+                            Spacer(Modifier.height(12.dp))
+
                             // ── 游戏目录 ─────────────────────────────────
-                            SettingsSection("游戏目录", Icons.Filled.Folder) {
+                            SettingsSection(if (isEn) "Game Directory" else "游戏目录", Icons.Filled.Folder) {
                                 OutlinedTextField(
                                     value = settings.minecraftDir,
                                     onValueChange = { autoSave(settings.copy(minecraftDir = it)) },
-                                    label = { Text(".minecraft 路径") },
+                                    label = { Text(if (isEn) ".minecraft path" else ".minecraft 路径") },
                                     singleLine = true, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth(),
                                 )
                             }
@@ -252,9 +460,12 @@ fun SettingsScreen() {
 
                             // ── 下载设置 ─────────────────────────────────
                             var mirrorExpanded by remember { mutableStateOf(false) }
-                            val mirrorOptions = listOf("bmclapi" to "BMCLAPI 镜像 (推荐国内)", "official" to "Mojang 官方源 (海外/VPN)")
-                            SettingsSection("下载设置", Icons.Filled.CloudDownload) {
-                                Text("并发线程: ${settings.maxDownloadThreads}", style = MaterialTheme.typography.bodyMedium)
+                            val mirrorOptions = if (isEn)
+                                listOf("bmclapi" to "BMCLAPI Mirror (China)", "official" to "Mojang Official (Global)")
+                            else
+                                listOf("bmclapi" to "BMCLAPI 镜像 (推荐国内)", "official" to "Mojang 官方源 (海外/VPN)")
+                            SettingsSection(if (isEn) "Download" else "下载设置", Icons.Filled.CloudDownload) {
+                                Text(if (isEn) "Concurrent threads: ${settings.maxDownloadThreads}" else "并发线程: ${settings.maxDownloadThreads}", style = MaterialTheme.typography.bodyMedium)
                                 Spacer(Modifier.height(8.dp))
                                 Slider(
                                     value = settings.maxDownloadThreads.toFloat(),
@@ -281,18 +492,82 @@ fun SettingsScreen() {
                                     }
                                 }
                                 Spacer(Modifier.height(4.dp))
-                                Text("BMCLAPI 适合国内网络，官方源需要梯子或海外网络。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(if (isEn) "BMCLAPI recommended for China · Official requires VPN" else "BMCLAPI 适合国内网络，官方源需要梯子或海外网络。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Spacer(Modifier.height(12.dp))
+
+                            // ── 启动行为 ─────────────────────────────────
+                            var startupPageExpanded by remember { mutableStateOf(false) }
+                            val startupPageOptions = if (isEn)
+                                listOf("launch" to "Launch", "versions" to "Versions", "download" to "Downloads")
+                            else
+                                listOf("launch" to "启动页", "versions" to "版本管理", "download" to "下载中心")
+                            SettingsSection(if (isEn) "Launcher Behavior" else "启动行为", Icons.Filled.PlayArrow) {
+                                SettingsToggleRow(title = if (isEn) "Hide window after launch" else "启动游戏后隐藏窗口", subtitle = if (isEn) "Auto-hide launcher after game starts, process stays alive" else "游戏启动后自动隐藏启动器，不退出启动器进程", checked = settings.closeAfterLaunch, onCheckedChange = { autoSave(settings.copy(closeAfterLaunch = it)) })
+                                SettingsToggleRow(title = if (isEn) "Check for updates on startup" else "启动时检查更新", subtitle = if (isEn) "Auto check for new launcher versions in background" else "启动器开启时自动在后台检查新版本", checked = settings.checkUpdateOnStartup, onCheckedChange = { autoSave(settings.copy(checkUpdateOnStartup = it)) })
+                                SettingsToggleRow(title = if (isEn) "Confirm before close" else "关闭前确认", subtitle = if (isEn) "Show confirmation dialog before closing" else "点击关闭按钮时弹出确认对话框", checked = settings.confirmBeforeClose, onCheckedChange = { autoSave(settings.copy(confirmBeforeClose = it)) })
+                                SettingsToggleRow(title = if (isEn) "Show console on launch" else "启动时显示控制台", subtitle = if (isEn) "Auto open log console window after game starts" else "启动游戏后自动弹出日志控制台窗口", checked = settings.showConsoleOnLaunch, onCheckedChange = { autoSave(settings.copy(showConsoleOnLaunch = it)) })
+                                Spacer(Modifier.height(8.dp))
+                                Text(if (isEn) "Log retention: ${settings.logRetentionDays} days" else "日志保留天数: ${settings.logRetentionDays} 天", style = MaterialTheme.typography.bodySmall)
+                                Slider(value = settings.logRetentionDays.toFloat(), onValueChange = { autoSave(settings.copy(logRetentionDays = it.toInt())) }, valueRange = 1f..30f, steps = 28, modifier = Modifier.fillMaxWidth())
+                                Spacer(Modifier.height(8.dp))
+                                ExposedDropdownMenuBox(expanded = startupPageExpanded, onExpandedChange = { startupPageExpanded = it }) {
+                                    OutlinedTextField(
+                                        value = startupPageOptions.firstOrNull { it.first == settings.startupPage }?.second ?: if (isEn) "Launch" else "启动页",
+                                        onValueChange = {}, readOnly = true, label = { Text(if (isEn) "Default start page" else "默认起始页") },
+                                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(startupPageExpanded) },
+                                        singleLine = true, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().menuAnchor(),
+                                    )
+                                    ExposedDropdownMenu(expanded = startupPageExpanded, onDismissRequest = { startupPageExpanded = false }) {
+                                        startupPageOptions.forEach { (key, label) ->
+                                            DropdownMenuItem(
+                                                text = { Text(label, style = MaterialTheme.typography.bodyMedium) },
+                                                onClick = { autoSave(settings.copy(startupPage = key)); startupPageExpanded = false },
+                                                leadingIcon = { if (settings.startupPage == key) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(12.dp))
+
+                            // ── 网络代理 ─────────────────────────────────
+                            SettingsSection(if (isEn) "Network Proxy" else "网络代理", Icons.Filled.NetworkCheck) {
+                                Text(if (isEn) "All HTTP requests (downloads, login, news) route through proxy when set" else "配置后所有 HTTP 请求（下载/登录/资讯）均经过代理，空则直连", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.height(8.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    OutlinedTextField(value = settings.httpProxyHost, onValueChange = { autoSave(settings.copy(httpProxyHost = it)) }, label = { Text(if (isEn) "Proxy host" else "代理主机") }, placeholder = { Text("127.0.0.1") }, singleLine = true, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f))
+                                    Spacer(Modifier.width(8.dp))
+                                    OutlinedTextField(value = if (settings.httpProxyPort == 0) "" else settings.httpProxyPort.toString(), onValueChange = { autoSave(settings.copy(httpProxyPort = it.toIntOrNull() ?: 0)) }, label = { Text(if (isEn) "Port" else "端口") }, placeholder = { Text("7890") }, singleLine = true, shape = RoundedCornerShape(12.dp), modifier = Modifier.width(100.dp))
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Text(if (isEn) "Timeout: ${settings.networkTimeoutSec} s" else "网络超时: ${settings.networkTimeoutSec} 秒", style = MaterialTheme.typography.bodySmall)
+                                Slider(value = settings.networkTimeoutSec.toFloat(), onValueChange = { autoSave(settings.copy(networkTimeoutSec = it.toInt())) }, valueRange = 5f..120f, steps = 22, modifier = Modifier.fillMaxWidth())
                             }
                             Spacer(Modifier.height(12.dp))
 
                             // ── 恢复默认 ─────────────────────────────────
                             OutlinedButton(
-                                onClick = { scope.launch { val d = AppSettings(); settings = d; ThemeState.accent = AllAccents[0]; AppSettings.save(d) } },
+                                onClick = {
+                                    scope.launch {
+                                        val d = AppSettings()
+                                        settings = d
+                                        ThemeState.accent = AllAccents[0]
+                                        ThemeState.uiAnimationSpeed = 1.0f
+                                        ThemeState.uiFontScale = 1.0f
+                                        ThemeState.uiCompactMode = false
+                                        ThemeState.uiShowVersionBadge = true
+                                        ThemeState.uiCornerRadius = 16
+                                        ThemeState.uiSidebarWidth = 80
+                                        ThemeState.customAccentColor = -1L
+                                        AppSettings.save(d)
+                                    }
+                                },
                                 shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().height(44.dp),
                             ) {
                                 Icon(Icons.Filled.RestartAlt, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
-                                Text("恢复默认设置")
+                                Text(if (isEn) "Reset to defaults" else "恢复默认设置")
                             }
                             Spacer(Modifier.height(24.dp))
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
@@ -594,11 +869,51 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            SettingsSection("游戏行为注入", Icons.Filled.Gamepad) {
+                            SettingsSection("存档路径配置", Icons.Filled.FolderSpecial) {
+                                Text("默认情况下，存档放在 UWP 包目录（%LOCALAPPDATA%/Packages/.../LocalState/md3l_profiles）。设置自定义路径可避免跨盘符拷贝。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.height(8.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                    OutlinedTextField(
+                                        value = settings.bedrockProfilesDir,
+                                        onValueChange = { autoSave(settings.copy(bedrockProfilesDir = it)) },
+                                        label = { Text("存档根目录") },
+                                        placeholder = { Text("空 = 自动（UWP 包目录）") },
+                                        singleLine = true, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    FilledTonalButton(
+                                        onClick = {
+                                            scope.launch {
+                                                val chosen = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                    val chooser = javax.swing.JFileChooser(System.getProperty("user.home"))
+                                                    chooser.dialogTitle = "选择存档根目录"
+                                                    chooser.fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY
+                                                    if (chooser.showOpenDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) chooser.selectedFile.absolutePath else null
+                                                }
+                                                if (chosen != null) autoSave(settings.copy(bedrockProfilesDir = chosen), immediate = true)
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(12.dp),
+                                    ) { Icon(Icons.Filled.FolderOpen, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("选择") }
+                                    if (settings.bedrockProfilesDir.isNotBlank()) {
+                                        Spacer(Modifier.width(6.dp))
+                                        FilledTonalButton(
+                                            onClick = { autoSave(settings.copy(bedrockProfilesDir = ""), immediate = true) },
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = ButtonDefaults.filledTonalButtonColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                                        ) { Icon(Icons.Filled.Clear, null, modifier = Modifier.size(16.dp)) }
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(12.dp))
+
+                            SettingsSection("游戏行为注入（进阶）", Icons.Filled.Gamepad) {
                                 Text("以下选项通过修改 options.txt 注入到游戏设置文件，启动前生效", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(Modifier.height(8.dp))
                                 SettingsToggleRow(title = "显示坐标", subtitle = "注入 show_coordinates=1 到游戏设置", checked = settings.bedrockShowCoordinates, onCheckedChange = { autoSave(settings.copy(bedrockShowCoordinates = it)) })
                                 SettingsToggleRow(title = "隐藏 HUD", subtitle = "注入 hide_hud=1，适合录屏/截图用途", checked = settings.bedrockHideHud, onCheckedChange = { autoSave(settings.copy(bedrockHideHud = it)) })
+                                SettingsToggleRow(title = "允许使用指令", subtitle = "注入 allow_cheats=1，新地图启用指令模式", checked = settings.bedrockAllowCheats, onCheckedChange = { autoSave(settings.copy(bedrockAllowCheats = it)) })
+                                SettingsToggleRow(title = "静音启动", subtitle = "注入 audio_master_volume=0，适合后台运行场景", checked = settings.bedrockMuteSounds, onCheckedChange = { autoSave(settings.copy(bedrockMuteSounds = it)) })
                                 Spacer(Modifier.height(8.dp))
                                 Text("帧率上限: ${if (settings.bedrockFpsLimit == 0) "不限制" else "${settings.bedrockFpsLimit} FPS"}", style = MaterialTheme.typography.bodySmall)
                                 Slider(value = settings.bedrockFpsLimit.toFloat(), onValueChange = { autoSave(settings.copy(bedrockFpsLimit = it.toInt())) }, valueRange = 0f..240f, steps = 23, modifier = Modifier.fillMaxWidth())

@@ -199,6 +199,14 @@ object ThemeState {
     var backgroundBlurRadius by mutableStateOf(20)
     var backgroundBrightness by mutableStateOf(0.75f)  // 0=全黑, 1=原色
     var uiPanelOpacity by mutableStateOf(0.75f)       // 0=全透明, 1=完全不透明
+    var language by mutableStateOf("zh")              // zh / en
+    var uiAnimationSpeed by mutableStateOf(1.0f)      // 动画速度倍率
+    var uiFontScale by mutableStateOf(1.0f)           // 字体缩放
+    var uiCompactMode by mutableStateOf(false)        // 紧凑模式
+    var uiShowVersionBadge by mutableStateOf(true)    // 侧边栏版本号
+    var uiCornerRadius by mutableStateOf(16)          // 全局圆角 dp
+    var uiSidebarWidth by mutableStateOf(80)          // 侧边栏宽度 dp
+    var customAccentColor by mutableStateOf(-1L)      // ARGB Long，-1 = 不使用自定义色
     // 预加载的壁纸 bitmap（在 Main 启动时同步加载，消除首帧空白）
     var cachedBgBitmap by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
     var cachedBgKey by mutableStateOf("")  // 仅 bgPath，模糊由 GPU layer 实时处理
@@ -291,10 +299,81 @@ fun animateColorScheme(target: ColorScheme): ColorScheme {
     )
 }
 
+// ── Derive AccentPalette from arbitrary ARGB color ──────────────────────────
+fun accentFromColor(argb: Long): AccentPalette {
+    val base = Color(argb.toULong())
+    // Extract HSL-like components via luminance blending for MD3-compatible tones
+    val r = (argb shr 16 and 0xFF) / 255f
+    val g = (argb shr 8  and 0xFF) / 255f
+    val b = (argb        and 0xFF) / 255f
+    val lum = 0.2126f * r + 0.7152f * g + 0.0722f * b
+    // On-color: white for dark surfaces, dark base tint for light
+    val onBase    = if (lum < 0.4f) Color(0xFFFFFFFF) else Color(0xFF1A1A1A)
+    // Container: darker/lighter variant of base
+    val container = Color(
+        red   = (r * 0.55f).coerceIn(0f, 1f),
+        green = (g * 0.55f).coerceIn(0f, 1f),
+        blue  = (b * 0.55f).coerceIn(0f, 1f),
+        alpha = 1f,
+    )
+    val onContainer = Color(
+        red   = (r * 0.9f + 0.6f).coerceIn(0f, 1f),
+        green = (g * 0.9f + 0.6f).coerceIn(0f, 1f),
+        blue  = (b * 0.9f + 0.6f).coerceIn(0f, 1f),
+        alpha = 1f,
+    )
+    // Secondary: desaturated version
+    val avg = (r + g + b) / 3f
+    val sec = Color(
+        red   = (r * 0.6f + avg * 0.4f).coerceIn(0f, 1f),
+        green = (g * 0.6f + avg * 0.4f).coerceIn(0f, 1f),
+        blue  = (b * 0.6f + avg * 0.4f).coerceIn(0f, 1f),
+        alpha = 1f,
+    )
+    val secContainer = Color(
+        red   = (r * 0.3f + 0.15f).coerceIn(0f, 1f),
+        green = (g * 0.3f + 0.15f).coerceIn(0f, 1f),
+        blue  = (b * 0.3f + 0.15f).coerceIn(0f, 1f),
+        alpha = 1f,
+    )
+    // Tertiary: complementary hue shift (rotate ~120° via channel shift)
+    val ter = Color(
+        red   = (g * 0.8f + 0.1f).coerceIn(0f, 1f),
+        green = (b * 0.8f + 0.1f).coerceIn(0f, 1f),
+        blue  = (r * 0.8f + 0.1f).coerceIn(0f, 1f),
+        alpha = 1f,
+    )
+    val terContainer = Color(
+        red   = (g * 0.45f).coerceIn(0f, 1f),
+        green = (b * 0.45f).coerceIn(0f, 1f),
+        blue  = (r * 0.45f).coerceIn(0f, 1f),
+        alpha = 1f,
+    )
+    val inverse = Color(
+        red   = (r * 0.7f).coerceIn(0f, 1f),
+        green = (g * 0.7f).coerceIn(0f, 1f),
+        blue  = (b * 0.7f).coerceIn(0f, 1f),
+        alpha = 1f,
+    )
+    return AccentPalette(
+        primary = base, onPrimary = onBase,
+        primaryContainer = container, onPrimaryContainer = onContainer,
+        secondary = sec, onSecondary = onBase,
+        secondaryContainer = secContainer, onSecondaryContainer = onContainer,
+        tertiary = ter, onTertiary = onBase,
+        tertiaryContainer = terContainer, onTertiaryContainer = onContainer,
+        inversePrimary = inverse,
+    )
+}
+
 // ── Main theme composable ───────────────────────────────────────────────────
 @Composable
 fun MD3LTheme(content: @Composable () -> Unit) {
-    val baseScheme = if (ThemeState.isDark) buildDarkScheme(ThemeState.accent) else buildLightScheme(ThemeState.accent)
+    val effectiveAccent = if (ThemeState.customAccentColor != -1L)
+        accentFromColor(ThemeState.customAccentColor)
+    else
+        ThemeState.accent
+    val baseScheme = if (ThemeState.isDark) buildDarkScheme(effectiveAccent) else buildLightScheme(effectiveAccent)
     val animatedScheme = animateColorScheme(baseScheme)
 
     MaterialTheme(

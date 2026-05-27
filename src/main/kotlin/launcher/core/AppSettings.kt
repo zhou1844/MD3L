@@ -91,6 +91,33 @@ data class AppSettings(
     val bedrockShowCoordinates: Boolean = false,
     val bedrockHideHud: Boolean = false,
     val bedrockSimulationDistance: Int = 0,
+    val bedrockAllowCheats: Boolean = false,
+    val bedrockMuteSounds: Boolean = false,
+    val bedrockExtraEnvArgs: String = "",   // 额外环境变量，KEY=VAL 换行分隔
+    // 基岩版 — 存档路径
+    val bedrockProfilesDir: String = "",    // 空=自动（与版本同盘）
+    // Java版 — 额外环境变量
+    val javaExtraEnvVars: String = "",      // KEY=VAL 换行分隔
+    // 通用 — 启动行为
+    val closeAfterLaunch: Boolean = false,
+    val checkUpdateOnStartup: Boolean = true,
+    val logRetentionDays: Int = 7,
+    val startupPage: String = "launch",     // launch / versions / download
+    val showConsoleOnLaunch: Boolean = false,
+    val confirmBeforeClose: Boolean = true,
+    // 通用 — 网络
+    val httpProxyHost: String = "",
+    val httpProxyPort: Int = 0,
+    val networkTimeoutSec: Int = 30,
+    // 通用 — 语言 & 外观
+    val language: String = "zh",            // zh / en
+    val uiSidebarWidth: Int = 80,           // dp，侧边栏宽度
+    val uiAnimationSpeed: Float = 1.0f,     // 1.0=正常，0.5=减半，0=关
+    val uiFontScale: Float = 1.0f,          // 字体缩放倍率
+    val uiCompactMode: Boolean = false,     // 减少各组件间距
+    val uiShowVersionBadge: Boolean = true, // 侧边栏底部显示版本号
+    val uiCornerRadius: Int = 16,           // dp，全局圆角半径
+    val customAccentColor: Long = -1L,      // ARGB，-1 = 未自定义，使用预设色板
 ) {
     companion object {
         private val json = Json {

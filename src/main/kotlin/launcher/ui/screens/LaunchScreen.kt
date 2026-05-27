@@ -44,8 +44,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
-import io.kamel.image.KamelImage
-import io.kamel.image.asyncPainterResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -91,11 +89,6 @@ fun LaunchScreen() {
     val accountList by AccountRepository.accounts.collectAsState()
     val activeAccount by AccountRepository.activeAccount.collectAsState()
     val refreshState by AccountRepository.refreshState.collectAsState()
-
-    // ── 官方资讯流 ──────────────────────────────────────────────────────
-    val newsList by NewsRepository.news.collectAsState()
-    val newsLoading by NewsRepository.isLoading.collectAsState()
-    val newsError by NewsRepository.error.collectAsState()
 
     // 登录状态
     var showLoginDialog by remember { mutableStateOf(false) }
@@ -187,8 +180,6 @@ fun LaunchScreen() {
         AccountRepository.loadFromDisk()
         PlayerStats.load()
         rescanLocalVersions(loadedSettings, forceReselect = true)
-        // 异步抓取官方资讯流
-        NewsRepository.refresh()
     }
 
     LaunchedEffect(selectedVersion, activeAccount) {
@@ -1603,76 +1594,6 @@ private fun writeLaunchFailureLog(versionId: String, trace: String): String {
     }
 }
 
-@Composable
-private fun NewsCard(entry: NewsRepository.NewsEntry) {
-    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-
-    Card(
-        onClick = {
-            if (entry.readMoreLink.isNotBlank()) runCatching { uriHandler.openUri(entry.readMoreLink) }
-        },
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-    ) {
-        Column {
-            // 封面图
-            if (entry.imageUrl.isNotBlank()) {
-                KamelImage(
-                    resource = asyncPainterResource(data = entry.imageUrl),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxWidth().height(120.dp).clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
-                    contentScale = ContentScale.Crop,
-                    onLoading = { Box(Modifier.fillMaxWidth().height(120.dp).background(MaterialTheme.colorScheme.surfaceVariant)) },
-                    onFailure = { Box(Modifier.fillMaxWidth().height(60.dp).background(MaterialTheme.colorScheme.surfaceVariant)) },
-                )
-            }
-            Column(modifier = Modifier.padding(12.dp)) {
-                // Tag chip
-                if (entry.tag.isNotBlank()) {
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier.padding(bottom = 6.dp),
-                    ) {
-                        Text(
-                            entry.tag.uppercase(),
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                    }
-                }
-                Text(
-                    entry.title,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (entry.text.isNotBlank()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        entry.text,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                if (entry.date.isNotBlank()) {
-                    Spacer(Modifier.height(6.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.CalendarToday, contentDescription = null,
-                            modifier = Modifier.size(10.dp), tint = MaterialTheme.colorScheme.outline)
-                        Spacer(Modifier.width(3.dp))
-                        Text(entry.date, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                    }
-                }
-            }
-        }
-    }
-
-}
 
 
 @Composable

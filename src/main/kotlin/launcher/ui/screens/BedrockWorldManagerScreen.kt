@@ -363,13 +363,23 @@ private fun doImportWorld(versionDir: String, versionId: String): String {
                     candidate
                 }
                 dest.mkdirs()
+                // First pass: detect single top-level wrapper dir (mctemplate pattern)
+                val allEntries = mutableListOf<String>()
+                java.util.zip.ZipFile(f).use { zf -> zf.entries().asSequence().forEach { allEntries += it.name } }
+                val topDirs = allEntries.mapNotNull { it.split('/').firstOrNull()?.takeIf { d -> d.isNotBlank() } }.toSet()
+                val stripPrefix = if (topDirs.size == 1 && allEntries.all { it.startsWith(topDirs.first()) }) topDirs.first() + "/" else ""
                 ZipInputStream(f.inputStream().buffered()).use { zis ->
                     var entry = zis.nextEntry
                     while (entry != null) {
                         if (!entry.isDirectory) {
-                            val out = File(dest, entry.name)
-                            out.parentFile?.mkdirs()
-                            out.outputStream().use { zis.copyTo(it) }
+                            val relPath = (if (stripPrefix.isNotEmpty() && entry.name.startsWith(stripPrefix))
+                                entry.name.removePrefix(stripPrefix) else entry.name)
+                                .replace('\\', '/').trimStart('/')
+                            if (relPath.isNotBlank() && !relPath.contains("..")) {
+                                val out = File(dest, relPath)
+                                out.parentFile?.mkdirs()
+                                out.outputStream().use { zis.copyTo(it) }
+                            }
                         }
                         zis.closeEntry()
                         entry = zis.nextEntry

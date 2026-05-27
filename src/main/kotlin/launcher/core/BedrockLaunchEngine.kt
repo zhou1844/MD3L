@@ -138,6 +138,11 @@ class BedrockLaunchEngine : ILaunchEngine {
      * Pack/World 管理、导出/导入、启动 junction 均走此路径。
      */
     fun resolveBedrockVersionComMojang(minecraftDir: String, versionId: String): File {
+        // GDK versions write to a fixed APPDATA path (not UWP junction-controlled).
+        // World manager, pack manager, and launch must all use this real path.
+        if (isGdkVersion(versionId.removePrefix("Bedrock ").trim())) {
+            return resolveGdkComMojang(versionId)
+        }
         return resolveVersionProfile(minecraftDir, versionId)
     }
 
@@ -155,11 +160,17 @@ class BedrockLaunchEngine : ILaunchEngine {
         if (isGdkVersion(versionId.removePrefix("Bedrock ").trim())) {
             return resolveGdkComMojang(versionId)
         }
-        val uwpRoot = findUwpPackageRoots().firstOrNull()
-        val base = if (uwpRoot != null) {
-            File(uwpRoot, "LocalState/md3l_profiles")
+        // 优先使用用户自定义存档根目录（可避免跨盘符拷贝）
+        val customProfilesDir = runCatching { runBlocking { AppSettings.load() }.bedrockProfilesDir }.getOrNull()
+        val base = if (!customProfilesDir.isNullOrBlank()) {
+            File(customProfilesDir, "md3l_profiles")
         } else {
-            File(minecraftDir.takeIf { it.isNotBlank() } ?: File("mc").absolutePath, "bedrock_profiles")
+            val uwpRoot = findUwpPackageRoots().firstOrNull()
+            if (uwpRoot != null) {
+                File(uwpRoot, "LocalState/md3l_profiles")
+            } else {
+                File(minecraftDir.takeIf { it.isNotBlank() } ?: File("mc").absolutePath, "bedrock_profiles")
+            }
         }
         return File(base, "$versionId/com.mojang").apply { mkdirs() }
     }
@@ -207,21 +218,29 @@ class BedrockLaunchEngine : ILaunchEngine {
             }
 
             if (comMojang.exists() && currentTarget == null) {
-                println("[Bedrock] 首次迁移：从真实目录迁移数据到版本 profile")
-                val migrated = tryRobocopyIncremental(comMojang, targetProfile)
-                if (migrated) {
-                    // 验证迁移结果：目标 profile 必须非空才能删除源目录
-                    val profileHasData = targetProfile.exists() && (targetProfile.listFiles()?.isNotEmpty() == true)
-                    if (profileHasData) {
-                        comMojang.deleteRecursively()
-                        println("[Bedrock] 数据迁移完成，共迁移到 ${targetProfile.absolutePath}")
+                println("[Bedrock] 首次迁移：/MOVE 方式将数据移动到版本 profile（无文件复制，速度极快）")
+                val moved = tryRobocopyMove(comMojang, targetProfile)
+                if (moved) {
+                    println("[Bedrock] 数据移动完成: ${targetProfile.absolutePath}")
+                    // /MOVE 成功后源目录已由 robocopy 清空，直接删除空壳
+                    comMojang.deleteRecursively()
+                } else {
+                    // /MOVE 失败（跨盘符等极端情况）回退到增量复制+删除
+                    println("[Bedrock] /MOVE 失败，回退增量复制")
+                    val copied = tryRobocopyIncremental(comMojang, targetProfile)
+                    if (copied) {
+                        val profileHasData = targetProfile.exists() && (targetProfile.listFiles()?.isNotEmpty() == true)
+                        if (profileHasData) {
+                            comMojang.deleteRecursively()
+                            println("[Bedrock] 增量复制迁移完成: ${targetProfile.absolutePath}")
+                        } else {
+                            println("[Bedrock] 警告：迁移后 profile 目录为空，保留源目录以保护数据")
+                            return@forEach
+                        }
                     } else {
-                        println("[Bedrock] 警告：迁移后 profile 目录为空，放弃删除源目录以保护数据")
+                        println("[Bedrock] 数据迁移失败，保留原始 com.mojang 目录以防止数据丢失")
                         return@forEach
                     }
-                } else {
-                    println("[Bedrock] 数据迁移失败，保留原始 com.mojang 目录以防止数据丢失")
-                    return@forEach
                 }
             }
 
@@ -257,6 +276,23 @@ class BedrockLaunchEngine : ILaunchEngine {
             println("[Bedrock] Junction 建立成功: ${comMojang.absolutePath} → ${targetProfile.canonicalPath}")
         }
         return allOk
+    }
+
+    private fun tryRobocopyMove(sourceDir: File, targetDir: File): Boolean {
+        return try {
+            val proc = ProcessBuilder(
+                "robocopy",
+                sourceDir.absolutePath,
+                targetDir.absolutePath,
+                "/MOVE", "/E", "/R:0", "/W:0", "/MT:16",
+                "/NFL", "/NDL", "/NJH", "/NJS", "/NP",
+            ).redirectErrorStream(true).start()
+            proc.inputStream.bufferedReader().readText()
+            proc.waitFor()
+            proc.exitValue() <= 7
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun tryRobocopyIncremental(sourceDir: File, targetDir: File): Boolean {
@@ -405,6 +441,8 @@ class BedrockLaunchEngine : ILaunchEngine {
             if (settings.bedrockSimulationDistance > 0) injections["gfx_simulation_distance"] = (settings.bedrockSimulationDistance * 16).toString()
             if (settings.bedrockShowCoordinates)        injections["show_coordinates"] = "1"
             if (settings.bedrockHideHud)                injections["show_hud"] = "0"
+            if (settings.bedrockAllowCheats)            injections["allow_cheats"] = "1"
+            if (settings.bedrockMuteSounds)             injections["audio_master_volume"] = "0"
             if (injections.isEmpty()) return@runCatching
             val optionsFile = File(comMojangDir, "minecraftpe/options.txt")
             optionsFile.parentFile?.mkdirs()
@@ -586,7 +624,7 @@ class BedrockLaunchEngine : ILaunchEngine {
         println("[MD3L] 游戏进程已就绪: PID=${foundHandle.pid()}")
         onProgress?.invoke(100, "游戏已启动")
         val sentinelScript = """
-            ${'$'}deadline = (Get-Date).AddSeconds(10)
+            ${'$'}deadline = (Get-Date).AddSeconds(60)
             do {
                 Start-Sleep -Milliseconds 500
                 ${'$'}mc = Get-Process -Name 'Minecraft.Windows' -ErrorAction SilentlyContinue
