@@ -59,6 +59,7 @@ private object ModScreenState {
 @Composable
 fun ModScreen() {
     val scope = rememberCoroutineScope()
+    val isEn = launcher.ui.theme.ThemeState.language == "en"
     var searchQuery by ModScreenState.searchQuery
     var projects by ModScreenState.projects
     var cfProjects by ModScreenState.cfProjects
@@ -133,7 +134,7 @@ fun ModScreen() {
             }
             Spacer(Modifier.width(12.dp))
             Column {
-                Text("资源中心", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+                Text(if (isEn) "Resource Center" else "资源中心", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
                 Text("Modrinth · CurseForge", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -145,8 +146,8 @@ fun ModScreen() {
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             horizontalArrangement = Arrangement.spacedBy(0.dp),
         ) {
-            listOf("java" to ("Java 版" to Icons.Filled.Coffee),
-                   "bedrock" to ("基岩版" to Icons.Filled.Diamond)).forEachIndexed { idx, (edition, pair) ->
+            listOf("java" to ((if (isEn) "Java" else "Java 版") to Icons.Filled.Coffee),
+                   "bedrock" to ((if (isEn) "Bedrock" else "基岩版") to Icons.Filled.Diamond)).forEachIndexed { idx, (edition, pair) ->
                 val (label, icon) = pair
                 val selected = selectedEdition == edition
                 Box(
@@ -182,7 +183,7 @@ fun ModScreen() {
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 placeholder = {
-                    Text(if (selectedEdition == "bedrock") "搜索 CurseForge 基岩版资源…" else "搜索资源（支持中文翻译）…",
+                    Text(if (isEn) (if (selectedEdition == "bedrock") "Search CurseForge Bedrock resources…" else "Search resources…") else (if (selectedEdition == "bedrock") "搜索 CurseForge 基岩版资源…" else "搜索资源（支持中文翻译）…"),
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
                 },
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)) },
@@ -205,7 +206,7 @@ fun ModScreen() {
                 Spacer(Modifier.width(8.dp))
                 ExposedDropdownMenuBox(expanded = mcVersionExpanded, onExpandedChange = { mcVersionExpanded = it }, modifier = Modifier.fillMaxHeight()) {
                     OutlinedTextField(
-                        value = mcVersionFilter.ifBlank { "版本" },
+                        value = mcVersionFilter.ifBlank { if (isEn) "Version" else "版本" },
                         onValueChange = {}, readOnly = true,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(mcVersionExpanded) },
                         singleLine = true, shape = RoundedCornerShape(16.dp),
@@ -215,7 +216,7 @@ fun ModScreen() {
                     )
                     ExposedDropdownMenu(expanded = mcVersionExpanded, onDismissRequest = { mcVersionExpanded = false }) {
                         mcVersions.forEach { ver ->
-                            DropdownMenuItem(text = { Text(ver.ifBlank { "全部" }, style = MaterialTheme.typography.bodySmall) },
+                            DropdownMenuItem(text = { Text(ver.ifBlank { if (isEn) "All" else "全部" }, style = MaterialTheme.typography.bodySmall) },
                                 onClick = { mcVersionFilter = ver; mcVersionExpanded = false; doSearch() })
                         }
                     }
@@ -233,7 +234,7 @@ fun ModScreen() {
         // ── 过滤 Pills ───────────────────────────────────────────────────────
         if (selectedEdition == "java") {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(end = 8.dp)) {
-                val types = listOf("mod" to "模组", "resourcepack" to "材质包", "shader" to "光影", "modpack" to "整合包")
+                val types = if (isEn) listOf("mod" to "Mods", "resourcepack" to "Resource Packs", "shader" to "Shaders", "modpack" to "Modpacks") else listOf("mod" to "模组", "resourcepack" to "材质包", "shader" to "光影", "modpack" to "整合包")
                 items(types) { (type, label) ->
                     ModPill(label = label, selected = selectedType == type, primary = true) {
                         if (selectedType != type) { selectedType = type; loaderFilter = ""; doSearch() }
@@ -241,7 +242,7 @@ fun ModScreen() {
                 }
                 if (selectedType == "mod") {
                     item { Spacer(Modifier.width(4.dp)) }
-                    val loaders = listOf("" to "全部加载器", "fabric" to "Fabric", "forge" to "Forge", "neoforge" to "NeoForge", "quilt" to "Quilt")
+                    val loaders = listOf("" to (if (isEn) "All Loaders" else "全部加载器"), "fabric" to "Fabric", "forge" to "Forge", "neoforge" to "NeoForge", "quilt" to "Quilt")
                     items(loaders) { (loader, label) ->
                         ModPill(label = label, selected = loaderFilter == loader, primary = false) {
                             loaderFilter = loader; doSearch()
@@ -251,7 +252,7 @@ fun ModScreen() {
             }
         } else {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                val types = listOf("addon" to "Addon", "texture_pack" to "材质包", "map" to "地图", "skin" to "皮肤")
+                val types = if (isEn) listOf("addon" to "Addon", "texture_pack" to "Texture Packs", "map" to "Maps", "skin" to "Skins") else listOf("addon" to "Addon", "texture_pack" to "材质包", "map" to "地图", "skin" to "皮肤")
                 items(types) { (type, label) ->
                     ModPill(label = label, selected = bedrockType == type, primary = true) {
                         if (bedrockType != type) {
@@ -274,7 +275,7 @@ fun ModScreen() {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         CircularProgressIndicator(modifier = Modifier.size(36.dp), strokeWidth = 3.dp)
-                        Text("正在搜索…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(if (isEn) "Searching…" else "正在搜索…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             } else if (loadError.isNotBlank()) {
@@ -283,18 +284,18 @@ fun ModScreen() {
                         Box(Modifier.size(72.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
                             Icon(Icons.Filled.WifiOff, null, modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
                         }
-                        Text("加载失败", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                        Text(if (isEn) "Load failed" else "加载失败", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
                         Text(loadError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                         Spacer(Modifier.height(4.dp))
                         FilledTonalButton(onClick = { doSearch() }, shape = RoundedCornerShape(16.dp)) {
                             Icon(Icons.Filled.Refresh, null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("重试")
+                            Text(if (isEn) "Retry" else "重试")
                         }
                     }
                 }
             } else if (selectedEdition == "bedrock") {
-                if (cfProjects.isEmpty()) ModEmptyState()
+                if (cfProjects.isEmpty()) ModEmptyState(isEn)
                 else Box(Modifier.fillMaxSize()) {
                     LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize().padding(end = 8.dp)) {
                         items(cfProjects, key = { it.modId }) { CfProjectCard(it) }
@@ -302,7 +303,7 @@ fun ModScreen() {
                     VerticalScrollbar(rememberScrollbarAdapter(listState), Modifier.align(Alignment.CenterEnd).fillMaxHeight())
                 }
             } else {
-                if (projects.isEmpty()) ModEmptyState()
+                if (projects.isEmpty()) ModEmptyState(isEn)
                 else Box(Modifier.fillMaxSize()) {
                     LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize().padding(end = 8.dp)) {
                         items(projects, key = { it.slug }) { ModProjectCard(it, "java", selectedType) }
@@ -335,14 +336,14 @@ private fun ModPill(label: String, selected: Boolean, primary: Boolean, onClick:
 }
 
 @Composable
-private fun ModEmptyState() {
+private fun ModEmptyState(isEn: Boolean = false) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.size(72.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh), contentAlignment = Alignment.Center) {
                 Icon(Icons.Filled.SearchOff, null, modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f))
             }
-            Text("暂无结果", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("换个关键词或筛选条件试试", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+            Text(if (isEn) "No results" else "暂无结果", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (isEn) "Try different keywords or filters" else "换个关键词或筛选条件试试", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
         }
     }
 }

@@ -53,6 +53,7 @@ private object VersionScreenState {
 @Composable
 fun VersionScreen() {
     val scope = rememberCoroutineScope()
+    val isEn = launcher.ui.theme.ThemeState.language == "en"
     val repoVersions by VersionRepository.versions.collectAsState()
     var isLoading by remember { mutableStateOf(true) }
     var filterType by VersionScreenState::filterType
@@ -108,8 +109,8 @@ fun VersionScreen() {
             }
             Spacer(Modifier.width(12.dp))
             Column {
-                Text("本地版本管理", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
-                Text("共 ${repoVersions.size + bedrockVersions.size} 个版本 · 点击卡片管理", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (isEn) "Version Manager" else "本地版本管理", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+                Text(if (isEn) "${repoVersions.size + bedrockVersions.size} versions · tap to manage" else "共 ${repoVersions.size + bedrockVersions.size} 个版本 · 点击卡片管理", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         Spacer(Modifier.height(16.dp))
@@ -118,7 +119,7 @@ fun VersionScreen() {
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("搜索版本名称…") },
+            placeholder = { Text(if (isEn) "Search version…" else "搜索版本名称…") },
             leadingIcon = { Icon(Icons.Filled.Search, null, modifier = Modifier.size(20.dp)) },
             trailingIcon = { if (searchQuery.isNotBlank()) IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Filled.Clear, null, modifier = Modifier.size(18.dp)) } },
             singleLine = true,
@@ -190,7 +191,7 @@ fun VersionScreen() {
             ) {
                 Icon(Icons.Filled.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("导入")
+                Text(if (isEn) "Import" else "导入")
             }
             Spacer(Modifier.width(4.dp))
             FilledTonalIconButton(onClick = { refresh() }, shape = RoundedCornerShape(14.dp)) {
@@ -204,7 +205,7 @@ fun VersionScreen() {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     CircularProgressIndicator(modifier = Modifier.size(36.dp), strokeWidth = 3.dp)
-                    Text("加载版本列表…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (isEn) "Loading versions…" else "加载版本列表…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         } else if (filteredVersions.isEmpty()) {
@@ -213,8 +214,8 @@ fun VersionScreen() {
                     Box(Modifier.size(80.dp).clip(RoundedCornerShape(28.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest), contentAlignment = Alignment.Center) {
                         Icon(Icons.Filled.Inbox, null, modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
                     }
-                    Text("没有找到匹配的版本", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(if (searchQuery.isBlank()) "下载或导入版本后将在此显示" else "试试其他关键词", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                    Text(if (isEn) "No versions found" else "没有找到匹配的版本", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (isEn) (if (searchQuery.isBlank()) "Download or import a version to get started" else "Try different keywords") else (if (searchQuery.isBlank()) "下载或导入版本后将在此显示" else "试试其他关键词"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                 }
             }
         } else {
@@ -265,7 +266,7 @@ fun VersionScreen() {
 
                 // ── 重命名（仅 Java 版支持）───────────────────────────────
                 if (ver.type != "bedrock") {
-                    Text("重命名版本", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                    Text(if (isEn) "Rename Version" else "重命名版本", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(
@@ -274,7 +275,7 @@ fun VersionScreen() {
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f),
-                            label = { Text("新名称") },
+                            label = { Text(if (isEn) "New name" else "新名称") },
                         )
                         Spacer(Modifier.width(8.dp))
                         FilledTonalButton(
@@ -297,7 +298,7 @@ fun VersionScreen() {
                         ) {
                             Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("确认")
+                            Text(if (isEn) "Confirm" else "确认")
                         }
                     }
                     Spacer(Modifier.height(16.dp))
@@ -319,7 +320,7 @@ fun VersionScreen() {
                     ) {
                         Icon(Icons.Filled.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("打开文件夹")
+                        Text(if (isEn) "Open Folder" else "打开文件夹")
                     }
 
                     Button(
@@ -341,7 +342,7 @@ fun VersionScreen() {
                     ) {
                         Icon(Icons.Filled.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("彻底删除")
+                        Text(if (isEn) "Delete" else "彻底删除")
                     }
                 }
 
@@ -361,14 +362,14 @@ fun VersionScreen() {
                     ) {
                         Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("导出整合包")
+                        Text(if (isEn) "Export Modpack" else "导出整合包")
                     }
                 }
 
                 // ── 基岩版: 包管理 ────────────────────────────────────
                 if (ver.type == "bedrock") {
                     Spacer(Modifier.height(16.dp))
-                    Text("包管理", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                    Text(if (isEn) "Pack Management" else "包管理", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         FilledTonalButton(
@@ -383,7 +384,7 @@ fun VersionScreen() {
                         ) {
                             Icon(Icons.Filled.Code, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("行为包管理")
+                            Text(if (isEn) "Behavior Packs" else "行为包管理")
                         }
                         FilledTonalButton(
                             onClick = {
@@ -397,7 +398,7 @@ fun VersionScreen() {
                         ) {
                             Icon(Icons.Filled.Image, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("资源包管理")
+                            Text(if (isEn) "Resource Packs" else "资源包管理")
                         }
                     }
                     Spacer(Modifier.height(8.dp))
@@ -413,11 +414,11 @@ fun VersionScreen() {
                     ) {
                         Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("地图管理")
+                        Text(if (isEn) "World Manager" else "地图管理")
                     }
 
                     Spacer(Modifier.height(16.dp))
-                    Text("导出 / 备份", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                    Text(if (isEn) "Export / Backup" else "导出 / 备份", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         FilledTonalButton(
@@ -443,7 +444,7 @@ fun VersionScreen() {
                         ) {
                             Icon(Icons.Filled.Extension, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("导出 Addon")
+                            Text(if (isEn) "Export Addon" else "导出 Addon")
                         }
                         FilledTonalButton(
                             onClick = {
@@ -468,7 +469,7 @@ fun VersionScreen() {
                         ) {
                             Icon(Icons.Filled.Inventory2, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("导出整合包")
+                            Text(if (isEn) "Export Modpack" else "导出整合包")
                         }
                     }
                     Spacer(Modifier.height(8.dp))
@@ -497,7 +498,7 @@ fun VersionScreen() {
                     ) {
                         Icon(Icons.Filled.Backup, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("备份版本 (.md3lbackup)")
+                        Text(if (isEn) "Backup (.md3lbackup)" else "备份版本 (.md3lbackup)")
                     }
                 }
 

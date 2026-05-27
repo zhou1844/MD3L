@@ -53,6 +53,7 @@ private object BedrockModState {
 @Composable
 fun BedrockModScreen() {
     val scope = rememberCoroutineScope()
+    val isEn = launcher.ui.theme.ThemeState.language == "en"
     var comMojangDir by remember { mutableStateOf<File?>(null) }
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -113,12 +114,12 @@ fun BedrockModScreen() {
             Spacer(Modifier.width(4.dp))
             Column {
                 Text(
-                    "基岩版资源中心",
+                    if (isEn) "Bedrock Resource Center" else "基岩版资源中心",
                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    "来源：CurseForge Bedrock · 点击卡片查看文件版本并下载",
+                    if (isEn) "Source: CurseForge Bedrock · tap a card to view files & download" else "来源：CurseForge Bedrock · 点击卡片查看文件版本并下载",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -128,12 +129,7 @@ fun BedrockModScreen() {
 
         // ── 类型选择 chip ────────────────────────────────────────────────────
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf(
-                "addon" to "Addon",
-                "texture_pack" to "资源包",
-                "map" to "地图",
-                "skin" to "皮肤",
-            ).forEach { (type, label) ->
+            (if (isEn) listOf("addon" to "Addon", "texture_pack" to "Texture Packs", "map" to "Maps", "skin" to "Skins") else listOf("addon" to "Addon", "texture_pack" to "资源包", "map" to "地图", "skin" to "皮肤")).forEach { (type, label) ->
                 FilterChip(
                     selected = selectedType == type,
                     onClick = { selectedType = type; doSearch() },
@@ -152,7 +148,7 @@ fun BedrockModScreen() {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("搜索 CurseForge 基岩版资源…") },
+                placeholder = { Text(if (isEn) "Search CurseForge Bedrock resources…" else "搜索 CurseForge 基岩版资源…") },
                 leadingIcon = {
                     Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                 },
@@ -202,7 +198,7 @@ fun BedrockModScreen() {
                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
                         )
                         Spacer(Modifier.height(8.dp))
-                        Text("未找到结果", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(if (isEn) "No results found" else "未找到结果", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -214,7 +210,7 @@ fun BedrockModScreen() {
                         modifier = Modifier.fillMaxSize().padding(end = 8.dp),
                     ) {
                         items(projects, key = { it.modId }) { project ->
-                            CfBedrockProjectCard(project, comMojangDir)
+                            CfBedrockProjectCard(project, comMojangDir, isEn)
                         }
                         if (hasMore) {
                             item {
@@ -223,7 +219,7 @@ fun BedrockModScreen() {
                                         CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                                     } else {
                                         FilledTonalButton(onClick = { doSearch(resetPage = false) }, shape = RoundedCornerShape(10.dp)) {
-                                            Text("加载更多", style = MaterialTheme.typography.labelMedium)
+                                            Text(if (isEn) "Load more" else "加载更多", style = MaterialTheme.typography.labelMedium)
                                         }
                                     }
                                 }
@@ -241,7 +237,7 @@ fun BedrockModScreen() {
 }
 
 @Composable
-private fun CfBedrockProjectCard(project: CfBedrockProject, comMojangDir: File?) {
+private fun CfBedrockProjectCard(project: CfBedrockProject, comMojangDir: File?, isEn: Boolean = false) {
     val scope = rememberCoroutineScope()
     var showFiles by remember { mutableStateOf(false) }
     var files by remember { mutableStateOf<List<CfBedrockFile>>(emptyList()) }
@@ -389,7 +385,7 @@ private fun CfBedrockProjectCard(project: CfBedrockProject, comMojangDir: File?)
                     }
                 } else if (files.isEmpty()) {
                     Text(
-                        "暂无可用文件",
+                        if (isEn) "No files available" else "暂无可用文件",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(12.dp),
@@ -399,6 +395,7 @@ private fun CfBedrockProjectCard(project: CfBedrockProject, comMojangDir: File?)
                         files.forEach { file ->
                             CfFileRow(
                                 file = file,
+                                isEn = isEn,
                                 onDownload = {
                                     if (file.downloadUrl.isBlank()) {
                                         runCatching { Desktop.getDesktop().browse(URI(project.cfPageUrl)) }
@@ -429,7 +426,7 @@ private fun CfBedrockProjectCard(project: CfBedrockProject, comMojangDir: File?)
 }
 
 @Composable
-private fun CfFileRow(file: CfBedrockFile, onDownload: () -> Unit) {
+private fun CfFileRow(file: CfBedrockFile, isEn: Boolean = false, onDownload: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -476,7 +473,7 @@ private fun CfFileRow(file: CfBedrockFile, onDownload: () -> Unit) {
         ) {
             Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(14.dp))
             Spacer(Modifier.width(4.dp))
-            Text("下载", style = MaterialTheme.typography.labelSmall)
+            Text(if (isEn) "Download" else "下载", style = MaterialTheme.typography.labelSmall)
         }
     }
 }

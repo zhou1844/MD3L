@@ -278,6 +278,7 @@ private fun DownloadProgressBanner() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadScreen() {
+    val isEn = launcher.ui.theme.ThemeState.language == "en"
     var editionTab by DownloadScreenState.editionTab
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -292,8 +293,8 @@ fun DownloadScreen() {
             }
             Spacer(Modifier.width(12.dp))
             Column {
-                Text("下载中心", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
-                Text("BMCLAPI 镜像加速 · 点击版本进入配置页", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (isEn) "Download Center" else "下载中心", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+                Text(if (isEn) "BMCLAPI mirror · tap a version to configure" else "BMCLAPI 镜像加速 · 点击版本进入配置页", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         Spacer(Modifier.height(14.dp))
@@ -326,7 +327,7 @@ fun DownloadScreen() {
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            tab.label,
+                            when (tab) { EditionTab.Java -> (if (isEn) "Java" else "Java 版"); EditionTab.Bedrock -> (if (isEn) "Bedrock" else "基岩版") },
                             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                             color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -350,6 +351,7 @@ fun DownloadScreen() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun JavaDownloadContent() {
+    val isEn = launcher.ui.theme.ThemeState.language == "en"
     var remoteVersions by DownloadScreenState.javaRemoteVersions
     var isLoading by DownloadScreenState.javaIsLoading
     var selectedTab by DownloadScreenState.javaSelectedTab
@@ -405,7 +407,7 @@ private fun JavaDownloadContent() {
                             BlockIcon(tab, size = 20)
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                tab.label,
+                                when (tab) { JavaVersionTab.Release -> (if (isEn) "Release" else "正式版"); JavaVersionTab.Snapshot -> (if (isEn) "Snapshot" else "快照版"); JavaVersionTab.OldAlpha -> (if (isEn) "Legacy" else "远古版"); JavaVersionTab.AprilFool -> (if (isEn) "April Fools" else "愚人节") },
                                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal),
                                 color = if (sel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -420,7 +422,7 @@ private fun JavaDownloadContent() {
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("搜索 Java 版本号…") },
+            placeholder = { Text(if (isEn) "Search Java version…" else "搜索 Java 版本号…") },
             leadingIcon = { Icon(Icons.Filled.Search, null, modifier = Modifier.size(20.dp)) },
             trailingIcon = { if (searchQuery.isNotBlank()) IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Filled.Clear, null, modifier = Modifier.size(18.dp)) } },
             singleLine = true,
@@ -435,7 +437,7 @@ private fun JavaDownloadContent() {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     CircularProgressIndicator(modifier = Modifier.size(36.dp), strokeWidth = 3.dp)
-                    Text("获取 Java 版本列表…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (isEn) "Fetching Java version list…" else "获取 Java 版本列表…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         } else if (filtered.isEmpty()) {
@@ -450,15 +452,15 @@ private fun JavaDownloadContent() {
                             tint = if (remoteVersions.isEmpty()) MaterialTheme.colorScheme.error.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
                     }
                     if (remoteVersions.isEmpty()) {
-                        Text("获取版本列表失败", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                        Text(if (isEn) "Failed to fetch version list" else "获取版本列表失败", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
                         if (loadError.isNotBlank()) Text(loadError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                         FilledTonalButton(
                             onClick = { isLoading = true; loadError = ""; scope.launch { remoteVersions = VersionManifest.fetchVersionList(); loadError = VersionManifest.lastError; isLoading = false } },
                             shape = RoundedCornerShape(16.dp),
-                        ) { Icon(Icons.Filled.Refresh, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("重试") }
+                        ) { Icon(Icons.Filled.Refresh, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(if (isEn) "Retry" else "重试") }
                     } else {
-                        Text("无匹配结果", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("试试其他关键词", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                        Text(if (isEn) "No results" else "无匹配结果", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(if (isEn) "Try different keywords" else "试试其他关键词", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                     }
                 }
             }
@@ -518,6 +520,7 @@ private fun JavaDownloadContent() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BedrockDownloadContent() {
+    val isEn = launcher.ui.theme.ThemeState.language == "en"
     val scope = rememberCoroutineScope()
     var bedrockSubTab by DownloadScreenState.bedrockSubTab
     var bedrockVersions by DownloadScreenState.bedrockVersions
@@ -599,7 +602,7 @@ private fun BedrockDownloadContent() {
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            tab.label,
+                            when (tab) { BedrockSubTab.Release -> (if (isEn) "Release" else "正式版 Release"); BedrockSubTab.Preview -> (if (isEn) "Preview" else "测试版 Preview") },
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal),
                             color = if (sel) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -613,7 +616,7 @@ private fun BedrockDownloadContent() {
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("搜索基岩版版本号…") },
+            placeholder = { Text(if (isEn) "Search Bedrock version…" else "搜索基岩版版本号…") },
             leadingIcon = { Icon(Icons.Filled.Search, null, modifier = Modifier.size(20.dp)) },
             trailingIcon = { if (searchQuery.isNotBlank()) IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Filled.Clear, null, modifier = Modifier.size(18.dp)) } },
             singleLine = true,
@@ -628,7 +631,7 @@ private fun BedrockDownloadContent() {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     CircularProgressIndicator(modifier = Modifier.size(36.dp), strokeWidth = 3.dp, color = MaterialTheme.colorScheme.tertiary)
-                    Text("获取基岩版版本列表…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (isEn) "Fetching Bedrock version list…" else "获取基岩版版本列表…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         } else if (filtered.isEmpty()) {
@@ -646,7 +649,7 @@ private fun BedrockDownloadContent() {
                             tint = if (loadError.isNotBlank()) MaterialTheme.colorScheme.error.copy(alpha = 0.7f) else MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f),
                         )
                     }
-                    Text(if (loadError.isNotBlank()) "获取失败" else "暂无可用基岩版版本", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                    Text(if (loadError.isNotBlank()) (if (isEn) "Failed to fetch" else "获取失败") else (if (isEn) "No Bedrock versions available" else "暂无可用基岩版版本"), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
                     if (loadError.isNotBlank()) Text(loadError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                     FilledTonalButton(
                         onClick = {
@@ -663,7 +666,7 @@ private fun BedrockDownloadContent() {
                     ) {
                         Icon(Icons.Filled.Refresh, null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("重试")
+                        Text(if (isEn) "Retry" else "重试")
                     }
                 }
             }

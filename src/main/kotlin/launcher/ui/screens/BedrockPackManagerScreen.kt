@@ -37,8 +37,9 @@ import java.io.File
 @Composable
 fun BedrockPackManagerScreen(versionId: String, versionDir: String, packType: String) {
     val scope = rememberCoroutineScope()
-    val title = when (packType) { "behavior_packs" -> "行为包管理"; "addon" -> "Addon 管理"; else -> "资源包管理" }
-    val packLabel = when (packType) { "behavior_packs" -> "行为包"; "addon" -> "Addon"; else -> "资源包" }
+    val isEn = launcher.ui.theme.ThemeState.language == "en"
+    val title = if (isEn) when (packType) { "behavior_packs" -> "Behavior Packs"; "addon" -> "Addon Manager"; else -> "Resource Packs" } else when (packType) { "behavior_packs" -> "行为包管理"; "addon" -> "Addon 管理"; else -> "资源包管理" }
+    val packLabel = if (isEn) when (packType) { "behavior_packs" -> "behavior pack"; "addon" -> "addon"; else -> "resource pack" } else when (packType) { "behavior_packs" -> "行为包"; "addon" -> "Addon"; else -> "资源包" }
 
     data class PackEntry(val name: String, val displayName: String, val dir: File, val sizeBytes: Long, val sourceFolder: String = "")
 
@@ -100,7 +101,7 @@ fun BedrockPackManagerScreen(versionId: String, versionDir: String, packType: St
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
-                Text("版本: $versionId", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text((if (isEn) "Version: " else "版本: ") + versionId, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             FilledTonalButton(
                 onClick = {
@@ -116,7 +117,7 @@ fun BedrockPackManagerScreen(versionId: String, versionDir: String, packType: St
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("导入")
+                Text(if (isEn) "Import" else "导入")
             }
             Spacer(Modifier.width(6.dp))
             IconButton(onClick = { refresh() }) {
@@ -151,7 +152,7 @@ fun BedrockPackManagerScreen(versionId: String, versionDir: String, packType: St
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Filled.Inbox, contentDescription = null, modifier = Modifier.size(56.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
                     Spacer(Modifier.height(8.dp))
-                    Text("暂无已安装的$packLabel", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (isEn) "No ${packLabel}s installed" else "暂无已安装的$packLabel", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(8.dp))
                     FilledTonalButton(
                         onClick = {
@@ -167,7 +168,7 @@ fun BedrockPackManagerScreen(versionId: String, versionDir: String, packType: St
                     ) {
                         Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("导入$packLabel")
+                        Text(if (isEn) "Import $packLabel" else "导入$packLabel")
                     }
                 }
             }
@@ -233,11 +234,7 @@ fun BedrockPackManagerScreen(versionId: String, versionDir: String, packType: St
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
-                                    val typeLabel = when (pack.sourceFolder) {
-                                        "behavior_packs" -> "行为包"
-                                        "resource_packs" -> "资源包"
-                                        else -> ""
-                                    }
+                                    val typeLabel = if (isEn) when (pack.sourceFolder) { "behavior_packs" -> "BP"; "resource_packs" -> "RP"; else -> "" } else when (pack.sourceFolder) { "behavior_packs" -> "行为包"; "resource_packs" -> "资源包"; else -> "" }
                                     Text(
                                         buildString {
                                             if (typeLabel.isNotBlank()) append("[$typeLabel] ")
@@ -273,8 +270,8 @@ fun BedrockPackManagerScreen(versionId: String, versionDir: String, packType: St
     if (target != null) {
         AlertDialog(
             onDismissRequest = { confirmDeleteTarget = null },
-            title = { Text("删除 ${target.name}？") },
-            text = { Text("此操作不可恢复，将从版本存档目录中删除该${packLabel}。") },
+            title = { Text(if (isEn) "Delete ${target.name}?" else "删除 ${target.name}？") },
+            text = { Text(if (isEn) "This action is irreversible and will remove the $packLabel from the version profile." else "此操作不可恢复，将从版本存档目录中删除该${packLabel}。") },
             confirmButton = {
                 Button(
                     onClick = {
@@ -282,16 +279,16 @@ fun BedrockPackManagerScreen(versionId: String, versionDir: String, packType: St
                         scope.launch(Dispatchers.IO) {
                             val deleted = if (target.dir.isDirectory) target.dir.deleteRecursively() else target.dir.delete()
                             withContext(Dispatchers.Main) {
-                                statusMessage = if (deleted) "已删除: ${target.name}" else "删除失败"
+                                statusMessage = if (deleted) (if (isEn) "Deleted: ${target.name}" else "已删除: ${target.name}") else (if (isEn) "Delete failed" else "删除失败")
                                 refresh()
                             }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                ) { Text("删除") }
+                ) { Text(if (isEn) "Delete" else "删除") }
             },
             dismissButton = {
-                TextButton(onClick = { confirmDeleteTarget = null }) { Text("取消") }
+                TextButton(onClick = { confirmDeleteTarget = null }) { Text(if (isEn) "Cancel" else "取消") }
             },
         )
     }
