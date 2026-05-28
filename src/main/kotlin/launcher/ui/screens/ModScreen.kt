@@ -123,118 +123,133 @@ fun ModScreen() {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ── 标题区 ──────────────────────────────────────────────────────────
+        // ── 标题区 + 版本切换 ──────────────────────────────────────────────
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(12.dp))
+                modifier = Modifier.size(44.dp).clip(RoundedCornerShape(16.dp))
                     .background(MaterialTheme.colorScheme.primaryContainer),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Filled.Extension, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+                Icon(Icons.Filled.Extension, null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(24.dp))
             }
             Spacer(Modifier.width(12.dp))
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(if (isEn) "Resource Center" else "资源中心", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
                 Text("Modrinth · CurseForge", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-        }
-        Spacer(Modifier.height(16.dp))
-
-        // ── 版本大选项卡 ────────────────────────────────────────────────────
-        Row(
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-            horizontalArrangement = Arrangement.spacedBy(0.dp),
-        ) {
-            listOf("java" to ((if (isEn) "Java" else "Java 版") to Icons.Filled.Coffee),
-                   "bedrock" to ((if (isEn) "Bedrock" else "基岩版") to Icons.Filled.Diamond)).forEachIndexed { idx, (edition, pair) ->
-                val (label, icon) = pair
-                val selected = selectedEdition == edition
-                Box(
-                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(14.dp))
-                        .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
-                        .then(Modifier.clickable {
-                            if (selectedEdition != edition) {
-                                selectedEdition = edition; searchQuery = ""; isLoading = true
-                                scope.launch {
-                                    if (edition == "bedrock") cfProjects = BedrockResourceApi.search("", bedrockType)
-                                    else projects = ModrinthApi.search("", selectedType)
-                                    isLoading = false
+            // 版本切换内嵌到标题行右侧
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.height(36.dp),
+            ) {
+                Row(modifier = Modifier.padding(3.dp)) {
+                    listOf("java" to (if (isEn) "Java" else "Java") to Icons.Filled.Coffee,
+                           "bedrock" to (if (isEn) "Bedrock" else "基岩") to Icons.Filled.Diamond).forEach { (pair, icon) ->
+                        val (edition, label) = pair
+                        val selected = selectedEdition == edition
+                        Surface(
+                            shape = RoundedCornerShape(17.dp),
+                            color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                            modifier = Modifier.clip(RoundedCornerShape(17.dp)).clickable {
+                                if (selectedEdition != edition) {
+                                    selectedEdition = edition; searchQuery = ""; isLoading = true
+                                    scope.launch {
+                                        if (edition == "bedrock") cfProjects = BedrockResourceApi.search("", bedrockType)
+                                        else projects = ModrinthApi.search("", selectedType)
+                                        isLoading = false
+                                    }
                                 }
+                            },
+                        ) {
+                            Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Icon(icon, null, modifier = Modifier.size(13.dp), tint = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(label, style = MaterialTheme.typography.labelMedium.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal),
+                                    color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                        })
-                        .padding(vertical = 10.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp),
-                            tint = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(label, style = MaterialTheme.typography.labelLarge.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal),
-                            color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-
-        // ── 搜索框 ──────────────────────────────────────────────────────────
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(52.dp)) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = {
-                    Text(if (isEn) (if (selectedEdition == "bedrock") "Search CurseForge Bedrock resources…" else "Search resources…") else (if (selectedEdition == "bedrock") "搜索 CurseForge 基岩版资源…" else "搜索资源（支持中文翻译）…"),
-                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-                },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)) },
-                trailingIcon = {
-                    if (searchQuery.isNotBlank()) IconButton(onClick = { searchQuery = ""; doSearch() }) {
-                        Icon(Icons.Filled.Close, contentDescription = null, modifier = Modifier.size(18.dp))
-                    }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.weight(1f).fillMaxHeight().onPreviewKeyEvent { e ->
-                    if (e.key == Key.Enter && e.type == KeyEventType.KeyDown) { doSearch(); true } else false
-                },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                ),
-            )
-            if (selectedEdition == "java") {
-                Spacer(Modifier.width(8.dp))
-                ExposedDropdownMenuBox(expanded = mcVersionExpanded, onExpandedChange = { mcVersionExpanded = it }, modifier = Modifier.fillMaxHeight()) {
-                    OutlinedTextField(
-                        value = mcVersionFilter.ifBlank { if (isEn) "Version" else "版本" },
-                        onValueChange = {}, readOnly = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(mcVersionExpanded) },
-                        singleLine = true, shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.width(100.dp).fillMaxHeight().menuAnchor(),
-                        textStyle = MaterialTheme.typography.bodySmall,
-                        colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant),
-                    )
-                    ExposedDropdownMenu(expanded = mcVersionExpanded, onDismissRequest = { mcVersionExpanded = false }) {
-                        mcVersions.forEach { ver ->
-                            DropdownMenuItem(text = { Text(ver.ifBlank { if (isEn) "All" else "全部" }, style = MaterialTheme.typography.bodySmall) },
-                                onClick = { mcVersionFilter = ver; mcVersionExpanded = false; doSearch() })
                         }
                     }
                 }
             }
-            Spacer(Modifier.width(8.dp))
-            FilledTonalButton(
-                onClick = { doSearch() }, shape = RoundedCornerShape(16.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                modifier = Modifier.fillMaxHeight(),
-            ) { Icon(Icons.Filled.Search, contentDescription = null) }
+        }
+        Spacer(Modifier.height(14.dp))
+
+        // ── 搜索框（卡片式）─────────────────────────────────────────────────
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(modifier = Modifier.padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = {
+                        Text(
+                            if (isEn) (if (selectedEdition == "bedrock") "Search CurseForge Bedrock…" else "Search Modrinth resources…")
+                            else (if (selectedEdition == "bedrock") "搜索 CurseForge 基岩版资源…" else "搜索资源（支持中文翻译）…"),
+                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                        )
+                    },
+                    leadingIcon = { Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)) },
+                    trailingIcon = {
+                        if (searchQuery.isNotBlank()) IconButton(onClick = { searchQuery = ""; doSearch() }) {
+                            Icon(Icons.Filled.Close, null, modifier = Modifier.size(17.dp))
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.weight(1f).onPreviewKeyEvent { e ->
+                        if (e.key == Key.Enter && e.type == KeyEventType.KeyDown) { doSearch(); true } else false
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                        unfocusedBorderColor = Color.Transparent,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    ),
+                )
+                if (selectedEdition == "java") {
+                    Spacer(Modifier.width(6.dp))
+                    ExposedDropdownMenuBox(expanded = mcVersionExpanded, onExpandedChange = { mcVersionExpanded = it }) {
+                        OutlinedTextField(
+                            value = mcVersionFilter.ifBlank { if (isEn) "All" else "全部" },
+                            onValueChange = {}, readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(mcVersionExpanded) },
+                            singleLine = true, shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.width(96.dp).menuAnchor(),
+                            textStyle = MaterialTheme.typography.bodySmall,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                            ),
+                        )
+                        ExposedDropdownMenu(expanded = mcVersionExpanded, onDismissRequest = { mcVersionExpanded = false }) {
+                            mcVersions.forEach { ver ->
+                                DropdownMenuItem(text = { Text(ver.ifBlank { if (isEn) "All" else "全部" }, style = MaterialTheme.typography.bodySmall) },
+                                    onClick = { mcVersionFilter = ver; mcVersionExpanded = false; doSearch() })
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.width(6.dp))
+                FilledTonalButton(
+                    onClick = { doSearch() },
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
+                ) { Icon(Icons.Filled.Search, null, modifier = Modifier.size(18.dp)) }
+            }
         }
         Spacer(Modifier.height(10.dp))
 
         // ── 过滤 Pills ───────────────────────────────────────────────────────
         if (selectedEdition == "java") {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(end = 8.dp)) {
-                val types = if (isEn) listOf("mod" to "Mods", "resourcepack" to "Resource Packs", "shader" to "Shaders", "modpack" to "Modpacks") else listOf("mod" to "模组", "resourcepack" to "材质包", "shader" to "光影", "modpack" to "整合包")
+                val types = if (isEn)
+                    listOf("mod" to "Mods", "resourcepack" to "Resource Packs", "shader" to "Shaders", "modpack" to "Modpacks")
+                else listOf("mod" to "模组", "resourcepack" to "材质包", "shader" to "光影", "modpack" to "整合包")
                 items(types) { (type, label) ->
                     ModPill(label = label, selected = selectedType == type, primary = true) {
                         if (selectedType != type) { selectedType = type; loaderFilter = ""; doSearch() }
@@ -242,7 +257,7 @@ fun ModScreen() {
                 }
                 if (selectedType == "mod") {
                     item { Spacer(Modifier.width(4.dp)) }
-                    val loaders = listOf("" to (if (isEn) "All Loaders" else "全部加载器"), "fabric" to "Fabric", "forge" to "Forge", "neoforge" to "NeoForge", "quilt" to "Quilt")
+                    val loaders = listOf("" to (if (isEn) "All" else "全部"), "fabric" to "Fabric", "forge" to "Forge", "neoforge" to "NeoForge", "quilt" to "Quilt")
                     items(loaders) { (loader, label) ->
                         ModPill(label = label, selected = loaderFilter == loader, primary = false) {
                             loaderFilter = loader; doSearch()
@@ -252,7 +267,9 @@ fun ModScreen() {
             }
         } else {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                val types = if (isEn) listOf("addon" to "Addon", "texture_pack" to "Texture Packs", "map" to "Maps", "skin" to "Skins") else listOf("addon" to "Addon", "texture_pack" to "材质包", "map" to "地图", "skin" to "皮肤")
+                val types = if (isEn)
+                    listOf("addon" to "Addon", "texture_pack" to "Texture", "map" to "Maps", "skin" to "Skins")
+                else listOf("addon" to "Addon", "texture_pack" to "材质包", "map" to "地图", "skin" to "皮肤")
                 items(types) { (type, label) ->
                     ModPill(label = label, selected = bedrockType == type, primary = true) {
                         if (bedrockType != type) {
@@ -273,21 +290,20 @@ fun ModScreen() {
         ) { loading ->
             if (loading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        CircularProgressIndicator(modifier = Modifier.size(36.dp), strokeWidth = 3.dp)
-                        Text(if (isEn) "Searching…" else "正在搜索…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(40.dp), strokeWidth = 3.5.dp)
+                        Text(if (isEn) "Searching…" else "正在搜索…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             } else if (loadError.isNotBlank()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.size(72.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Filled.WifiOff, null, modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(Modifier.size(80.dp).clip(RoundedCornerShape(28.dp)).background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Filled.WifiOff, null, modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
                         }
-                        Text(if (isEn) "Load failed" else "加载失败", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                        Text(if (isEn) "Load failed" else "加载失败", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
                         Text(loadError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
-                        Spacer(Modifier.height(4.dp))
-                        FilledTonalButton(onClick = { doSearch() }, shape = RoundedCornerShape(16.dp)) {
+                        FilledTonalButton(onClick = { doSearch() }, shape = RoundedCornerShape(18.dp)) {
                             Icon(Icons.Filled.Refresh, null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
                             Text(if (isEn) "Retry" else "重试")

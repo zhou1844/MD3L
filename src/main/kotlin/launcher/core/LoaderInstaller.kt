@@ -1690,5 +1690,86 @@ object LoaderInstaller {
                 candidates.joinToString(" 或 ") { "versions/$it/$it.jar" },
         )
     }
+
+    /**
+     * 安装 OptiFine：下载 OptiFine JAR 并以 -jar 方式运行其内嵌安装器，生成对应版本目录。
+     */
+    suspend fun installOptiFine(
+        mcVersion: String,
+        optifineVersion: String,   // e.g. "HD_U_I7" or full "OptiFine_1.20.1_HD_U_I7"
+        minecraftDir: String,
+        baseVersionId: String = mcVersion,
+        javaPath: String,
+    ): String = withContext(Dispatchers.IO) {
+        emit("OptiFine", "正在准备 OptiFine 下载…", 0.02f)
+
+        // 规范化版本字符串
+        val tag = if (optifineVersion.startsWith("OptiFine_")) optifineVersion
+                  else "OptiFine_${mcVersion}_$optifineVersion"
+        val jarName = "$tag.jar"
+
+        // 下载来源：BMCLAPI 镜像优先，官方备选
+        val downloadUrls = listOf(
+            "https://bmclapi2.bangbang93.com/optifine/$mcVersion/${optifineVersion.removePrefix("OptiFine_${mcVersion}_").ifBlank { optifineVersion }}",
+            "https://optifine.net/downloadx?f=$jarName&x=placeholder",
+        )
+
+        val cacheDir = File(minecraftDir, "cache")
+        cacheDir.mkdirs()
+        val jarFile = File(cacheDir, jarName)
+
+        if (!jarFile.exists() || jarFile.length() < 10_000) {
+            emit("OptiFine", "正在下载 $jarName…", 0.05f)
+            var got = false
+            for (url in downloadUrls) {
+                jarFile.delete()
+                println("[LoaderInstaller] 下载 OptiFine: $url")
+                if (downloadFile(url, jarFile) && jarFile.length() > 10_000) {
+                    got = true
+                    break
+                }
+            }
+            if (!got) {
+                throw RuntimeException(
+                    "OptiFine $tag 下载失败，请检查网络或手动将 $jarName 放入 $cacheDir"
+                )
+            }
+        } else {
+            println("[LoaderInstaller] 复用已缓存 OptiFine: ${jarFile.absolutePath}")
+        }
+
+        emit("OptiFine", "正在运行 OptiFine 安装器…", 0.5f)
+
+        val resolvedJava = if (javaPath.isNotBlank() && File(javaPath).isFile) javaPath else "java"
+
+        val proc = ProcessBuilder(
+            resolvedJava, "-jar", jarFile.absolutePath,
+            "--installer.dest", File(minecraftDir, "versions").absolutePath,
+        ).apply {
+            directory(File(minecraftDir))
+            redirectErrorStream(true)
+        }.start()
+
+        val output = StringBuilder()
+        proc.inputStream.bufferedReader().useLines { lines ->
+            lines.forEach { line ->
+                output.appendLine(line)
+                println("[OptiFine] $line")
+            }
+        }
+        val exitCode = proc.waitFor()
+        if (exitCode != 0) {
+            // OptiFine 安装器在非交互模式下可能返回非 0，但文件已写入——检测输出目录
+            val versionDir = File(minecraftDir, "versions").listFiles()
+                ?.filter { it.isDirectory && it.name.contains("OptiFine") && it.name.contains(mcVersion) }
+                ?.maxByOrNull { it.lastModified() }
+            if (versionDir == null) {
+                throw RuntimeException("OptiFine 安装器退出码 $exitCode，疑似安装失败。\n输出:\n$output")
+            }
+        }
+
+        emit("OptiFine", "OptiFine 安装完成", 1f)
+        tag
+    }
 }
 
