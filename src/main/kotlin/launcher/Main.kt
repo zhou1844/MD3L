@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -133,6 +134,13 @@ private fun runLauncherApp() = application {
                     ThemeState.backgroundBlurRadius = settings.backgroundBlurRadius
                     ThemeState.backgroundBrightness = settings.backgroundBrightness
                     ThemeState.uiPanelOpacity = settings.uiPanelOpacity
+                    ThemeState.language = settings.language
+                    ThemeState.uiAnimationSpeed = settings.uiAnimationSpeed
+                    ThemeState.uiFontScale = settings.uiFontScale
+                    ThemeState.uiCompactMode = settings.uiCompactMode
+                    ThemeState.uiShowVersionBadge = settings.uiShowVersionBadge
+                    ThemeState.uiCornerRadius = settings.uiCornerRadius
+                    ThemeState.uiSidebarWidth = settings.uiSidebarWidth
                     DownloadManager.activeMirror = settings.downloadMirror
                     // 若首次启动需要 EULA，切换到 EULA 界面
                     if (!settings.eulaAccepted) eulaAccepted = false
@@ -383,6 +391,7 @@ private fun FrameWindowScope.AppWindow(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .clip(windowShape)
             .background(MaterialTheme.colorScheme.background)
             .then(surfaceDragModifier),
         contentAlignment = Alignment.Center,
