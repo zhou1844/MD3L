@@ -1640,10 +1640,13 @@ object LoaderInstaller {
         try {
             dest.parentFile?.mkdirs()
             val proc = ProcessBuilder(
-                "curl.exe", "-sL", "--connect-timeout", "15", "--max-time", "120",
+                "curl.exe", "-sL",
+                "--connect-timeout", "20", "--max-time", "180",
+                "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "--retry", "2", "--retry-delay", "3",
                 "-o", dest.absolutePath, url
             ).redirectErrorStream(true).start()
-            val ok = proc.waitFor(130, java.util.concurrent.TimeUnit.SECONDS)
+            val ok = proc.waitFor(200, java.util.concurrent.TimeUnit.SECONDS)
             if (ok && proc.exitValue() == 0 && dest.exists() && dest.length() > 0) return true
         } catch (_: Exception) {}
 
@@ -1708,10 +1711,21 @@ object LoaderInstaller {
                   else "OptiFine_${mcVersion}_$optifineVersion"
         val jarName = "$tag.jar"
 
-        // 下载来源：BMCLAPI 镜像优先，官方备选
+        // 拆分 type 和 patch：版本串格式如 "HD_U_C5" → type="HD_U" patch="C5"
+        // 或完整 "OptiFine_1.12.2_HD_U_C5" → strip prefix → "HD_U_C5"
+        val stripped = optifineVersion.removePrefix("OptiFine_${mcVersion}_")
+        val lastUnder = stripped.lastIndexOf('_')
+        val (ofType, ofPatch) = if (lastUnder > 0) {
+            stripped.substring(0, lastUnder) to stripped.substring(lastUnder + 1)
+        } else {
+            "HD_U" to stripped
+        }
+
+        // 下载来源：BMCLAPI 镜像优先，GitHub Release 备选
         val downloadUrls = listOf(
-            "https://bmclapi2.bangbang93.com/optifine/$mcVersion/${optifineVersion.removePrefix("OptiFine_${mcVersion}_").ifBlank { optifineVersion }}",
-            "https://optifine.net/downloadx?f=$jarName&x=placeholder",
+            "https://bmclapi2.bangbang93.com/optifine/$mcVersion/$ofType/$ofPatch",
+            "https://optifine.net/adloadx?f=$jarName",
+            "https://github.com/sp614x/optifine/releases/download/$tag/$jarName",
         )
 
         val cacheDir = File(minecraftDir, "cache")
@@ -1738,38 +1752,148 @@ object LoaderInstaller {
             println("[LoaderInstaller] 复用已缓存 OptiFine: ${jarFile.absolutePath}")
         }
 
-        emit("OptiFine", "正在运行 OptiFine 安装器…", 0.5f)
-
         val resolvedJava = if (javaPath.isNotBlank() && File(javaPath).isFile) javaPath else "java"
 
-        val proc = ProcessBuilder(
-            resolvedJava, "-jar", jarFile.absolutePath,
-            "--installer.dest", File(minecraftDir, "versions").absolutePath,
-        ).apply {
-            directory(File(minecraftDir))
-            redirectErrorStream(true)
-        }.start()
+        emit("OptiFine", "正在安装 OptiFine…", 0.5f)
+        val versionId = installOptiFineHeadless(
+            ofJar = jarFile,
+            versionId = tag,
+            mcVersion = mcVersion,
+            minecraftDir = minecraftDir,
+            baseVersionId = baseVersionId,
+            javaExec = resolvedJava,
+            onProgress = { msg, frac -> emit("OptiFine", msg, frac) },
+        )
 
-        val output = StringBuilder()
-        proc.inputStream.bufferedReader().useLines { lines ->
-            lines.forEach { line ->
-                output.appendLine(line)
-                println("[OptiFine] $line")
+        emitDone("OptiFine", "OptiFine 安装完成")
+        versionId
+    }
+
+    /**
+     * 仿照 HMCL 的方式全自动无 GUI 安装 OptiFine：
+     *  1. 若 jar 内有 optifine/Patcher.class → 调用 Patcher 将原版 mc.jar + of.jar → 生成 patched library
+     *  2. 否则直接复制 jar 作为 library
+     *  3. 提取 launchwrapper-of / launchwrapper-2.0 到 libraries
+     *  4. 写带 inheritsFrom 的版本 JSON
+     */
+    private fun installOptiFineHeadless(
+        ofJar: File,
+        versionId: String,
+        mcVersion: String,
+        minecraftDir: String,
+        baseVersionId: String,
+        javaExec: String,
+        onProgress: (String, Float) -> Unit,
+    ): String {
+
+        // ── 目录结构 ──────────────────────────────────────────────────────────
+        // OptiFine library 路径：libraries/optifine/OptiFine/<mcVer>_<ofVer>/OptiFine-<mcVer>_<ofVer>.jar
+        val ofVer = versionId.removePrefix("OptiFine_${mcVersion}_")   // e.g. "HD_U_I7"
+        val mavenVer = "${mcVersion}_${ofVer}"                          // e.g. "1.20.1_HD_U_I7"
+        val libDir = File(minecraftDir, "libraries/optifine/OptiFine/$mavenVer")
+        libDir.mkdirs()
+        val libJar = File(libDir, "OptiFine-$mavenVer.jar")
+
+        val zip = java.util.zip.ZipFile(ofJar)
+
+        // ── 1. 生成/复制 OptiFine library jar ─────────────────────────────────
+        val hasPatcher = zip.getEntry("optifine/Patcher.class") != null
+        if (hasPatcher && !libJar.exists()) {
+            onProgress("正在 Patch OptiFine…", 0.55f)
+            // 找基础版本 jar
+            val mcJar = File(minecraftDir, "versions/$baseVersionId/$baseVersionId.jar")
+            if (!mcJar.exists()) throw RuntimeException("找不到基础版本 jar: ${mcJar.absolutePath}")
+
+            val cmd = listOf(
+                javaExec,
+                "-cp", ofJar.absolutePath,
+                "optifine.Patcher",
+                mcJar.absolutePath,
+                ofJar.absolutePath,
+                libJar.absolutePath,
+            )
+            println("[OptiFine] Patcher: ${cmd.joinToString(" ")}")
+            val proc = ProcessBuilder(cmd)
+                .redirectErrorStream(true)
+                .directory(File(minecraftDir))
+                .start()
+            val out = proc.inputStream.bufferedReader().readText()
+            val exit = proc.waitFor()
+            println("[OptiFine] Patcher exit=$exit\n$out")
+            if (exit != 0 || !libJar.exists())
+                throw RuntimeException("OptiFine Patcher 失败 (exit=$exit):\n${out.take(800)}")
+        } else if (!hasPatcher && !libJar.exists()) {
+            onProgress("正在复制 OptiFine jar…", 0.55f)
+            ofJar.copyTo(libJar, overwrite = true)
+        }
+
+        // ── 2. 提取 launchwrapper ──────────────────────────────────────────────
+        onProgress("正在提取 launchwrapper…", 0.75f)
+        val libraries = mutableListOf<String>()   // maven 坐标列表，供 JSON 使用
+
+        // launchwrapper-of-X.Y.jar（OptiFine 1.8+）
+        val lwOfTxt = zip.getEntry("launchwrapper-of.txt")
+        if (lwOfTxt != null) {
+            val lwVer = zip.getInputStream(lwOfTxt).bufferedReader().readText().trim()
+            val lwEntry = zip.getEntry("launchwrapper-of-$lwVer.jar")
+            if (lwEntry != null) {
+                val lwDir = File(minecraftDir, "libraries/optifine/launchwrapper-of/$lwVer")
+                lwDir.mkdirs()
+                val lwFile = File(lwDir, "launchwrapper-of-$lwVer.jar")
+                if (!lwFile.exists()) {
+                    zip.getInputStream(lwEntry).use { it.copyTo(lwFile.outputStream()) }
+                }
+                libraries += "optifine:launchwrapper-of:$lwVer"
             }
         }
-        val exitCode = proc.waitFor()
-        if (exitCode != 0) {
-            // OptiFine 安装器在非交互模式下可能返回非 0，但文件已写入——检测输出目录
-            val versionDir = File(minecraftDir, "versions").listFiles()
-                ?.filter { it.isDirectory && it.name.contains("OptiFine") && it.name.contains(mcVersion) }
-                ?.maxByOrNull { it.lastModified() }
-            if (versionDir == null) {
-                throw RuntimeException("OptiFine 安装器退出码 $exitCode，疑似安装失败。\n输出:\n$output")
+
+        // launchwrapper-2.0.jar（部分旧版 OptiFine）
+        val lw2Entry = zip.getEntry("launchwrapper-2.0.jar")
+        if (lw2Entry != null) {
+            val lwDir = File(minecraftDir, "libraries/optifine/launchwrapper/2.0")
+            lwDir.mkdirs()
+            val lwFile = File(lwDir, "launchwrapper-2.0.jar")
+            if (!lwFile.exists()) {
+                zip.getInputStream(lw2Entry).use { it.copyTo(lwFile.outputStream()) }
             }
+            libraries += "optifine:launchwrapper:2.0"
         }
 
-        emit("OptiFine", "OptiFine 安装完成", 1f)
-        tag
+        // 若没有自带 launchwrapper，依赖官方 net.minecraft:launchwrapper:1.12
+        if (libraries.none { it.contains("launchwrapper") }) {
+            libraries += "net.minecraft:launchwrapper:1.12"
+        }
+
+        zip.close()
+
+        // ── 3. 写版本 JSON ─────────────────────────────────────────────────────
+        onProgress("正在写入版本 JSON…", 0.88f)
+        val versionDir = File(minecraftDir, "versions/$versionId").also { it.mkdirs() }
+        val versionJson = File(versionDir, "$versionId.json")
+
+        // 构建 library 数组
+        val libsJson = (libraries + "optifine:OptiFine:$mavenVer").joinToString(",\n      ") { coord ->
+            val parts = coord.split(":")
+            val (g, a, v) = Triple(parts[0], parts[1], parts[2])
+            val path = "${g.replace('.', '/')}/$a/$v/$a-$v.jar"
+            """{"name":"$coord","downloads":{"artifact":{"path":"$path","url":"","sha1":"","size":0}}}"""
+        }
+
+        versionJson.writeText("""
+{
+  "id": "$versionId",
+  "type": "release",
+  "inheritsFrom": "$baseVersionId",
+  "mainClass": "net.minecraft.launchwrapper.Launch",
+  "minecraftArguments": "--tweakClass optifine.OptiFineTweaker",
+  "libraries": [
+      $libsJson
+  ]
+}
+""".trimIndent())
+
+        println("[OptiFine] 版本 JSON 写入: ${versionJson.absolutePath}")
+        return versionId
     }
 }
 

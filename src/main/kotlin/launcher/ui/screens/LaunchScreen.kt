@@ -69,6 +69,7 @@ import launcher.ui.theme.IosAppLaunchDuration
 @Composable
 fun LaunchScreen() {
     val scope = rememberCoroutineScope()
+    val isEn = launcher.ui.theme.ThemeState.language == "en"
     var settings by remember { mutableStateOf(AppSettings()) }
     var versions by remember { mutableStateOf<List<LocalVersion>>(emptyList()) }
     var bedrockVersions by remember { mutableStateOf<List<LocalVersion>>(emptyList()) }
@@ -281,8 +282,8 @@ fun LaunchScreen() {
                 }
                 Spacer(Modifier.width(10.dp))
                 Column {
-                    Text("游戏数据", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
-                    Text("本机累计统计", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (isEn) "Game Stats" else "游戏数据", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                    Text(if (isEn) "Local cumulative data" else "本机累计统计", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
@@ -311,20 +312,20 @@ fun LaunchScreen() {
                         }
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("$totalLaunches", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = onSurface)
-                            Text("次", style = MaterialTheme.typography.labelSmall, color = onSurfaceVariant)
+                            Text(if (isEn) "times" else "次", style = MaterialTheme.typography.labelSmall, color = onSurfaceVariant)
                         }
                     }
                     // 图例 + 数值
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f)) {
-                        Text("总启动次数", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold), color = onSurface)
+                        Text(if (isEn) "Total Launches" else "总启动次数", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold), color = onSurface)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(primaryColor))
-                            Text("Java 版", style = MaterialTheme.typography.labelSmall, color = onSurfaceVariant, modifier = Modifier.weight(1f))
+                            Text(if (isEn) "Java" else "Java 版", style = MaterialTheme.typography.labelSmall, color = onSurfaceVariant, modifier = Modifier.weight(1f))
                             Text("${stats.javaLaunchCount}", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = primaryColor)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(tertiaryColor))
-                            Text("基岩版", style = MaterialTheme.typography.labelSmall, color = onSurfaceVariant, modifier = Modifier.weight(1f))
+                            Text(if (isEn) "Bedrock" else "基岩版", style = MaterialTheme.typography.labelSmall, color = onSurfaceVariant, modifier = Modifier.weight(1f))
                             Text("${stats.bedrockLaunchCount}", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = tertiaryColor)
                         }
                     }
@@ -342,12 +343,12 @@ fun LaunchScreen() {
                         Icon(Icons.Filled.Timer, null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
                     }
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("累计游玩时长", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f))
+                        Text(if (isEn) "Total Play Time" else "累计游玩时长", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f))
                         Text(fmtTime(totalSec), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onPrimaryContainer)
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text("Java  ${fmtTime(stats.javaPlayTimeSec)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
-                        Text("基岩  ${fmtTime(stats.bedrockPlayTimeSec)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+                        Text("${if (isEn) "Bedrock" else "基岩"}  ${fmtTime(stats.bedrockPlayTimeSec)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
                     }
                 }
             }
@@ -360,7 +361,7 @@ fun LaunchScreen() {
                         Icon(Icons.Filled.BugReport, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
                         Spacer(Modifier.height(4.dp))
                         Text("${stats.totalCrashCount}", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onErrorContainer)
-                        Text("次崩溃", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.75f))
+                        Text(if (isEn) "Crashes" else "次崩溃", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.75f))
                     }
                 }
                 // 最长单次
@@ -369,7 +370,7 @@ fun LaunchScreen() {
                         Icon(Icons.Filled.EmojiEvents, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.secondary)
                         Spacer(Modifier.height(4.dp))
                         Text(fmtTime(stats.longestSessionSec), style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSecondaryContainer)
-                        Text("最长单次", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.75f))
+                        Text(if (isEn) "Best Session" else "最长单次", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.75f))
                     }
                 }
             }
@@ -381,7 +382,7 @@ fun LaunchScreen() {
                         Icon(Icons.Filled.Inventory2, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.tertiary)
                         Spacer(Modifier.height(4.dp))
                         Text("$totalInstalled", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onTertiaryContainer)
-                        Text("已安装版本", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.75f))
+                        Text(if (isEn) "Installed" else "已安装版本", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.75f))
                     }
                 }
                 // Mod版本数
@@ -391,7 +392,7 @@ fun LaunchScreen() {
                         Icon(Icons.Filled.Extension, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(4.dp))
                         Text("$modCount", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
-                        Text("Mod 版本", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(if (isEn) "Mod Versions" else "Mod 版本", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -402,12 +403,12 @@ fun LaunchScreen() {
                     Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Icon(Icons.Filled.History, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("上次游玩", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(if (isEn) "Last Played" else "上次游玩", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(stats.lastPlayedVersion, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         if (stats.lastPlayedMs > 0L) {
                             val daysAgo = ((System.currentTimeMillis() - stats.lastPlayedMs) / 86400000L).toInt()
-                            Text(if (daysAgo == 0) "今天" else "${daysAgo}天前", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(if (isEn) (if (daysAgo == 0) "Today" else "${daysAgo}d ago") else (if (daysAgo == 0) "今天" else "${daysAgo}天前"), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -424,9 +425,9 @@ fun LaunchScreen() {
                     Box(modifier = Modifier.size(8.dp).clip(CircleShape)
                         .background(if (gameRunning) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.outlineVariant))
                     Text(
-                        if (gameRunning) "游戏运行中  ${selectedVersion?.id ?: ""}"
-                        else if (globalLaunching) globalStatusMsg.ifBlank { "正在启动…" }
-                        else "未运行",
+                        if (gameRunning) (if (isEn) "In Game  ${selectedVersion?.id ?: ""}" else "游戏运行中  ${selectedVersion?.id ?: ""}")
+                        else if (globalLaunching) globalStatusMsg.ifBlank { if (isEn) "Launching…" else "正在启动…" }
+                        else if (isEn) "Not running" else "未运行",
                         style = MaterialTheme.typography.labelMedium,
                         color = if (gameRunning) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -526,7 +527,7 @@ fun LaunchScreen() {
                         }
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                acct?.username ?: "未登录",
+                                acct?.username ?: (if (isEn) "Not logged in" else "未登录"),
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                             )
@@ -564,7 +565,7 @@ fun LaunchScreen() {
                         ) {
                             Icon(Icons.Filled.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text(if (accountList.isEmpty()) "登录" else "添加", style = MaterialTheme.typography.labelSmall)
+                            Text(if (isEn) (if (accountList.isEmpty()) "Login" else "Add") else (if (accountList.isEmpty()) "登录" else "添加"), style = MaterialTheme.typography.labelSmall)
                         }
                         if (acct != null) {
                             Spacer(Modifier.width(6.dp))
@@ -577,7 +578,7 @@ fun LaunchScreen() {
                             ) {
                                 Icon(Icons.Filled.Image, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("头像", style = MaterialTheme.typography.labelSmall)
+                                Text(if (isEn) "Avatar" else "头像", style = MaterialTheme.typography.labelSmall)
                             }
                             if (acct.type == AccountType.Offline) {
                                 Spacer(Modifier.width(6.dp))
@@ -590,7 +591,7 @@ fun LaunchScreen() {
                                 ) {
                                     Icon(Icons.Filled.Checkroom, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text("皮肤", style = MaterialTheme.typography.labelSmall)
+                                    Text(if (isEn) "Skin" else "皮肤", style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                             Spacer(Modifier.width(6.dp))
@@ -615,7 +616,7 @@ fun LaunchScreen() {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp, color = MaterialTheme.colorScheme.tertiary)
                             Spacer(Modifier.width(6.dp))
-                            Text("正在静默刷新 ${rs.username} 的 Token…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                            Text(if (isEn) "Refreshing token for ${rs.username}…" else "正在静默刷新 ${rs.username} 的 Token…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
                         }
                     }
                     is RefreshState.Failed -> {
@@ -941,7 +942,7 @@ fun LaunchScreen() {
                                         LaunchState.updateProgress(80, "正在启动游戏进程…")
                                         val process = withContext(Dispatchers.IO) { engine.execute(context) }
                                         LaunchState.attachProcess(process, ver.id, engine.lastLogFile)
-                                        launchMessage = "游戏已启动: ${ver.id}"
+                                        launchMessage = if (isEn) "Game launched: ${ver.id}" else "游戏已启动: ${ver.id}"
                                     } catch (e: Exception) {
                                         val sw = StringWriter()
                                         e.printStackTrace(PrintWriter(sw))
@@ -949,7 +950,7 @@ fun LaunchScreen() {
                                         errorStackTrace = trace
                                         errorLogPath = writeLaunchFailureLog(ver.id, trace)
                                         showErrorDialog = true
-                                        launchMessage = "启动失败，详情见错误弹窗/日志"
+                                        launchMessage = if (isEn) "Launch failed, see error dialog" else "启动失败，详情见错误弹窗/日志"
                                     } finally {
                                         LaunchState.end()
                                     }
@@ -977,13 +978,13 @@ fun LaunchScreen() {
                             globalLaunching -> {
                                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
                                 Spacer(Modifier.width(8.dp))
-                                Text("启动中…")
+                                Text(if (isEn) "Launching…" else "启动中…")
                             }
                             gameRunning -> {
                                 Icon(Icons.Filled.SportsEsports, contentDescription = null, modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    "游戏运行中…",
+                                    if (isEn) "In Game…" else "游戏运行中…",
                                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                                 )
                             }
@@ -991,7 +992,7 @@ fun LaunchScreen() {
                                 Icon(Icons.Filled.RocketLaunch, contentDescription = null, modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    "启动游戏",
+                                    if (isEn) "Launch" else "启动游戏",
                                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                                 )
                             }
@@ -1003,7 +1004,7 @@ fun LaunchScreen() {
                             onClick = {
                                 GameProcessManager.forceKill()
                                 LaunchState.end()
-                                launchMessage = "已强制结束游戏"
+                                launchMessage = if (isEn) "Game force-killed" else "已强制结束游戏"
                             },
                             modifier = Modifier.height(48.dp),
                             shape = RoundedCornerShape(14.dp),
@@ -1014,7 +1015,7 @@ fun LaunchScreen() {
                         ) {
                             Icon(Icons.Filled.Stop, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("强制结束", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                            Text(if (isEn) "Force Stop" else "强制结束", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
                         }
                     }
                 }
@@ -1081,7 +1082,7 @@ fun LaunchScreen() {
         AlertDialog(
             onDismissRequest = { showLoginDialog = false },
             shape = RoundedCornerShape(20.dp),
-            title = { Text("选择登录方式", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) },
+            title = { Text(if (isEn) "Select Login Method" else "选择登录方式", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) },
             text = {
                 Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     ElevatedCard(
@@ -1093,7 +1094,7 @@ fun LaunchScreen() {
                                 try {
                                     deviceCodeInfo = AuthManager.requestDeviceCode()
                                 } catch (e: Exception) {
-                                    authError = "获取设备码失败: ${e.message}"
+                                    authError = if (isEn) "Failed to get device code: ${e.message}" else "获取设备码失败: ${e.message}"
                                 }
                             }
                         },
@@ -1107,8 +1108,8 @@ fun LaunchScreen() {
                             }
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("微软正版登录", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
-                                Text("Device Code Flow · 需要微软账号", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(if (isEn) "Microsoft Login" else "微软正版登录", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                                Text(if (isEn) "Device Code Flow · Requires Microsoft account" else "Device Code Flow · 需要微软账号", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -1129,8 +1130,8 @@ fun LaunchScreen() {
                             }
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("离线模式", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
-                                Text("输入自定义玩家 ID", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(if (isEn) "Offline Mode" else "离线模式", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                                Text(if (isEn) "Enter a custom player name" else "输入自定义玩家 ID", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -1154,15 +1155,15 @@ fun LaunchScreen() {
                             }
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("第三方登录", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
-                                Text("LittleSkin 或其他 Yggdrasil API", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(if (isEn) "Third-party Login" else "第三方登录", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                                Text(if (isEn) "LittleSkin or other Yggdrasil API" else "LittleSkin 或其他 Yggdrasil API", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showLoginDialog = false }) { Text("取消") }
+                TextButton(onClick = { showLoginDialog = false }) { Text(if (isEn) "Cancel" else "取消") }
             },
         )
     }
@@ -1180,11 +1181,11 @@ fun LaunchScreen() {
                 }
             },
             shape = RoundedCornerShape(20.dp),
-            title = { Text("微软账号验证", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) },
+            title = { Text(if (isEn) "Microsoft Account Verification" else "微软账号验证", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) },
             text = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     if (deviceCodeInfo != null) {
-                        Text("请在浏览器中输入以下验证码：", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(if (isEn) "Enter the following code in your browser:" else "请在浏览器中输入以下验证码：", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(12.dp))
                         Surface(
                             shape = RoundedCornerShape(12.dp),
@@ -1213,14 +1214,14 @@ fun LaunchScreen() {
                         ) {
                             Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("复制并打开浏览器", style = MaterialTheme.typography.labelSmall)
+                            Text(if (isEn) "Copy & Open Browser" else "复制并打开浏览器", style = MaterialTheme.typography.labelSmall)
                         }
                         Spacer(Modifier.height(12.dp))
                         if (authPolling) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                                 Spacer(Modifier.width(8.dp))
-                                Text("等待验证中…", style = MaterialTheme.typography.bodySmall)
+                                Text(if (isEn) "Waiting for verification…" else "等待验证中…", style = MaterialTheme.typography.bodySmall)
                             }
                         } else if (authError.isNotBlank()) {
                             Text(authError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
@@ -1249,7 +1250,7 @@ fun LaunchScreen() {
                                             showMsAuthDialog = false
                                             deviceCodeInfo = null
                                         } catch (e: Exception) {
-                                            authError = "验证失败: ${e.message}"
+                                            authError = if (isEn) "Verification failed: ${e.message}" else "验证失败: ${e.message}"
                                         } finally {
                                             authPolling = false
                                         }
@@ -1257,7 +1258,7 @@ fun LaunchScreen() {
                                 },
                                 shape = RoundedCornerShape(10.dp),
                             ) {
-                                Text("已在浏览器中验证，开始登录")
+                                Text(if (isEn) "Verified in browser, start login" else "已在浏览器中验证，开始登录")
                             }
                         }
                     } else if (authError.isNotBlank()) {
@@ -1265,7 +1266,7 @@ fun LaunchScreen() {
                     } else {
                         CircularProgressIndicator(modifier = Modifier.size(24.dp))
                         Spacer(Modifier.height(8.dp))
-                        Text("获取验证码中…", style = MaterialTheme.typography.bodySmall)
+                        Text(if (isEn) "Fetching verification code…" else "获取验证码中…", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             },
@@ -1274,7 +1275,7 @@ fun LaunchScreen() {
                     showMsAuthDialog = false
                     deviceCodeInfo = null
                     authPolling = false
-                }) { Text("关闭") }
+                }) { Text(if (isEn) "Close" else "关闭") }
             },
         )
     }
@@ -1286,24 +1287,24 @@ fun LaunchScreen() {
         AlertDialog(
             onDismissRequest = { if (!tpLoading) showThirdPartyDialog = false },
             shape = RoundedCornerShape(20.dp),
-            title = { Text("添加第三方账号", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) },
+            title = { Text(if (isEn) "Add Third-party Account" else "添加第三方账号", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("请提供支持 Yggdrasil API 的认证服务器信息。支持拖入 authlib-injector 格式的 json 配置文件自动解析。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (isEn) "Provide a Yggdrasil-compatible auth server URL. Drop an authlib-injector .json file to auto-fill." else "请提供支持 Yggdrasil API 的认证服务器信息。支持拖入 authlib-injector 格式的 json 配置文件自动解析。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     
                     OutlinedTextField(
                         value = tpAuthServerUrl,
                         onValueChange = { tpAuthServerUrl = it; tpError = "" },
-                        label = { Text("认证服务器 (必填)") },
-                        placeholder = { Text("如 https://littleskin.cn/api/yggdrasil") },
+                        label = { Text(if (isEn) "Auth Server (required)" else "认证服务器 (必填)") },
+                        placeholder = { Text(if (isEn) "e.g. https://littleskin.cn/api/yggdrasil" else "如 https://littleskin.cn/api/yggdrasil") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value = tpServerName,
                         onValueChange = { tpServerName = it },
-                        label = { Text("服务器名称 (选填)") },
-                        placeholder = { Text("如 LittleSkin") },
+                        label = { Text(if (isEn) "Server name (optional)" else "服务器名称 (选填)") },
+                        placeholder = { Text(if (isEn) "e.g. LittleSkin" else "如 LittleSkin") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -1315,21 +1316,21 @@ fun LaunchScreen() {
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("快捷设置为 LittleSkin")
+                        Text(if (isEn) "Quick-fill LittleSkin" else "快捷设置为 LittleSkin")
                     }
 
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = tpEmail,
                         onValueChange = { tpEmail = it; tpError = "" },
-                        label = { Text("邮箱 / 账号") },
+                        label = { Text(if (isEn) "Email / Username" else "邮箱 / 账号") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value = tpPassword,
                         onValueChange = { tpPassword = it; tpError = "" },
-                        label = { Text("密码") },
+                        label = { Text(if (isEn) "Password" else "密码") },
                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -1339,7 +1340,7 @@ fun LaunchScreen() {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                             Spacer(Modifier.width(8.dp))
-                            Text("正在认证中…", style = MaterialTheme.typography.bodySmall)
+                            Text(if (isEn) "Authenticating…" else "正在认证中…", style = MaterialTheme.typography.bodySmall)
                         }
                     } else if (tpError.isNotBlank()) {
                         Text(tpError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
@@ -1350,7 +1351,7 @@ fun LaunchScreen() {
                 Button(
                     onClick = {
                         if (tpAuthServerUrl.isBlank() || tpEmail.isBlank() || tpPassword.isBlank()) {
-                            tpError = "请填写服务器地址、邮箱和密码"
+                            tpError = if (isEn) "Please fill in server URL, email, and password" else "请填写服务器地址、邮箱和密码"
                             return@Button
                         }
                         tpLoading = true
@@ -1372,7 +1373,7 @@ fun LaunchScreen() {
                                 AppSettings.save(settings)
                                 showThirdPartyDialog = false
                             } catch (e: Exception) {
-                                tpError = e.message ?: "登录失败"
+                                tpError = e.message ?: (if (isEn) "Login failed" else "登录失败")
                             } finally {
                                 tpLoading = false
                             }
@@ -1380,10 +1381,10 @@ fun LaunchScreen() {
                     },
                     enabled = !tpLoading,
                     shape = RoundedCornerShape(10.dp)
-                ) { Text("完成登录") }
+                ) { Text(if (isEn) "Login" else "完成登录") }
             },
             dismissButton = {
-                TextButton(onClick = { if (!tpLoading) showThirdPartyDialog = false }) { Text("取消") }
+                TextButton(onClick = { if (!tpLoading) showThirdPartyDialog = false }) { Text(if (isEn) "Cancel" else "取消") }
             }
         )
     }
@@ -1392,10 +1393,10 @@ fun LaunchScreen() {
         AlertDialog(
             onDismissRequest = { skinModelDialogForUuid = null },
             shape = RoundedCornerShape(20.dp),
-            title = { Text("选择皮肤模型", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) },
+            title = { Text(if (isEn) "Select Skin Model" else "选择皮肤模型", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("导入前请选择这张皮肤使用的材质模型。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (isEn) "Select the model type for this skin before importing." else "导入前请选择这张皮肤使用的材质模型。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     ElevatedCard(
                         onClick = {
                             skinModelDialogForUuid = null
@@ -1411,7 +1412,7 @@ fun LaunchScreen() {
                             Spacer(Modifier.width(12.dp))
                             Column {
                                 Text("Classic (Steve)", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
-                                Text("经典模型，手臂宽度 4 像素", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(if (isEn) "Classic model, 4-pixel arm width" else "经典模型，手臂宽度 4 像素", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -1430,14 +1431,14 @@ fun LaunchScreen() {
                             Spacer(Modifier.width(12.dp))
                             Column {
                                 Text("Slim (Alex)", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
-                                Text("纤细模型，手臂宽度 3 像素", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(if (isEn) "Slim model, 3-pixel arm width" else "纤细模型，手臂宽度 3 像素", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { skinModelDialogForUuid = null }) { Text("取消") }
+                TextButton(onClick = { skinModelDialogForUuid = null }) { Text(if (isEn) "Cancel" else "取消") }
             },
         )
     }
@@ -1453,10 +1454,10 @@ fun LaunchScreen() {
                 }
             },
             shape = RoundedCornerShape(20.dp),
-            title = { Text("发现新版本: ${updateState.releaseInfo!!.tag_name}", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) },
+            title = { Text(if (isEn) "New version: ${updateState.releaseInfo!!.tag_name}" else "发现新版本: ${updateState.releaseInfo!!.tag_name}", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("更新内容:", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                    Text(if (isEn) "Changelog:" else "更新内容:", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1473,9 +1474,11 @@ fun LaunchScreen() {
                         val downloadedMb = updateState.downloadedBytes / 1024f / 1024f
                         val speedMb = updateState.speedBytesPerSec / 1024f / 1024f
                         val progressText = if (updateState.totalBytes > 0) {
-                            "正在下载... ${"%.1f".format(downloadedMb)}MB / ${"%.1f".format(totalMb)}MB · ${"%.2f".format(speedMb)}MB/s · ${(updateState.downloadProgress * 100).toInt()}%"
+                            if (isEn) "Downloading… ${"%.1f".format(downloadedMb)}MB / ${"%.1f".format(totalMb)}MB · ${"%.2f".format(speedMb)}MB/s · ${(updateState.downloadProgress * 100).toInt()}%"
+                            else "正在下载... ${"%.1f".format(downloadedMb)}MB / ${"%.1f".format(totalMb)}MB · ${"%.2f".format(speedMb)}MB/s · ${(updateState.downloadProgress * 100).toInt()}%"
                         } else {
-                            "正在下载... ${"%.1f".format(downloadedMb)}MB · ${"%.2f".format(speedMb)}MB/s"
+                            if (isEn) "Downloading… ${"%.1f".format(downloadedMb)}MB · ${"%.2f".format(speedMb)}MB/s"
+                            else "正在下载... ${"%.1f".format(downloadedMb)}MB · ${"%.2f".format(speedMb)}MB/s"
                         }
 
                         Spacer(Modifier.height(8.dp))
@@ -1493,7 +1496,7 @@ fun LaunchScreen() {
                         }
                         Text(progressText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                     } else if (updateState.error.isNotBlank()) {
-                        Text("错误: ${updateState.error}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        Text(if (isEn) "Error: ${updateState.error}" else "错误: ${updateState.error}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     }
                 }
             },
@@ -1503,7 +1506,7 @@ fun LaunchScreen() {
                     enabled = !updateState.isDownloading,
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text(if (updateState.isDownloading) "正在更新..." else "立即更新")
+                    Text(if (updateState.isDownloading) (if (isEn) "Updating…" else "正在更新...") else (if (isEn) "Update Now" else "立即更新"))
                 }
             },
             dismissButton = {
@@ -1511,7 +1514,7 @@ fun LaunchScreen() {
                     onClick = { AutoUpdater.dismissUpdate() },
                     enabled = !updateState.isDownloading
                 ) {
-                    Text("暂不更新")
+                    Text(if (isEn) "Later" else "暂不更新")
                 }
             }
         )
@@ -1528,7 +1531,7 @@ fun LaunchScreen() {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Error, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                     Spacer(Modifier.width(8.dp))
-                    Text("启动失败 · 致命错误", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.error)
+                    Text(if (isEn) "Launch Failed · Fatal Error" else "启动失败 · 致命错误", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.error)
                 }
             },
             text = {
@@ -1558,7 +1561,7 @@ fun LaunchScreen() {
                             Desktop.getDesktop().open(File(errorLogPath).parentFile)
                         } catch (_: Exception) { }
                     }
-                }, shape = RoundedCornerShape(8.dp), enabled = errorLogPath.isNotBlank()) { Text("打开日志目录") }
+                }, shape = RoundedCornerShape(8.dp), enabled = errorLogPath.isNotBlank()) { Text(if (isEn) "Open Log Folder" else "打开日志目录") }
             },
             dismissButton = {
                 Row {
@@ -1571,11 +1574,11 @@ fun LaunchScreen() {
                             }
                         },
                         enabled = errorLogPath.isNotBlank(),
-                    ) { Text("打开日志") }
+                    ) { Text(if (isEn) "Open Log" else "打开日志") }
                     TextButton(onClick = {
                         showErrorDialog = false
                         GameProcessManager.clearCrashReport()
-                    }) { Text("关闭") }
+                    }) { Text(if (isEn) "Close" else "关闭") }
                 }
             },
         )

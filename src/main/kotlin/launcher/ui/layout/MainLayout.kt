@@ -90,6 +90,7 @@ object Navigator {
             Screen.Download -> Route.Download
             Screen.Mods -> Route.Mods
             Screen.Settings -> Route.Settings
+            Screen.Log -> Route.Log
         }
     }
 }
@@ -208,6 +209,7 @@ fun MainLayout(modifier: Modifier = Modifier) {
         ) {
             Spacer(Modifier.height(4.dp))
             Screen.entries.forEach { screen ->
+                if (screen == Screen.Log && !ThemeState.showLogSidebar) return@forEach
                 val selected = activeTab == screen
                 SidebarNavItem(
                     screen = screen,
@@ -254,7 +256,8 @@ fun MainLayout(modifier: Modifier = Modifier) {
                 transitionSpec = {
                     val isPrimaryRoute = { r: Route ->
                         r == Route.Launch || r == Route.Versions ||
-                        r == Route.Download || r == Route.Mods || r == Route.Settings
+                        r == Route.Download || r == Route.Mods || r == Route.Settings ||
+                        r == Route.Log
                     }
                     val toSub   = isPrimaryRoute(initialState) && !isPrimaryRoute(targetState)
                     val fromSub = !isPrimaryRoute(initialState) && isPrimaryRoute(targetState)
@@ -326,6 +329,7 @@ fun MainLayout(modifier: Modifier = Modifier) {
                     is Route.DownloadManager -> DownloadManagerScreen()
                     is Route.BedrockPackManager -> BedrockPackManagerScreen(route.versionId, route.versionDir, route.packType)
                     is Route.BedrockWorldManager -> BedrockWorldManagerScreen(route.versionId, route.versionDir)
+                    is Route.Log -> LogScreen()
                 }
             }
 

@@ -1,6 +1,8 @@
 package launcher.ui.screens
 
 import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -77,253 +79,286 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                 (filterLoader.isBlank() || filterLoader in v.loaders)
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        var translatedTitle by remember(project.title) { mutableStateOf(project.title) }
-        var translatedDesc by remember(project.description) { mutableStateOf(project.description) }
-        LaunchedEffect(project.title, project.description) {
-            translatedTitle = MicrosoftTranslate.toChinese(project.title)
-            translatedDesc = if (project.description.isNotBlank()) MicrosoftTranslate.toChinese(project.description) else ""
-        }
-        // ── 返回 + 标题 ──────────────────────────────────────────────────────
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            FilledTonalIconButton(
-                onClick = { Navigator.back() },
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.size(40.dp),
-            ) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", modifier = Modifier.size(20.dp))
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    translatedTitle,
-                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    translatedDesc.ifBlank { project.description },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        Spacer(Modifier.height(16.dp))
+    var translatedTitle by remember(project.title) { mutableStateOf(project.title) }
+    var translatedDesc by remember(project.description) { mutableStateOf(project.description) }
+    LaunchedEffect(project.title, project.description) {
+        translatedTitle = MicrosoftTranslate.toChinese(project.title)
+        translatedDesc = if (project.description.isNotBlank()) MicrosoftTranslate.toChinese(project.description) else ""
+    }
 
-        // ── 项目信息卡片 ─────────────────────────────────────────────────────
-        ElevatedCard(
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+    val listState = rememberLazyListState()
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize().padding(end = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (project.iconUrl.isNotBlank()) {
-                    KamelImage(
-                        resource = asyncPainterResource(data = project.iconUrl),
-                        contentDescription = project.title,
-                        modifier = Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)),
-                        contentScale = ContentScale.Crop,
-                        onLoading = {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-                                modifier = Modifier.size(56.dp),
-                            ) { Box(contentAlignment = Alignment.Center) { CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp) } }
-                        },
-                        onFailure = {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-                                modifier = Modifier.size(56.dp),
-                            ) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Filled.Extension, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp)) } }
-                        },
-                    )
-                } else {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-                        modifier = Modifier.size(56.dp),
+            // ── 顶部导航栏 ───────────────────────────────────────────────────
+            item(key = "header") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FilledTonalIconButton(
+                        onClick = { Navigator.back() },
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.size(42.dp),
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Filled.Extension, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", modifier = Modifier.size(20.dp))
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            translatedTitle,
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            translatedDesc.ifBlank { project.description },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+
+            // ── 项目信息大横幅 ───────────────────────────────────────────────
+            item(key = "banner") {
+                ElevatedCard(
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    elevation = CardDefaults.elevatedCardElevation(defaultElevation = 3.dp),
+                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)),
+                ) {
+                    Row(modifier = Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        if (project.iconUrl.isNotBlank()) {
+                            KamelImage(
+                                resource = asyncPainterResource(data = project.iconUrl),
+                                contentDescription = project.title,
+                                modifier = Modifier.size(72.dp).clip(RoundedCornerShape(20.dp)),
+                                contentScale = ContentScale.Crop,
+                                onLoading = {
+                                    Box(Modifier.size(72.dp).clip(RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.primaryContainer), Alignment.Center) {
+                                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                    }
+                                },
+                                onFailure = {
+                                    Box(Modifier.size(72.dp).clip(RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.primaryContainer), Alignment.Center) {
+                                        Icon(Icons.Filled.Extension, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp))
+                                    }
+                                },
+                            )
+                        } else {
+                            Box(Modifier.size(72.dp).clip(RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.primaryContainer), Alignment.Center) {
+                                Icon(Icons.Filled.Extension, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp))
+                            }
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(translatedTitle, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(6.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.primary) {
+                                    Text(project.projectType, modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onPrimary)
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Icon(Icons.Filled.Download, null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(formatCount(project.downloads), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            if (project.categories.isNotEmpty()) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(project.categories.joinToString(" · "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
                         }
                     }
                 }
-                Spacer(Modifier.width(16.dp))
-                Column {
-                    Row {
-                        Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(4.dp))
-                        Text(formatCount(project.downloads), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(12.dp))
-                        Icon(Icons.Filled.Category, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(4.dp))
-                        Text(project.projectType, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    if (project.categories.isNotEmpty()) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            project.categories.joinToString(", "),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        )
+            }
+
+            // ── 目标版本选择器卡片 ───────────────────────────────────────────
+            if (localVersions.isNotEmpty() && !isJavaModpackPage) {
+                item(key = "target_version") {
+                    ElevatedCard(
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
+                        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Box(Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.primaryContainer), Alignment.Center) {
+                                    Icon(Icons.Filled.FolderOpen, null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(18.dp))
+                                }
+                                Text("下载目标版本", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            ExposedDropdownMenuBox(
+                                expanded = targetVersionExpanded,
+                                onExpandedChange = { targetVersionExpanded = it },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                OutlinedTextField(
+                                    value = selectedTargetVersion?.let { "${it.id}${if (it.loaderType != LoaderType.Vanilla) " (${it.loaderType})" else ""}" }
+                                        ?: if (edition == "bedrock") "请选择基岩版本" else "全局目录",
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text(if (edition == "bedrock") "下载到基岩版本" else "下载到版本") },
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(targetVersionExpanded) },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                                )
+                                ExposedDropdownMenu(expanded = targetVersionExpanded, onDismissRequest = { targetVersionExpanded = false }) {
+                                    if (edition != "bedrock") {
+                                        DropdownMenuItem(
+                                            text = { Text("全局目录") },
+                                            onClick = { selectedTargetVersion = null; targetVersionExpanded = false },
+                                            leadingIcon = { if (selectedTargetVersion == null) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
+                                        )
+                                    }
+                                    localVersions.forEach { lv ->
+                                        DropdownMenuItem(
+                                            text = { Text("${lv.id}${if (lv.loaderType != LoaderType.Vanilla) " (${lv.loaderType})" else ""}") },
+                                            onClick = { selectedTargetVersion = lv; targetVersionExpanded = false },
+                                            leadingIcon = { if (selectedTargetVersion?.id == lv.id) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
-        }
-        Spacer(Modifier.height(16.dp))
 
-        // ── 目标版本选择器 ─────────────────────────────────────────────────
-        if (localVersions.isNotEmpty() && !isJavaModpackPage) {
-            ExposedDropdownMenuBox(
-                expanded = targetVersionExpanded,
-                onExpandedChange = { targetVersionExpanded = it },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                OutlinedTextField(
-                    value = selectedTargetVersion?.let { "${it.id}${if (it.loaderType != LoaderType.Vanilla) " (${it.loaderType})" else ""}" }
-                        ?: if (edition == "bedrock") "请选择基岩版本" else "全局目录（未选择版本）",
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text(if (edition == "bedrock") "下载到基岩版本" else "下载到版本") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(targetVersionExpanded) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.menuAnchor().fillMaxWidth(),
-                )
-                ExposedDropdownMenu(
-                    expanded = targetVersionExpanded,
-                    onDismissRequest = { targetVersionExpanded = false },
-                ) {
-                    if (edition != "bedrock") {
-                        DropdownMenuItem(
-                            text = { Text("全局目录") },
-                            onClick = { selectedTargetVersion = null; targetVersionExpanded = false },
-                        )
-                    }
-                    localVersions.forEach { lv ->
-                        DropdownMenuItem(
-                            text = { Text("${lv.id}${if (lv.loaderType != LoaderType.Vanilla) " (${lv.loaderType})" else ""}") },
-                            onClick = { selectedTargetVersion = lv; targetVersionExpanded = false },
-                        )
+            // ── 过滤器卡片（Java 版）────────────────────────────────────────
+            if (edition != "bedrock") {
+                item(key = "filter") {
+                    ElevatedCard(
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
+                        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Box(Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.secondaryContainer), Alignment.Center) {
+                                    Icon(Icons.Filled.FilterList, null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(18.dp))
+                                }
+                                Text("筛选版本", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                                Spacer(Modifier.weight(1f))
+                                if (filterGameVersion.isNotBlank() || filterLoader.isNotBlank()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                                        modifier = Modifier.clickable { filterGameVersion = ""; filterLoader = "" },
+                                    ) {
+                                        Text("清除筛选", modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                            ExposedDropdownMenuBox(
+                                expanded = gameVersionExpanded,
+                                onExpandedChange = { gameVersionExpanded = it },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                OutlinedTextField(
+                                    value = filterGameVersion.ifBlank { "全部版本" },
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("MC 版本") },
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(gameVersionExpanded) },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                                    leadingIcon = { Icon(Icons.Filled.Games, null, modifier = Modifier.size(18.dp)) },
+                                )
+                                ExposedDropdownMenu(expanded = gameVersionExpanded, onDismissRequest = { gameVersionExpanded = false }) {
+                                    DropdownMenuItem(text = { Text("全部版本") }, onClick = { filterGameVersion = ""; gameVersionExpanded = false })
+                                    availableGameVersions.take(30).forEach { gv ->
+                                        DropdownMenuItem(
+                                            text = { Text(gv) },
+                                            onClick = { filterGameVersion = gv; gameVersionExpanded = false },
+                                            leadingIcon = { if (filterGameVersion == gv) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
+                                        )
+                                    }
+                                }
+                            }
+                            // 加载器过滤 chips
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(
+                                    selected = filterLoader.isBlank(),
+                                    onClick = { filterLoader = "" },
+                                    label = { Text("全部") },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.primaryContainer),
+                                )
+                                availableLoaders.take(5).forEach { loader ->
+                                    FilterChip(
+                                        selected = filterLoader == loader,
+                                        onClick = { filterLoader = if (filterLoader == loader) "" else loader },
+                                        label = { Text(loader) },
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.primaryContainer),
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
-            Spacer(Modifier.height(8.dp))
-        }
 
-        // ── 过滤器 ───────────────────────────────────────────────────────────
-        if (edition != "bedrock") Row(verticalAlignment = Alignment.CenterVertically) {
-            // 游戏版本下拉
-            ExposedDropdownMenuBox(
-                expanded = gameVersionExpanded,
-                onExpandedChange = { gameVersionExpanded = it },
-                modifier = Modifier.weight(1f),
-            ) {
-                OutlinedTextField(
-                    value = filterGameVersion.ifBlank { "全部版本" },
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("MC 版本") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(gameVersionExpanded) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.menuAnchor(),
-                )
-                ExposedDropdownMenu(
-                    expanded = gameVersionExpanded,
-                    onDismissRequest = { gameVersionExpanded = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("全部版本") },
-                        onClick = { filterGameVersion = ""; gameVersionExpanded = false },
+            // ── 状态消息 ─────────────────────────────────────────────────────
+            if (statusMessage.isNotBlank()) {
+                item(key = "status") {
+                    val isOk = "成功" in statusMessage || "加入" in statusMessage || "完成" in statusMessage
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isOk) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                        else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Icon(
+                                if (isOk) Icons.Filled.CheckCircle else Icons.Filled.Error,
+                                null, modifier = Modifier.size(18.dp),
+                                tint = if (isOk) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                            )
+                            Text(statusMessage, style = MaterialTheme.typography.bodySmall, color = if (isOk) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+
+            // ── 版本列表分隔标题 ─────────────────────────────────────────────
+            item(key = "versions_title") {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        if (isLoading) "加载版本列表…" else if (filteredVersions.isEmpty()) "无匹配版本" else "版本列表 (${filteredVersions.size})",
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    availableGameVersions.take(30).forEach { gv ->
-                        DropdownMenuItem(
-                            text = { Text(gv) },
-                            onClick = { filterGameVersion = gv; gameVersionExpanded = false },
-                        )
+                    if (isLoading) CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                }
+            }
+
+            // ── 空状态 ───────────────────────────────────────────────────────
+            if (!isLoading && filteredVersions.isEmpty()) {
+                item(key = "empty") {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Box(Modifier.size(64.dp).clip(RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest), Alignment.Center) {
+                                Icon(Icons.Filled.SearchOff, null, modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                            }
+                            Text("没有匹配的版本", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }
-            Spacer(Modifier.width(8.dp))
 
-            // 加载器过滤 chips
-            Column {
-                Text("加载器", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    FilterChip(
-                        selected = filterLoader.isBlank(),
-                        onClick = { filterLoader = "" },
-                        label = { Text("全部", style = MaterialTheme.typography.labelSmall) },
-                        shape = RoundedCornerShape(8.dp),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        ),
-                    )
-                    availableLoaders.take(4).forEach { loader ->
-                        FilterChip(
-                            selected = filterLoader == loader,
-                            onClick = { filterLoader = if (filterLoader == loader) "" else loader },
-                            label = { Text(loader, style = MaterialTheme.typography.labelSmall) },
-                            shape = RoundedCornerShape(8.dp),
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                            ),
-                        )
-                    }
-                }
-            }
-        }
-        if (edition != "bedrock") Spacer(Modifier.height(12.dp))
-
-        // ── 状态消息 ─────────────────────────────────────────────────────────
-        if (statusMessage.isNotBlank()) {
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = if ("成功" in statusMessage) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    statusMessage,
-                    modifier = Modifier.padding(12.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if ("成功" in statusMessage) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-        }
-
-        // ── 版本列表 ─────────────────────────────────────────────────────────
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else if (filteredVersions.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Filled.SearchOff, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
-                    Spacer(Modifier.height(8.dp))
-                    Text("没有匹配的版本", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        } else {
-            val listState = rememberLazyListState()
-            Box(modifier = Modifier.fillMaxSize()) {
-            LazyColumn(
-                state = listState,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxSize().padding(end = 8.dp),
-            ) {
-                items(filteredVersions, key = { it.id }) { ver ->
+            // ── 版本条目 ─────────────────────────────────────────────────────
+            items(filteredVersions, key = { it.id }) { ver ->
                     val isDownloading = downloadingId == ver.id
                     ElevatedCard(
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(18.dp),
                         modifier = Modifier.fillMaxWidth(),
                         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
                         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -340,27 +375,21 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
-                                Spacer(Modifier.height(4.dp))
+                                Spacer(Modifier.height(6.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     ver.gameVersions.take(3).forEach { gv ->
-                                        SuggestionChip(
-                                            onClick = {},
-                                            label = { Text(gv, style = MaterialTheme.typography.labelSmall) },
-                                            shape = RoundedCornerShape(6.dp),
-                                            modifier = Modifier.height(22.dp),
-                                        )
+                                        Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)) {
+                                            Text(gv, modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                        }
                                     }
                                     ver.loaders.forEach { ld ->
-                                        SuggestionChip(
-                                            onClick = {},
-                                            label = { Text(ld, style = MaterialTheme.typography.labelSmall) },
-                                            shape = RoundedCornerShape(6.dp),
-                                            modifier = Modifier.height(22.dp),
-                                        )
+                                        Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)) {
+                                            Text(ld, modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                                        }
                                     }
                                 }
                                 if (ver.files.isNotEmpty()) {
-                                    Spacer(Modifier.height(2.dp))
+                                    Spacer(Modifier.height(4.dp))
                                     Text(
                                         ver.files.first().filename + " · ${"%.1f".format(ver.files.first().size / 1_048_576.0)} MB",
                                         style = MaterialTheme.typography.labelSmall,
@@ -368,7 +397,7 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                                     )
                                 }
                             }
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(Modifier.width(10.dp))
                             if (isDownloading) {
                                 CircularProgressIndicator(modifier = Modifier.size(36.dp), strokeWidth = 3.dp)
                             } else {
@@ -531,13 +560,13 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                         }
                     }
                 }
-            }
-            VerticalScrollbar(
-                adapter = rememberScrollbarAdapter(listState),
-                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
-            )
-            }
+
+            item(key = "bottom_spacer") { Spacer(Modifier.height(16.dp)) }
         }
+        VerticalScrollbar(
+            adapter = rememberScrollbarAdapter(listState),
+            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+        )
     }
 }
 

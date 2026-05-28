@@ -10,4 +10,5 @@ enum class Screen(val label: String, val labelEn: String, val icon: ImageVector)
     Download("下载", "Download", Icons.Filled.CloudDownload),
     Mods("模组", "Mods", Icons.Filled.Extension),
     Settings("设置", "Settings", Icons.Filled.Settings),
+    Log("日志", "Logs", Icons.Filled.Terminal),
 }

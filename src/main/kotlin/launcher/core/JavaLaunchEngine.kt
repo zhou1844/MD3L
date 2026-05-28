@@ -49,6 +49,21 @@ class JavaLaunchEngine : ILaunchEngine {
         val nativesDir = context.nativesDir
         if (!nativesDir.exists()) nativesDir.mkdirs()
 
+        // 若当前版本 inheritsFrom 父版本，确保父版本的 natives 也被复制到当前目录
+        // （OptiFine / LiteLoader 等安装后版本目录下没有 natives，需从父版本继承）
+        val inheritsFrom = root["inheritsFrom"]?.jsonPrimitive?.contentOrNull
+        if (!inheritsFrom.isNullOrBlank()) {
+            val parentNatives = File(context.minecraftDir, "versions/$inheritsFrom/natives")
+            if (parentNatives.isDirectory) {
+                parentNatives.listFiles()?.forEach { f ->
+                    val dest = File(nativesDir, f.name)
+                    if (!dest.exists() && f.isFile) {
+                        runCatching { f.copyTo(dest, overwrite = false) }
+                    }
+                }
+            }
+        }
+
         // ── 版本隔离目录创建 ──────────────────────────────────────────────
         val isolatedDir = context.gameDir
         if (!isolatedDir.exists()) isolatedDir.mkdirs()
@@ -830,12 +845,16 @@ class JavaLaunchEngine : ILaunchEngine {
         collectGameArgs(root)
 
         // Legacy minecraftArguments（旧版 1.12.2 及以下）
-        val legacySrc = root["minecraftArguments"]?.jsonPrimitive?.contentOrNull
-            ?: inheritanceRoots.asReversed().firstNotNullOfOrNull {
-                it["minecraftArguments"]?.jsonPrimitive?.contentOrNull
-            }
-        legacySrc?.split(" ")?.forEach { token ->
-            args.add(resolveArgTemplate(token, context, "", nativesDir))
+        // 合并父版本 + 当前版本的 minecraftArguments，父版本优先提供标准参数，当前版本追加 tweakClass 等
+        val legacyTokens = mutableListOf<String>()
+        inheritanceRoots.asReversed().firstNotNullOfOrNull {
+            it["minecraftArguments"]?.jsonPrimitive?.contentOrNull
+        }?.split(" ")?.let { legacyTokens.addAll(it) }
+        root["minecraftArguments"]?.jsonPrimitive?.contentOrNull?.split(" ")?.forEach { token ->
+            if (token.isNotBlank() && token !in legacyTokens) legacyTokens.add(token)
+        }
+        legacyTokens.forEach { token ->
+            if (token.isNotBlank()) args.add(resolveArgTemplate(token, context, "", nativesDir))
         }
 
         args.add("--width"); args.add(context.windowWidth.toString())

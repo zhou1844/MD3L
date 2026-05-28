@@ -203,6 +203,24 @@ object InstallOrchestrator {
                         javaPath = resolvedJavaPath,
                     )
                 }
+                // 加载器安装完成后，若同时选了 OptiFine 则继续安装
+                if (req.optifineVersion != null) {
+                    DownloadHub.upsert(DownloadHub.HubTask(
+                        id = taskId, name = taskName,
+                        type = DownloadHub.TaskType.JavaVersion,
+                        step = "${req.loaderType} 完成，正在安装 OptiFine…", fraction = 0.9f,
+                    ))
+                    val resolvedJava = withContext(Dispatchers.IO) {
+                        JavaManager.resolveJavaForLaunch(req.version.id, req.javaPath) { }
+                    }
+                    LoaderInstaller.installOptiFine(
+                        mcVersion = req.version.id,
+                        optifineVersion = req.optifineVersion,
+                        minecraftDir = req.minecraftDir,
+                        baseVersionId = req.customName,
+                        javaPath = resolvedJava,
+                    )
+                }
                 DownloadHub.upsert(DownloadHub.HubTask(
                     id = taskId, name = taskName,
                     type = DownloadHub.TaskType.JavaVersion,

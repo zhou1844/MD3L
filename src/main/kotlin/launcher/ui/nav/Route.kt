@@ -20,6 +20,7 @@ sealed class Route {
     data class ModDetail(val project: ModrinthProject, val edition: String = "java", val contentType: String = project.projectType) : Route()
     data class CfBedrockDetail(val project: CfBedrockProject) : Route()
     data object DownloadManager : Route()
+    data object Log : Route()
     data class BedrockPackManager(val versionId: String, val versionDir: String, val packType: String) : Route() // packType: behavior_packs | resource_packs
     data class BedrockWorldManager(val versionId: String, val versionDir: String) : Route()
 }
@@ -30,6 +31,7 @@ fun Route.primaryTab(): Screen = when (this) {
     is Route.Download, is Route.VersionDetail, is Route.BedrockVersionDetail, is Route.DownloadManager -> Screen.Download
     is Route.Mods, is Route.BedrockMods, is Route.ModDetail, is Route.CfBedrockDetail -> Screen.Mods
     is Route.Settings -> Screen.Settings
+    is Route.Log -> Screen.Log
     is Route.BedrockPackManager -> Screen.Versions
     is Route.BedrockWorldManager -> Screen.Versions
 }
