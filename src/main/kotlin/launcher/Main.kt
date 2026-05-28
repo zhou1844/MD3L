@@ -10,7 +10,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -81,8 +80,7 @@ private fun runLauncherApp() = application {
         title = "MD3L",
         icon = windowIcon,
         undecorated = true,
-        transparent = true,
-        visible = true,
+        transparent = false,
     ) {
         val scope = rememberCoroutineScope()
         // 默认 true 让窗口立即可见，后台加载完后若需要 EULA 再切换
@@ -309,7 +307,6 @@ private fun FrameWindowScope.AppWindow(
                 if (dtde.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
                     dtde.acceptDrag(DnDConstants.ACTION_COPY)
                 } else {
-                    dtde.rejectDrag()
                 }
             }
 
@@ -383,20 +380,18 @@ private fun FrameWindowScope.AppWindow(
         )
     }
 
-    // 移除导致周围出现点击盲区的透明边距 padding
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Transparent),
+            .background(MaterialTheme.colorScheme.background)
+            .then(surfaceDragModifier),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
-            modifier = Modifier
-                .fillMaxSize()
-                .then(surfaceDragModifier),
+            modifier = Modifier.fillMaxSize(),
             shape = windowShape,
             color = MaterialTheme.colorScheme.background,
-            shadowElevation = 0.dp, // 移除会导致外部绘制区域问题的 Compose Shadow
+            shadowElevation = 0.dp,
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 WindowDraggableArea {
