@@ -309,6 +309,12 @@ object ThemeState {
     var uiShowVersionBadge by mutableStateOf(true)    // 侧边栏版本号
     var uiCornerRadius by mutableStateOf(16)          // 全局圆角 dp
     var uiSidebarWidth by mutableStateOf(80)          // 侧边栏宽度 dp
+    // 启动行为
+    var startupPage by mutableStateOf("launch")       // launch / versions / download
+    var closeAfterLaunch by mutableStateOf(false)
+    var confirmBeforeClose by mutableStateOf(true)
+    var showConsoleOnLaunch by mutableStateOf(false)
+    var checkUpdateOnStartup by mutableStateOf(true)
     // 预加载的壁纸 bitmap（在 Main 启动时同步加载，消除首帧空白）
     var cachedBgBitmap by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
     var cachedBgKey by mutableStateOf("")  // 仅 bgPath，模糊由 GPU layer 实时处理
