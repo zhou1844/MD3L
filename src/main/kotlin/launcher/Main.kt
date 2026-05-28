@@ -10,7 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -74,6 +74,8 @@ private fun runLauncherApp() = application {
     )
     val appIconImage = remember { loadTaskbarIconImage() }
     val windowIcon = painterResource("app_icon.ico")
+    // 延迟显示窗口直到第一帧已经渲染，避免幽灵窗口
+    var windowVisible by remember { mutableStateOf(false) }
 
     Window(
         onCloseRequest = ::exitApplication,
@@ -81,7 +83,8 @@ private fun runLauncherApp() = application {
         title = "MD3L",
         icon = windowIcon,
         undecorated = true,
-        transparent = false,
+        transparent = true,
+        visible = windowVisible,
     ) {
         val scope = rememberCoroutineScope()
         // 默认 true 让窗口立即可见，后台加载完后若需要 EULA 再切换
@@ -96,6 +99,14 @@ private fun runLauncherApp() = application {
                     runCatching { Taskbar.getTaskbar().iconImage = image }
                 }
             }
+        }
+
+        // AWT 窗口背景设为全透明（防止 NVIDIA Overlay 渗入），第一帧后再显示窗口
+        LaunchedEffect(Unit) {
+            window.background = java.awt.Color(0, 0, 0, 0)
+            // 等待 Compose 至少渲染一帧再显示（避免幽灵窗口）
+            kotlinx.coroutines.delay(80)
+            windowVisible = true
         }
 
         LaunchedEffect(Unit) {
@@ -391,8 +402,7 @@ private fun FrameWindowScope.AppWindow(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .clip(windowShape)
-            .background(MaterialTheme.colorScheme.background)
+            .background(Color.Transparent)
             .then(surfaceDragModifier),
         contentAlignment = Alignment.Center,
     ) {
