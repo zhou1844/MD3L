@@ -29,6 +29,7 @@ private enum class LoaderOption(val label: String) {
     Forge("Forge"),
     Fabric("Fabric"),
     NeoForge("NeoForge"),
+    OptiFine("OptiFine"),
 }
 
 /**
@@ -61,9 +62,22 @@ fun VersionDetailScreen(version: RemoteVersion) {
 
     // 当用户切换 Loader 类型时，网络获取可用 Loader 版本
     LaunchedEffect(selectedLoader) {
-        if (selectedLoader == LoaderOption.None) {
+        if (selectedLoader == LoaderOption.None || selectedLoader == LoaderOption.OptiFine) {
             loaderVersions = emptyList()
             selectedLoaderVersion = null
+            if (selectedLoader == LoaderOption.OptiFine) {
+                isLoadingLoaderVersions = true
+                try {
+                    val list = withContext(Dispatchers.IO) { fetchOptiFineVersions(version.id) }
+                    loaderVersions = list
+                    if (list.isNotEmpty()) selectedLoaderVersion = list.first()
+                    else installMessage = "暂无可用的 OptiFine 版本（该 MC 版本可能尚未支持）"
+                } catch (e: Exception) {
+                    installMessage = "获取 OptiFine 版本列表失败: ${e.message}"
+                } finally {
+                    isLoadingLoaderVersions = false
+                }
+            }
             return@LaunchedEffect
         }
         isLoadingLoaderVersions = true
@@ -318,10 +332,11 @@ fun VersionDetailScreen(version: RemoteVersion) {
                             customName = finalName,
                             maxThreads = settings.maxDownloadThreads,
                             javaPath = settings.javaPath,
-                            loaderType = if (loader != LoaderOption.None && loaderVer != null) loader.label else null,
-                            loaderVersion = loaderVer?.version,
+                            loaderType = if (loader != LoaderOption.None && loader != LoaderOption.OptiFine && loaderVer != null) loader.label else null,
+                            loaderVersion = if (loader != LoaderOption.OptiFine) loaderVer?.version else null,
                             forgeBuild = if (loader == LoaderOption.Forge)
                                 loaderVer?.metadata?.get("build")?.toIntOrNull() ?: 0 else 0,
+                            optifineVersion = if (loader == LoaderOption.OptiFine) loaderVer?.version else null,
                         )
                         InstallOrchestrator.launch(req)
 
@@ -494,6 +509,22 @@ private suspend fun fetchNeoForgeVersions(mcVersion: String): List<LoaderVersion
                 ?: return@mapNotNull null
             LoaderVersionItem(ver)
         }.reversed()
+    } catch (_: Exception) { emptyList() }
+}
+
+private suspend fun fetchOptiFineVersions(mcVersion: String): List<LoaderVersionItem> = withContext(Dispatchers.IO) {
+    try {
+        val url = "https://bmclapi2.bangbang93.com/optifine/$mcVersion"
+        val text = loaderHttpGet(url)
+        if (text.isBlank()) return@withContext emptyList()
+        val arr = httpJson.parseToJsonElement(text).jsonArray
+        arr.mapNotNull { el ->
+            val obj = el.jsonObject
+            val patch = obj["patch"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val type  = obj["type"]?.jsonPrimitive?.contentOrNull ?: "HD_U"
+            val ver   = "${type}_$patch"
+            LoaderVersionItem(version = ver, label = "OptiFine $ver")
+        }
     } catch (_: Exception) { emptyList() }
 }
 

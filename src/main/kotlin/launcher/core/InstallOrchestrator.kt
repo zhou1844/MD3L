@@ -23,6 +23,7 @@ object InstallOrchestrator {
         val loaderType: String? = null,     // "Fabric" / "Forge" / "NeoForge"
         val loaderVersion: String? = null,
         val forgeBuild: Int = 0,
+        val optifineVersion: String? = null, // e.g. "HD_U_I7"
     )
 
     /**
@@ -108,7 +109,32 @@ object InstallOrchestrator {
                 return@launch
             }
 
-            // 原版安装完成
+            // 原版安装完成 —— 检查是否安装 OptiFine
+            if (req.optifineVersion != null && req.loaderType == null) {
+                DownloadHub.upsert(DownloadHub.HubTask(
+                    id = taskId, name = taskName,
+                    type = DownloadHub.TaskType.JavaVersion,
+                    step = "原版完成，正在安装 OptiFine…", fraction = 0.6f,
+                ))
+                try {
+                    val resolvedJava = withContext(Dispatchers.IO) {
+                        JavaManager.resolveJavaForLaunch(req.version.id, req.javaPath) { msg ->
+                            DownloadHub.upsert(DownloadHub.HubTask(id = taskId, name = taskName, type = DownloadHub.TaskType.JavaVersion, step = "准备 Java: $msg", fraction = 0.65f))
+                        }
+                    }
+                    LoaderInstaller.installOptiFine(
+                        mcVersion = req.version.id,
+                        optifineVersion = req.optifineVersion,
+                        minecraftDir = req.minecraftDir,
+                        baseVersionId = req.customName,
+                        javaPath = resolvedJava,
+                    )
+                    DownloadHub.upsert(DownloadHub.HubTask(id = taskId, name = taskName, type = DownloadHub.TaskType.JavaVersion, status = DownloadHub.TaskStatus.Done, step = "全部安装完成", fraction = 1f))
+                } catch (e: Exception) {
+                    DownloadHub.upsert(DownloadHub.HubTask(id = taskId, name = taskName, type = DownloadHub.TaskType.JavaVersion, status = DownloadHub.TaskStatus.Error, step = "原版已装，OptiFine 失败: ${e.message}", error = e.message ?: ""))
+                }
+                return@launch
+            }
             if (req.loaderType == null) {
                 DownloadHub.upsert(DownloadHub.HubTask(
                     id = taskId, name = taskName,
