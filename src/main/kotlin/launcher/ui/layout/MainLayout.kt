@@ -54,6 +54,19 @@ object Navigator {
         private set
     var lastPrimaryTap by mutableStateOf<Screen>(Screen.Launch)
         private set
+    var initialized by mutableStateOf(false)
+        private set
+
+    fun applyStartupPage(page: String) {
+        if (initialized) return
+        initialized = true
+        val screen = when (page) {
+            "versions" -> Screen.Versions
+            "download" -> Screen.Download
+            else -> Screen.Launch
+        }
+        navigatePrimary(screen)
+    }
 
     private val backStack = mutableListOf<Route>()
 
@@ -84,6 +97,11 @@ object Navigator {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainLayout(modifier: Modifier = Modifier) {
+    // 应用默认起始页设置
+    LaunchedEffect(ThemeState.startupPage) {
+        Navigator.applyStartupPage(ThemeState.startupPage)
+    }
+
     val currentRoute = Navigator.current
     val activeTab = currentRoute.primaryTab()
     val isLaunching by LaunchState.isLaunching.collectAsState()

@@ -76,9 +76,13 @@ private fun runLauncherApp() = application {
     val windowIcon = painterResource("app_icon.ico")
     // 延迟显示窗口直到第一帧已经渲染，避免幽灵窗口
     var windowVisible by remember { mutableStateOf(false) }
+    var showCloseConfirm by remember { mutableStateOf(false) }
 
     Window(
-        onCloseRequest = ::exitApplication,
+        onCloseRequest = {
+            if (ThemeState.confirmBeforeClose) showCloseConfirm = true
+            else exitApplication()
+        },
         state = windowState,
         title = "MD3L",
         icon = windowIcon,
@@ -152,6 +156,11 @@ private fun runLauncherApp() = application {
                     ThemeState.uiShowVersionBadge = settings.uiShowVersionBadge
                     ThemeState.uiCornerRadius = settings.uiCornerRadius
                     ThemeState.uiSidebarWidth = settings.uiSidebarWidth
+                    ThemeState.startupPage = settings.startupPage
+                    ThemeState.closeAfterLaunch = settings.closeAfterLaunch
+                    ThemeState.confirmBeforeClose = settings.confirmBeforeClose
+                    ThemeState.showConsoleOnLaunch = settings.showConsoleOnLaunch
+                    ThemeState.checkUpdateOnStartup = settings.checkUpdateOnStartup
                     DownloadManager.activeMirror = settings.downloadMirror
                     // 若首次启动需要 EULA，切换到 EULA 界面
                     if (!settings.eulaAccepted) eulaAccepted = false
@@ -168,7 +177,7 @@ private fun runLauncherApp() = application {
                     }
                 }
 
-                launcher.core.AutoUpdater.checkForUpdate()
+                if (ThemeState.checkUpdateOnStartup) launcher.core.AutoUpdater.checkForUpdate()
             }
         }
 
@@ -196,6 +205,24 @@ private fun runLauncherApp() = application {
                 true -> {
                     // 主界面
                     AppWindow(windowState, ::exitApplication)
+
+                    if (showCloseConfirm) {
+                        AlertDialog(
+                            onDismissRequest = { showCloseConfirm = false },
+                            title = { Text(if (ThemeState.language == "en") "Exit MD3L?" else "退出 MD3L？") },
+                            text = { Text(if (ThemeState.language == "en") "Are you sure you want to exit the launcher?" else "确定要退出启动器吗？") },
+                            confirmButton = {
+                                TextButton(onClick = { showCloseConfirm = false; exitApplication() }) {
+                                    Text(if (ThemeState.language == "en") "Exit" else "退出", color = MaterialTheme.colorScheme.error)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showCloseConfirm = false }) {
+                                    Text(if (ThemeState.language == "en") "Cancel" else "取消")
+                                }
+                            },
+                        )
+                    }
 
                     if (showUpdateSuccess != null) {
                         AlertDialog(
@@ -249,6 +276,16 @@ private fun FrameWindowScope.AppWindow(
 ) {
     var dropMessage by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+
+    // closeAfterLaunch: 游戏进程启动时隐藏窗口，退出时恢复
+    val activeProcess by launcher.core.GameProcessManager.activeProcess.collectAsState()
+    LaunchedEffect(activeProcess) {
+        if (ThemeState.closeAfterLaunch) {
+            window.isVisible = activeProcess == null
+        } else {
+            if (!window.isVisible) window.isVisible = true
+        }
+    }
 
     fun launchModpackImport(files: List<File>) {
         val acceptedExts = setOf("zip", "mrpack", "md3l", "md3lbackup")
