@@ -117,6 +117,7 @@ data class AppSettings(
     val uiCompactMode: Boolean = false,     // 减少各组件间距
     val uiShowVersionBadge: Boolean = true, // 侧边栏底部显示版本号
     val uiCornerRadius: Int = 16,           // dp，全局圆角半径
+    val showLogSidebar: Boolean = false,    // 侧边栏显示日志入口（需手动开启）
 ) {
     companion object {
         private val json = Json {

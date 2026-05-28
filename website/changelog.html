@@ -85,13 +85,35 @@
   <div class="container">
     <div class="timeline">
 
-      <!-- v1.3.6 -->
+      <!-- v1.3.8 -->
       <div class="tl-item reveal">
         <div class="tl-dot"></div>
         <div class="tl-card">
           <div class="tl-header">
-            <span class="tl-version">v1.3.6</span>
+            <span class="tl-version">v1.3.8</span>
             <span class="tl-badge latest">最新</span>
+            <span class="tl-date">2026-05</span>
+          </div>
+          <ul class="change-list">
+            <li class="change-item"><span class="change-type type-new">新增</span>支持 OptiFine 全自动静默安装，无需用户手动操作，安装完成后自动跳转至版本列表</li>
+            <li class="change-item"><span class="change-type type-new">新增</span>侧边栏加入实时日志入口，可在通用设置中开启，支持搜索过滤、仅显示错误、自动滚动与清空</li>
+            <li class="change-item"><span class="change-type type-new">新增</span>更多 UI 自定义选项：侧边栏宽度、全局圆角半径、紧凑模式等</li>
+            <li class="change-item"><span class="change-type type-imp">优化</span>重构 ModDetailScreen、VersionDetailScreen 等页面为 MD3 风格，采用 LazyColumn 统一滚动</li>
+            <li class="change-item"><span class="change-type type-fix">修复</span>OptiFine 安装完成后进度指示器仍转圈的问题</li>
+            <li class="change-item"><span class="change-type type-fix">修复</span>继承父版本（inheritsFrom）的版本启动时 natives 缺失导致 no lwjgl 崩溃的问题</li>
+            <li class="change-item"><span class="change-type type-fix">修复</span>日志界面 LazyColumn key 碰撞导致崩溃的问题</li>
+            <li class="change-item"><span class="change-type type-fix">修复</span>版本列表右侧"安装"徽章视觉问题，改为简洁箭头图标</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- v1.3.6 -->
+      <div class="tl-item reveal">
+        <div class="tl-dot old"></div>
+        <div class="tl-card">
+          <div class="tl-header">
+            <span class="tl-version">v1.3.6</span>
+            <span class="tl-badge minor">次要版本</span>
             <span class="tl-date">2026-05</span>
           </div>
           <ul class="change-list">

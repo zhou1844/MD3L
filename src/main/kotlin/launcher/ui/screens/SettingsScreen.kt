@@ -61,6 +61,7 @@ fun SettingsScreen() {
         ThemeState.uiShowVersionBadge = settings.uiShowVersionBadge
         ThemeState.uiCornerRadius = settings.uiCornerRadius
         ThemeState.uiSidebarWidth = settings.uiSidebarWidth
+        ThemeState.showLogSidebar = settings.showLogSidebar
         javaInstallations = JavaScanner.findAll()
         isScanning = false
     }
@@ -338,6 +339,12 @@ fun SettingsScreen() {
                                     subtitle = if (isEn) "Shows launcher version number at the bottom of the sidebar" else "在侧边栏底部显示当前启动器版本号",
                                     checked = settings.uiShowVersionBadge,
                                     onCheckedChange = { ThemeState.uiShowVersionBadge = it; autoSave(settings.copy(uiShowVersionBadge = it)) },
+                                )
+                                SettingsToggleRow(
+                                    title = if (isEn) "Show Log in sidebar" else "侧边栏显示日志入口",
+                                    subtitle = if (isEn) "Show a Log tab in the sidebar to view real-time launcher logs" else "在侧边栏显示日志页入口，可查看实时启动器运行日志",
+                                    checked = settings.showLogSidebar,
+                                    onCheckedChange = { ThemeState.showLogSidebar = it; autoSave(settings.copy(showLogSidebar = it)) },
                                 )
                             }
                             Spacer(Modifier.height(12.dp))

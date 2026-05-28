@@ -308,6 +308,7 @@ object ThemeState {
     var uiCompactMode by mutableStateOf(false)        // 紧凑模式
     var uiShowVersionBadge by mutableStateOf(true)    // 侧边栏版本号
     var uiCornerRadius by mutableStateOf(16)          // 全局圆角 dp
+    var showLogSidebar by mutableStateOf(false)       // 侧边栏显示日志入口
     var uiSidebarWidth by mutableStateOf(80)          // 侧边栏宽度 dp
     // 启动行为
     var startupPage by mutableStateOf("launch")       // launch / versions / download

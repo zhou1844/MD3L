@@ -46,6 +46,7 @@ import com.sun.jna.platform.win32.WinDef
 import java.net.URI
 
 fun main() {
+    launcher.core.AppLogger.installSystemStreams()
     // 在任何窗口创建前设置任务栏图标，否则会显示 Java 默认图标
     runCatching {
         val iconUrl = Thread.currentThread().contextClassLoader.getResource("app_icon.png")
@@ -161,6 +162,7 @@ private fun runLauncherApp() = application {
                     ThemeState.confirmBeforeClose = settings.confirmBeforeClose
                     ThemeState.showConsoleOnLaunch = settings.showConsoleOnLaunch
                     ThemeState.checkUpdateOnStartup = settings.checkUpdateOnStartup
+                    ThemeState.showLogSidebar = settings.showLogSidebar
                     DownloadManager.activeMirror = settings.downloadMirror
                     // 若首次启动需要 EULA，切换到 EULA 界面
                     if (!settings.eulaAccepted) eulaAccepted = false

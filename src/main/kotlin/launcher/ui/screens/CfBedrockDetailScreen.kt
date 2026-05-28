@@ -1,6 +1,7 @@
 package launcher.ui.screens
 
 import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -81,20 +82,20 @@ fun CfBedrockDetailScreen(project: CfBedrockProject) {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ── 返回 + 标题 ──────────────────────────────────────────────────────
+        // ── 顶部标题区 ────────────────────────────────────────────────────────
         Row(verticalAlignment = Alignment.CenterVertically) {
             FilledTonalIconButton(
                 onClick = { Navigator.back() },
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.size(40.dp),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.size(42.dp),
             ) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", modifier = Modifier.size(20.dp))
             }
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     project.name,
-                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -103,69 +104,103 @@ fun CfBedrockDetailScreen(project: CfBedrockProject) {
                     project.summary,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            IconButton(onClick = { runCatching { Desktop.getDesktop().browse(URI(project.cfPageUrl)) } }) {
-                Icon(Icons.Filled.OpenInBrowser, contentDescription = "CurseForge", tint = MaterialTheme.colorScheme.primary)
+            FilledTonalIconButton(
+                onClick = { runCatching { Desktop.getDesktop().browse(URI(project.cfPageUrl)) } },
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.size(36.dp),
+            ) {
+                Icon(Icons.Filled.OpenInBrowser, contentDescription = "CurseForge", modifier = Modifier.size(18.dp))
             }
         }
         Spacer(Modifier.height(12.dp))
 
-        // ── 项目信息卡片 ─────────────────────────────────────────────────────
+        // ── 项目信息横幅卡片 ─────────────────────────────────────────────────
         ElevatedCard(
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(20.dp),
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)),
         ) {
-            Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                ModIconAsync(iconUrl = project.iconUrl, projectType = project.contentType, size = 52)
-                Spacer(Modifier.width(14.dp))
+            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                ModIconAsync(iconUrl = project.iconUrl, projectType = project.contentType, size = 60)
                 Column(modifier = Modifier.weight(1f)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(formatCfCount(project.downloads), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        SuggestionChip(
-                            onClick = {},
-                            label = { Text(contentTypeLabel, style = MaterialTheme.typography.labelSmall) },
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier.height(22.dp),
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+                            Text(
+                                contentTypeLabel,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Icon(Icons.Filled.Download, null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(formatCfCount(project.downloads), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
-                    Spacer(Modifier.height(2.dp))
-                    Text("by ${project.author}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                    Spacer(Modifier.height(4.dp))
+                    Text("by ${project.author}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                     if (project.gameVersions.isNotEmpty()) {
-                        Text(project.gameVersions.take(4).joinToString(", "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            project.gameVersions.take(4).joinToString(" · "),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
 
-        // ── 目标版本选择 ─────────────────────────────────────────────────────
+        // ── 目标版本选择卡片 ─────────────────────────────────────────────────
         if (localVersions.isNotEmpty()) {
-            ExposedDropdownMenuBox(
-                expanded = targetVersionExpanded,
-                onExpandedChange = { targetVersionExpanded = it },
+            ElevatedCard(
+                shape = RoundedCornerShape(18.dp),
                 modifier = Modifier.fillMaxWidth(),
+                elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
+                colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
             ) {
-                OutlinedTextField(
-                    value = selectedTargetVersion?.id ?: "请选择基岩版本",
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("下载到版本") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(targetVersionExpanded) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.menuAnchor().fillMaxWidth(),
-                )
-                ExposedDropdownMenu(expanded = targetVersionExpanded, onDismissRequest = { targetVersionExpanded = false }) {
-                    localVersions.forEach { lv ->
-                        DropdownMenuItem(
-                            text = { Text(lv.id) },
-                            onClick = { selectedTargetVersion = lv; targetVersionExpanded = false },
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.FolderOpen, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("下载到基岩版本", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    ExposedDropdownMenuBox(
+                        expanded = targetVersionExpanded,
+                        onExpandedChange = { targetVersionExpanded = it },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        OutlinedTextField(
+                            value = selectedTargetVersion?.id ?: "请选择基岩版本",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("目标版本") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(targetVersionExpanded) },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.menuAnchor().fillMaxWidth(),
                         )
+                        ExposedDropdownMenu(expanded = targetVersionExpanded, onDismissRequest = { targetVersionExpanded = false }) {
+                            localVersions.forEach { lv ->
+                                DropdownMenuItem(
+                                    text = { Text(lv.id) },
+                                    onClick = { selectedTargetVersion = lv; targetVersionExpanded = false },
+                                    leadingIcon = {
+                                        if (selectedTargetVersion?.id == lv.id)
+                                            Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(16.dp))
+                                    },
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -174,20 +209,26 @@ fun CfBedrockDetailScreen(project: CfBedrockProject) {
 
         // ── 状态消息 ─────────────────────────────────────────────────────────
         if (statusMessage.isNotBlank()) {
+            val isOk = "成功" in statusMessage || "加入" in statusMessage || "已安装" in statusMessage
             Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = if ("成功" in statusMessage || "加入" in statusMessage)
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                shape = RoundedCornerShape(14.dp),
+                color = if (isOk) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
                 else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(
-                    statusMessage,
-                    modifier = Modifier.padding(12.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if ("成功" in statusMessage || "加入" in statusMessage)
-                        MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                )
+                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(
+                        if (isOk) Icons.Filled.CheckCircle else Icons.Filled.Error,
+                        null, modifier = Modifier.size(14.dp),
+                        tint = if (isOk) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    )
+                    Text(
+                        statusMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isOk) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
             Spacer(Modifier.height(8.dp))
         }
@@ -195,17 +236,24 @@ fun CfBedrockDetailScreen(project: CfBedrockProject) {
         // ── 文件版本列表 ─────────────────────────────────────────────────────
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator(modifier = Modifier.size(36.dp), strokeWidth = 3.dp)
+                    Text("加载文件列表…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         } else if (files.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Filled.SearchOff, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
-                    Spacer(Modifier.height(8.dp))
-                    Text("暂无可用文件，请在 CurseForge 网页查看", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(8.dp))
-                    FilledTonalButton(onClick = { runCatching { Desktop.getDesktop().browse(URI(project.cfPageUrl)) } }) {
-                        Icon(Icons.Filled.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(
+                        modifier = Modifier.size(72.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                        contentAlignment = Alignment.Center,
+                    ) { Icon(Icons.Filled.SearchOff, null, modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)) }
+                    Text("暂无可用文件", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    FilledTonalButton(
+                        onClick = { runCatching { Desktop.getDesktop().browse(URI(project.cfPageUrl)) } },
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Icon(Icons.Filled.OpenInBrowser, null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
                         Text("前往 CurseForge")
                     }
@@ -271,7 +319,7 @@ fun CfBedrockDetailScreen(project: CfBedrockProject) {
                         val representativeId = pair.rpFile?.fileId ?: pair.bpFile?.fileId ?: pair.singleFile?.fileId ?: 0
                         val isDownloading = downloadingId == representativeId
                         ElevatedCard(
-                            shape = RoundedCornerShape(16.dp),
+                            shape = RoundedCornerShape(18.dp),
                             modifier = Modifier.fillMaxWidth(),
                             elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
                             colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -283,19 +331,19 @@ fun CfBedrockDetailScreen(project: CfBedrockProject) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                         if (isPaired) {
-                                            Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
-                                                Text("RP+BP", modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-                                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                                            Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+                                                Text("RP+BP", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSecondaryContainer)
                                             }
                                         } else if (pair.rpFile != null) {
-                                            Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.tertiaryContainer) {
-                                                Text("RP", modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-                                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                                            Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.tertiaryContainer) {
+                                                Text("RP", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onTertiaryContainer)
                                             }
                                         } else if (pair.bpFile != null) {
-                                            Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                                                Text("BP", modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-                                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                            Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                                                Text("BP", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onPrimaryContainer)
                                             }
                                         }
                                         Text(
@@ -305,29 +353,28 @@ fun CfBedrockDetailScreen(project: CfBedrockProject) {
                                             overflow = TextOverflow.Ellipsis,
                                         )
                                     }
-                                    Spacer(Modifier.height(4.dp))
+                                    Spacer(Modifier.height(6.dp))
                                     if (pair.gameVersions.isNotEmpty()) {
-                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                             pair.gameVersions.take(4).forEach { gv ->
-                                                SuggestionChip(
-                                                    onClick = {},
-                                                    label = { Text(gv, style = MaterialTheme.typography.labelSmall) },
-                                                    shape = RoundedCornerShape(6.dp),
-                                                    modifier = Modifier.height(22.dp),
-                                                )
+                                                item(key = gv) {
+                                                    Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)) {
+                                                        Text(gv, modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                                                    }
+                                                }
                                             }
                                         }
                                     }
                                     if (pair.totalSize > 0) {
-                                        Spacer(Modifier.height(2.dp))
+                                        Spacer(Modifier.height(4.dp))
                                         Text(
-                                            "${"%.2f".format(pair.totalSize / 1_048_576.0)} MB" + if (isPaired) "（RP + BP）" else "",
+                                            "${"%.2f".format(pair.totalSize / 1_048_576.0)} MB" + if (isPaired) " (RP+BP)" else "",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                         )
                                     }
                                 }
-                                Spacer(Modifier.width(8.dp))
+                                Spacer(Modifier.width(10.dp))
                                 if (isDownloading) {
                                     CircularProgressIndicator(modifier = Modifier.size(36.dp), strokeWidth = 3.dp)
                                 } else {
@@ -404,11 +451,11 @@ fun CfBedrockDetailScreen(project: CfBedrockProject) {
                                                 downloadingId = null
                                             }
                                         },
-                                        shape = RoundedCornerShape(12.dp),
-                                        modifier = Modifier.size(42.dp),
+                                        shape = RoundedCornerShape(14.dp),
+                                        modifier = Modifier.size(44.dp),
                                         colors = IconButtonDefaults.filledIconButtonColors(
-                                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                                         ),
                                     ) {
                                         Icon(Icons.Filled.Download, contentDescription = "下载", modifier = Modifier.size(22.dp))
