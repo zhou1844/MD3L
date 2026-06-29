@@ -1,5 +1,8 @@
 package launcher
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,6 +34,7 @@ import launcher.core.LauncherDirs
 import launcher.core.ModpackManager
 import launcher.ui.layout.MainLayout
 import launcher.ui.layout.fastBoxBlur
+import launcher.ui.screens.SplashScreen
 import launcher.ui.theme.*
 import java.awt.Image
 import java.awt.Taskbar
@@ -47,6 +51,28 @@ import java.net.URI
 
 fun main() {
     launcher.core.AppLogger.installSystemStreams()
+
+    // ── 全局异常处理器（安全兜底）──────────────────────────────────────────
+    Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+        val msg = throwable.message ?: ""
+        println("[FATAL] 线程 [${thread.name}] 未捕获异常: $msg")
+        throwable.printStackTrace()
+        // 渲染相关异常 → 写标记文件，下次启动强制 SOFTWARE
+        if (msg.contains("skiko", ignoreCase = true) ||
+            msg.contains("render", ignoreCase = true) ||
+            msg.contains("DirectX", ignoreCase = true) ||
+            msg.contains("OpenGL", ignoreCase = true) ||
+            msg.contains("D3D", ignoreCase = true) ||
+            throwable::class.simpleName?.contains("Render", ignoreCase = true) == true
+        ) {
+            runCatching {
+                File(launcher.core.LauncherDirs.dataDir, ".render_fallback")
+                    .writeText("SOFTWARE")
+                println("[Render] 渲染崩溃，已记录回退标记 → 下次启动强制 SOFTWARE")
+            }
+        }
+    }
+
     // 在任何窗口创建前设置任务栏图标，否则会显示 Java 默认图标
     runCatching {
         val iconUrl = Thread.currentThread().contextClassLoader.getResource("app_icon.png")
@@ -61,8 +87,34 @@ fun main() {
     }
     LauncherDirs.migrateFromLegacyIfNeeded()
     val md3lDir = LauncherDirs.dataDir
+
+    // ── 启动前预加载导航模式，防止首次渲染时闪现错误布局 ────────────────
+    runCatching {
+        val settingsFile = java.io.File(md3lDir, "settings.json")
+        if (settingsFile.exists()) {
+            val text = settingsFile.readText(Charsets.UTF_8)
+            val match = Regex("\"navigationMode\"\\s*:\\s*\"([^\"]+)\"").find(text)
+            if (match != null) {
+                launcher.ui.theme.ThemeState.navigationMode = match.groupValues[1]
+            }
+        }
+    }
+
+    // ── 强制使用 DirectX11 ─────────────────────────────────────────────────
+    // Skiko 默认优先选择 DirectX12，但 D3D12 在某些系统上初始化失败
+    // 直接强制 D3D11，兼容 Windows 7 及以上所有系统，稳定可靠
+    // 用户也可在 data 目录创建 software_render 文件手动切换到 CPU 渲染
     if (File(md3lDir, "software_render").exists() || File(md3lDir, "software_render.txt").exists()) {
         System.setProperty("skiko.renderApi", "SOFTWARE")
+        println("[Render] 检测到 software_render 标记，使用 SOFTWARE")
+    } else if (File(md3lDir, ".render_fallback").exists()) {
+        // 上一次 GPU 渲染崩溃过，强制 SOFTWARE
+        System.setProperty("skiko.renderApi", "SOFTWARE")
+        println("[Render] 检测到上次渲染崩溃记录，使用 SOFTWARE")
+    } else {
+        // 直接走 DirectX11，跳过 DirectX12
+        System.setProperty("skiko.renderApi", "DIRECT3D11")
+        println("[Render] 强制渲染 API: DIRECT3D11")
     }
 
     runLauncherApp()
@@ -75,8 +127,8 @@ private fun runLauncherApp() = application {
     )
     val appIconImage = remember { loadTaskbarIconImage() }
     val windowIcon = painterResource("app_icon.ico")
-    // 延迟显示窗口直到第一帧已经渲染，避免幽灵窗口
-    var windowVisible by remember { mutableStateOf(false) }
+    // 启动动画控制：动画播放完后才显示主界面
+    var splashFinished by remember { mutableStateOf(false) }
     var showCloseConfirm by remember { mutableStateOf(false) }
 
     Window(
@@ -89,7 +141,7 @@ private fun runLauncherApp() = application {
         icon = windowIcon,
         undecorated = true,
         transparent = true,
-        visible = windowVisible,
+        visible = true,
     ) {
         val scope = rememberCoroutineScope()
         // 默认 true 让窗口立即可见，后台加载完后若需要 EULA 再切换
@@ -106,12 +158,9 @@ private fun runLauncherApp() = application {
             }
         }
 
-        // AWT 窗口背景设为全透明（防止 NVIDIA Overlay 渗入），第一帧后再显示窗口
+        // 窗口背景设为透明，让 rounded corner 外的区域真正透明不露黑边
         LaunchedEffect(Unit) {
             window.background = java.awt.Color(0, 0, 0, 0)
-            // 等待 Compose 至少渲染一帧再显示（避免幽灵窗口）
-            kotlinx.coroutines.delay(80)
-            windowVisible = true
         }
 
         LaunchedEffect(Unit) {
@@ -157,6 +206,12 @@ private fun runLauncherApp() = application {
                     ThemeState.uiShowVersionBadge = settings.uiShowVersionBadge
                     ThemeState.uiCornerRadius = settings.uiCornerRadius
                     ThemeState.uiSidebarWidth = settings.uiSidebarWidth
+                    ThemeState.navigationMode = settings.navigationMode
+                    ThemeState.navFloatingMarginBottom = settings.navFloatingMarginBottom
+                    ThemeState.navFloatingMarginSide = settings.navFloatingMarginSide
+                    ThemeState.navFloatingCornerRadius = settings.navFloatingCornerRadius
+                    ThemeState.navFloatingHeight = settings.navFloatingHeight
+                    ThemeState.navFloatingShowLabels = settings.navFloatingShowLabels
                     ThemeState.startupPage = settings.startupPage
                     ThemeState.closeAfterLaunch = settings.closeAfterLaunch
                     ThemeState.confirmBeforeClose = settings.confirmBeforeClose
@@ -184,59 +239,66 @@ private fun runLauncherApp() = application {
         }
 
         MD3LTheme {
-            when (eulaAccepted) {
-                null -> {
-                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+            // ── 启动动画：动画播放完之前显示 SplashScreen，之后才渲染主界面 ──
+            if (!splashFinished) {
+                SplashScreen(
+                    onAnimationEnd = { splashFinished = true }
+                )
+            } else {
+                when (eulaAccepted) {
+                    null -> {
+                        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
                     }
-                }
-                false -> {
-                    // 首次启动：显示免责声明
-                    DisclaimerScreen(
-                        onAccept = {
-                            scope.launch {
-                                val updated = currentSettings.copy(eulaAccepted = true)
-                                AppSettings.save(updated)
-                                currentSettings = updated
-                                eulaAccepted = true
-                            }
-                        },
-                        onDecline = ::exitApplication,
-                    )
-                }
-                true -> {
-                    // 主界面
-                    AppWindow(windowState, ::exitApplication)
-
-                    if (showCloseConfirm) {
-                        AlertDialog(
-                            onDismissRequest = { showCloseConfirm = false },
-                            title = { Text(if (ThemeState.language == "en") "Exit MD3L?" else "退出 MD3L？") },
-                            text = { Text(if (ThemeState.language == "en") "Are you sure you want to exit the launcher?" else "确定要退出启动器吗？") },
-                            confirmButton = {
-                                TextButton(onClick = { showCloseConfirm = false; exitApplication() }) {
-                                    Text(if (ThemeState.language == "en") "Exit" else "退出", color = MaterialTheme.colorScheme.error)
+                    false -> {
+                        // 首次启动：显示免责声明
+                        DisclaimerScreen(
+                            onAccept = {
+                                scope.launch {
+                                    val updated = currentSettings.copy(eulaAccepted = true)
+                                    AppSettings.save(updated)
+                                    currentSettings = updated
+                                    eulaAccepted = true
                                 }
                             },
-                            dismissButton = {
-                                TextButton(onClick = { showCloseConfirm = false }) {
-                                    Text(if (ThemeState.language == "en") "Cancel" else "取消")
-                                }
-                            },
+                            onDecline = ::exitApplication,
                         )
                     }
+                    true -> {
+                        // 主界面
+                        AppWindow(windowState, ::exitApplication)
 
-                    if (showUpdateSuccess != null) {
-                        AlertDialog(
-                            onDismissRequest = { showUpdateSuccess = null },
-                            title = { Text("更新完成") },
-                            text = { Text("MD3L 已成功更新至版本: ${showUpdateSuccess}\n\n当前核心版本: ${launcher.core.AutoUpdater.CURRENT_VERSION}") },
-                            confirmButton = {
-                                TextButton(onClick = { showUpdateSuccess = null }) {
-                                    Text("好")
+                        if (showCloseConfirm) {
+                            AlertDialog(
+                                onDismissRequest = { showCloseConfirm = false },
+                                title = { Text(if (ThemeState.language == "en") "Exit MD3L?" else "退出 MD3L？") },
+                                text = { Text(if (ThemeState.language == "en") "Are you sure you want to exit the launcher?" else "确定要退出启动器吗？") },
+                                confirmButton = {
+                                    TextButton(onClick = { showCloseConfirm = false; exitApplication() }) {
+                                        Text(if (ThemeState.language == "en") "Exit" else "退出", color = MaterialTheme.colorScheme.error)
+                                    }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showCloseConfirm = false }) {
+                                        Text(if (ThemeState.language == "en") "Cancel" else "取消")
+                                    }
+                                },
+                            )
+                        }
+
+                        if (showUpdateSuccess != null) {
+                            AlertDialog(
+                                onDismissRequest = { showUpdateSuccess = null },
+                                title = { Text("更新完成") },
+                                text = { Text("MD3L 已成功更新至版本: ${showUpdateSuccess}\n\n当前核心版本: ${launcher.core.AutoUpdater.CURRENT_VERSION}") },
+                                confirmButton = {
+                                    TextButton(onClick = { showUpdateSuccess = null }) {
+                                        Text("好")
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
@@ -278,6 +340,11 @@ private fun FrameWindowScope.AppWindow(
 ) {
     var dropMessage by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+
+    // 自定义最大化：手动计算工作区（排除任务栏），不用 WindowPlacement.Maximized
+    var isMaximized by remember { mutableStateOf(false) }
+    // 保存最大化前的窗口 bounds，用于还原
+    val savedBounds = remember { java.awt.Rectangle() }
 
     // closeAfterLaunch: 游戏进程启动时隐藏窗口，退出时恢复
     val activeProcess by launcher.core.GameProcessManager.activeProcess.collectAsState()
@@ -412,8 +479,32 @@ private fun FrameWindowScope.AppWindow(
         }
     }
 
-    val isMaximized = windowState.placement == WindowPlacement.Maximized
+    // 最大化时圆角设为 0，避免圆角区域露出桌面
     val windowShape = if (isMaximized) RoundedCornerShape(0.dp) else RoundedCornerShape(12.dp)
+
+    // ── 自定义最大化：手动计算 Windows 工作区（排除任务栏） ──
+    fun applyMaximized() {
+        val ge = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment()
+        val screen = ge.defaultScreenDevice.defaultConfiguration.bounds
+        val insets = java.awt.Toolkit.getDefaultToolkit().getScreenInsets(ge.defaultScreenDevice.defaultConfiguration)
+        val workArea = java.awt.Rectangle(
+            screen.x + insets.left,
+            screen.y + insets.top,
+            screen.width - insets.left - insets.right,
+            screen.height - insets.top - insets.bottom,
+        )
+        // 保存当前 bounds
+        savedBounds.setBounds(window.x, window.y, window.width, window.height)
+        window.setBounds(workArea)
+        isMaximized = true
+    }
+
+    fun applyRestored() {
+        if (savedBounds.width > 0 && savedBounds.height > 0) {
+            window.setBounds(savedBounds)
+        }
+        isMaximized = false
+    }
     val isWindows = remember { System.getProperty("os.name").contains("Windows", ignoreCase = true) }
     val surfaceDragModifier = if (isWindows) {
         Modifier
@@ -452,14 +543,21 @@ private fun FrameWindowScope.AppWindow(
             shadowElevation = 0.dp,
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                WindowDraggableArea {
+                if (!isMaximized) {
+                    WindowDraggableArea {
+                        TitleBar(
+                            isMaximized = isMaximized,
+                            onMinimize = { windowState.isMinimized = true },
+                            onMaximize = { applyMaximized() },
+                            onClose = onExit,
+                        )
+                    }
+                } else {
+                    // 最大化时：只显示 TitleBar 但不使用 WindowDraggableArea（避免圆角冲突）
                     TitleBar(
                         isMaximized = isMaximized,
                         onMinimize = { windowState.isMinimized = true },
-                        onMaximize = {
-                            windowState.placement = if (isMaximized)
-                                WindowPlacement.Floating else WindowPlacement.Maximized
-                        },
+                        onMaximize = { applyRestored() },
                         onClose = onExit,
                     )
                 }
@@ -577,8 +675,9 @@ private fun TitleBar(
     onClose: () -> Unit,
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = MaterialTheme.colorScheme.surface,
         modifier = Modifier.fillMaxWidth().height(40.dp),
+        shape = if (isMaximized) RoundedCornerShape(0.dp) else RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),

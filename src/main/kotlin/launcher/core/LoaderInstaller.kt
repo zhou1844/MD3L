@@ -810,10 +810,47 @@ object LoaderInstaller {
                     break
                 }
 
+                // 处理器失败：尝试恢复依赖并重建 classpath
                 val recovered = recoverProcessorDependenciesFromOutput(result.output, librariesDir)
                 if (recovered > 0 && attempt < maxAttempts) {
                     println("[LoaderInstaller] Processor #$idx attempt=$attempt 失败，已补齐 $recovered 个依赖，准备重试")
                     emit(loaderName, "处理器 $idx/${processors.size} 失败，已补齐 $recovered 个依赖，重试中(${attempt + 1}/$maxAttempts)", baseFrac)
+                    attempt++
+                    continue
+                }
+
+                // 即使 recoverProcessorDependenciesFromOutput 没找到新依赖，也尝试重新下载所有 classpath 依赖
+                // （可能是网络波动导致 jar 文件损坏）
+                if (attempt < maxAttempts) {
+                    println("[LoaderInstaller] Processor #$idx attempt=$attempt 失败，尝试重新下载所有依赖并重试")
+                    emit(loaderName, "处理器 $idx/${processors.size} 失败，重新下载依赖中(${attempt + 1}/$maxAttempts)", baseFrac)
+                    // 重新下载 jar 和 classpath
+                    val jarCoord = proc["jar"]?.jsonPrimitive?.contentOrNull
+                    if (jarCoord != null) {
+                        val jarPath = File(librariesDir, mavenToPath(jarCoord))
+                        jarPath.delete()
+                        downloadMavenCoordinate(jarCoord, librariesDir, processorRepositories(jarCoord))
+                    }
+                    proc["classpath"]?.jsonArray?.forEach { cpEl ->
+                        val coord = cpEl.jsonPrimitive.content
+                        val cpFile = File(librariesDir, mavenToPath(coord))
+                        cpFile.delete()
+                        downloadMavenCoordinate(coord, librariesDir, processorRepositories(coord))
+                    }
+                    // 重建 classpath
+                    cp.clear()
+                    cp.add(jarPath.absolutePath)
+                    proc["classpath"]?.jsonArray?.forEach { cpEl ->
+                        val coord = cpEl.jsonPrimitive.content
+                        val cpFile = File(librariesDir, mavenToPath(coord))
+                        cp.add(cpFile.absolutePath)
+                    }
+                    cmd.clear()
+                    cmd.add(javaExe)
+                    cmd.add("-cp")
+                    cmd.add(cp.joinToString(File.pathSeparator))
+                    cmd.add(mainClass)
+                    cmd.addAll(resolvedArgs)
                     attempt++
                     continue
                 }
@@ -1005,16 +1042,17 @@ object LoaderInstaller {
         val effectiveTimeout = if (timeoutSeconds <= 0) 300L else timeoutSeconds
         val finished = process.waitFor(effectiveTimeout, java.util.concurrent.TimeUnit.SECONDS)
         if (!finished) {
-            process.destroy()
-            if (!process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
-                process.destroyForcibly()
-                process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
-            }
+            // 超时：强制销毁进程
+            process.destroyForcibly()
+            process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+            val output = synchronized(outputBuilder) { outputBuilder.toString() }
+            val timeoutMsg = "进程执行超时（${effectiveTimeout}s）"
+            println("[LoaderInstaller] $timeoutMsg: ${cmd.firstOrNull()}")
+            return ExecResult(exitCode = -1, output = "$timeoutMsg\n$output", timedOut = true)
         }
         drainThread.join(5_000)
         val output = synchronized(outputBuilder) { outputBuilder.toString() }
-        val exit = if (finished) process.exitValue() else -1
-        return ExecResult(exit, output, timedOut = !finished)
+        return ExecResult(exitCode = process.exitValue(), output = output, timedOut = false)
     }
 
     private fun upsertArtifactCandidate(
@@ -1598,7 +1636,7 @@ object LoaderInstaller {
             }
         }
 
-        for (attempt in 1..2) {
+        for (attempt in 1..3) {
             for (url in candidates) {
                 println("[LoaderInstaller] 补下载处理器依赖 (尝试 $attempt): $url")
                 dest.delete()
@@ -1607,8 +1645,12 @@ object LoaderInstaller {
                     return true
                 }
             }
+            // 每次完整遍历后等待 1 秒再重试（网络波动）
+            if (attempt < 3) {
+                Thread.sleep(1000)
+            }
         }
-        println("[LoaderInstaller] 补下载失败: $coord (尝试了 ${candidates.size} 个候选源)")
+        println("[LoaderInstaller] 补下载失败: $coord (尝试了 ${candidates.size} 个候选源 × 3 轮)")
         return false
     }
 

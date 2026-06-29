@@ -1,7 +1,9 @@
-package launcher.ui.layout
+﻿package launcher.ui.layout
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,16 +30,23 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.collectAsState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.StickyNote2
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 import launcher.core.GameProcessManager
 import launcher.core.LaunchState
+import launcher.core.StickerData
+import launcher.core.StickerManager
 import launcher.ui.components.DownloadFab
+import launcher.ui.components.StickerBoard
 import launcher.ui.nav.Route
 import launcher.ui.nav.Screen
 import launcher.ui.nav.primaryTab
@@ -89,13 +98,26 @@ object Navigator {
             Screen.Versions -> Route.Versions
             Screen.Download -> Route.Download
             Screen.Mods -> Route.Mods
+            Screen.Multiplayer -> Route.Multiplayer
             Screen.Settings -> Route.Settings
             Screen.Log -> Route.Log
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * 共享滚动位置状态，由各主屏幕（Launch/Version/Download/Settings 等）写入、
+ * [MainLayout] 读取来控制浮动底栏的显示/隐藏。
+ *
+ * - [scrollFraction] = 0f 表示页面顶部，1f 表示页面底部（完全滚动到底）
+ * - `ScrollState` 使用 `value / maxValue` 计算
+ * - `LazyListState` / `LazyGridState` 使用 `canScrollForward` 判断是否到底
+ */
+object NavBarScrollState {
+    val scrollFraction = kotlinx.coroutines.flow.MutableStateFlow(0f)
+}
+
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun MainLayout(modifier: Modifier = Modifier) {
     // 应用默认起始页设置
@@ -107,7 +129,8 @@ fun MainLayout(modifier: Modifier = Modifier) {
     val activeTab = currentRoute.primaryTab()
     val isLaunching by LaunchState.isLaunching.collectAsState()
     val activeProcess by GameProcessManager.activeProcess.collectAsState()
-    val uiLocked = isLaunching || activeProcess != null
+    // 导航锁定仅在「启动准备阶段」生效，游戏运行后允许自由跳转
+    val navLocked = isLaunching
 
     val bgPath = ThemeState.backgroundImagePath
     val bgBlur = ThemeState.backgroundBlurRadius
@@ -156,13 +179,62 @@ fun MainLayout(modifier: Modifier = Modifier) {
     else
         MaterialTheme.colorScheme.surfaceContainer
 
+    val navigationMode = ThemeState.navigationMode
+    val cornerR = ThemeState.uiCornerRadius.dp
+    val isEn = ThemeState.language == "en"
+
+    // ── MD3 动画曲线（共享）─────────────────────────────────────────────
+    val md3EmphasizedDecelerate = remember { CubicBezierEasing(0.05f, 0.7f, 0.1f, 1.0f) }
+    val md3EmphasizedAccelerate = remember { CubicBezierEasing(0.3f, 0.0f, 0.8f, 0.15f) }
+    val md3StandardDecelerate = remember { CubicBezierEasing(0.0f, 0.0f, 0.2f, 1.0f) }
+    val md3StandardAccelerate = remember { CubicBezierEasing(0.4f, 0.0f, 1.0f, 1.0f) }
+
+    val isPrimaryRoute = remember {
+        { r: Route ->
+            r == Route.Launch || r == Route.Versions ||
+            r == Route.Download || r == Route.Mods || r == Route.Multiplayer || r == Route.Settings ||
+            r == Route.Log
+        }
+    }
+    val animSpeed = ThemeState.uiAnimationSpeed
+
+    // ── 浮动导航栏：基于页面滚动位置淡出隐藏 ─────────────────────────
+    // 由各主屏幕（Launch/Version/Download/Settings 等）通过 snapshotFlow
+    // 监听各自的 ScrollState/LazyListState 并写入 NavBarScrollState.scrollFraction。
+    // 隐藏条件：滚动比例 >= 0.90（接近页底）；只要一往上拉（< 0.90）立即显示。
+    // 这种方式同时支持鼠标滚轮滚动和滚动条拖拽，因为两者都会更新 Compose 的 ScrollState。
+    var navBarAlpha by remember { mutableStateOf(1f) }
+    LaunchedEffect(Unit) {
+        NavBarScrollState.scrollFraction
+            .collect { frac ->
+                if (frac >= 0.90f) navBarAlpha = 0f
+                else navBarAlpha = 1f
+            }
+    }
+    // 切换导航模式或路由时重置
+    LaunchedEffect(navigationMode, currentRoute) {
+        NavBarScrollState.scrollFraction.value = 0f
+        navBarAlpha = 1f
+    }
+    val navAlphaAnim by animateFloatAsState(
+        targetValue = navBarAlpha,
+        animationSpec = tween(350, easing = md3EmphasizedDecelerate),
+        label = "navAlpha",
+    )
+
+    // 浮动导航栏背景色：比页面背景更突出以避免深色模式混淆
+    val navBarBgColor = if (hasBg)
+        MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = (panelAlpha + 0.12f).coerceAtMost(1f))
+    else
+        MaterialTheme.colorScheme.surfaceContainerHigh
+
+    // ═══════════════════════════════════════════════ 统一布局 ═══
+    // 内容区始终在同一个位置，侧边栏/浮动导航通过 AnimatedVisibility 显隐
     Box(modifier = modifier.fillMaxSize().graphicsLayer { clip = true }) {
         // ── 全局壁纸底层 ─────────────────────────────────────────────────────
         val bmp = bgBitmap
         if (bmp != null) {
-            // 壁纸 + GPU 实时模糊：blurRadius 变化时只重绘此 GPU layer，0 CPU 延迟
-            // clip 防止 blur 扩散到 MainLayout 外部（TitleBar 方向）
-            val blurPx = bgBlur.toFloat() * 2f  // radius→sigma 映射
+            val blurPx = bgBlur.toFloat() * 2f
             androidx.compose.foundation.Image(
                 bitmap = bmp,
                 contentDescription = null,
@@ -176,7 +248,6 @@ fun MainLayout(modifier: Modifier = Modifier) {
                         }
                     },
             )
-            // 亮度遮罩：独立 layer，亮度变化只更新 GPU layer，不触发重组
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -184,182 +255,264 @@ fun MainLayout(modifier: Modifier = Modifier) {
                     .background(Color.Black)
             )
         } else {
-            // 无壁纸时填充默认背景色
             androidx.compose.foundation.layout.Box(
                 modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
             )
         }
 
-    Row(modifier = Modifier.fillMaxSize()) {
-        // ── Left: Custom Sidebar ──────────────────────────────────────────────
-        val sidebarWidthDp = ThemeState.uiSidebarWidth.dp
-        val compactPad = if (ThemeState.uiCompactMode) 6.dp else 10.dp
-        val cornerR = ThemeState.uiCornerRadius.dp
-        val isEn = ThemeState.language == "en"
-        Column(
-            modifier = Modifier
-                .fillMaxHeight()
-                .width(sidebarWidthDp)
-                .padding(vertical = 8.dp, horizontal = 4.dp)
-                .clip(RoundedCornerShape(cornerR))
-                .background(railContainerColor)
-                .alpha(if (uiLocked) 0.5f else 1f)
-                .padding(vertical = compactPad, horizontal = 4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Spacer(Modifier.height(4.dp))
-            Screen.entries.forEach { screen ->
-                if (screen == Screen.Log && !ThemeState.showLogSidebar) return@forEach
-                val selected = activeTab == screen
-                SidebarNavItem(
-                    screen = screen,
-                    selected = selected,
-                    locked = uiLocked,
-                    label = if (isEn) screen.labelEn else screen.label,
-                    cornerRadius = cornerR,
-                    compact = ThemeState.uiCompactMode,
-                    onClick = { if (!uiLocked) Navigator.navigatePrimary(screen) },
-                )
-                Spacer(Modifier.height(if (ThemeState.uiCompactMode) 1.dp else 2.dp))
+        // ═══════════════════════════════════════════════ 内容布局 ═══
+        Box(modifier = Modifier.fillMaxSize()) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                // ── Sidebar（仅侧边导航模式显示）────────────────────────────────
+            AnimatedVisibility(
+                visible = navigationMode == "sidebar",
+                enter = fadeIn(animationSpec = tween(200)) + slideInHorizontally(animationSpec = tween(200)),
+                exit = fadeOut(animationSpec = tween(120)) + slideOutHorizontally(animationSpec = tween(120)),
+            ) {
+                val sidebarWidthDp = ThemeState.uiSidebarWidth.dp
+                val compactPad = if (ThemeState.uiCompactMode) 6.dp else 10.dp
+                Column(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(sidebarWidthDp)
+                        .padding(vertical = 8.dp, horizontal = 4.dp)
+                        .clip(RoundedCornerShape(cornerR))
+                        .background(railContainerColor)
+                        .alpha(if (navLocked) 0.5f else 1f)
+                        .padding(vertical = compactPad, horizontal = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Spacer(Modifier.height(4.dp))
+                    Screen.entries.forEach { screen ->
+                        if (screen == Screen.Log && !ThemeState.showLogSidebar) return@forEach
+                        val selected = activeTab == screen
+                        SidebarNavItem(
+                            screen = screen,
+                            selected = selected,
+                            locked = navLocked,
+                            label = if (isEn) screen.labelEn else screen.label,
+                            cornerRadius = cornerR,
+                            compact = ThemeState.uiCompactMode,
+                            onClick = { if (!navLocked) Navigator.navigatePrimary(screen) },
+                        )
+                        Spacer(Modifier.height(if (ThemeState.uiCompactMode) 1.dp else 2.dp))
+                    }
+                    Spacer(Modifier.weight(1f))
+                    if (ThemeState.uiShowVersionBadge) {
+                        Text(
+                            text = "v${AutoUpdater.CURRENT_VERSION}",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            maxLines = 1,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                    }
+                }
             }
-            Spacer(Modifier.weight(1f))
-            if (ThemeState.uiShowVersionBadge) {
-                Text(
-                    text = "v${AutoUpdater.CURRENT_VERSION}",
-                    style = androidx.compose.material3.MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                    maxLines = 1,
-                )
-                Spacer(Modifier.height(4.dp))
+
+            // ── Main content（始终存在，两种模式共享同一个实例）─────────────
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+            ) {
+                var fabContainerW by remember { mutableStateOf(0) }
+                var fabContainerH by remember { mutableStateOf(0) }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp)
+                        .clip(RoundedCornerShape(cornerR))
+                        .background(contentBgColor)
+                        .onSizeChanged { fabContainerW = it.width; fabContainerH = it.height },
+                ) {
+                    AnimatedContent(
+                        targetState = currentRoute,
+                        transitionSpec = {
+                            val toSub   = isPrimaryRoute(initialState) && !isPrimaryRoute(targetState)
+                            val fromSub = !isPrimaryRoute(initialState) && isPrimaryRoute(targetState)
+                            if (animSpeed == 0f) {
+                                EnterTransition.None togetherWith ExitTransition.None
+                            } else {
+                                val base = (300 / animSpeed).toInt().coerceAtLeast(100)
+                                val fast = (180 / animSpeed).toInt().coerceAtLeast(60)
+                                val slow = (400 / animSpeed).toInt().coerceAtLeast(150)
+                                when {
+                                    toSub -> {
+                                        val enter = slideInHorizontally(animationSpec = tween(slow, easing = md3EmphasizedDecelerate)) + fadeIn(animationSpec = tween(fast, easing = md3StandardDecelerate))
+                                        val exit = slideOutHorizontally(targetOffsetX = { -(it * 0.15f).toInt() }, animationSpec = tween(fast, easing = md3EmphasizedAccelerate)) + fadeOut(animationSpec = tween(fast, easing = md3StandardAccelerate))
+                                        enter togetherWith exit
+                                    }
+                                    fromSub -> {
+                                        val enter = slideInHorizontally(initialOffsetX = { -(it * 0.15f).toInt() }, animationSpec = tween(slow, easing = md3EmphasizedDecelerate)) + fadeIn(animationSpec = tween(fast, easing = md3StandardDecelerate))
+                                        val exit = slideOutHorizontally(animationSpec = tween(fast, easing = md3EmphasizedAccelerate)) + fadeOut(animationSpec = tween(fast, easing = md3StandardAccelerate))
+                                        enter togetherWith exit
+                                    }
+                                    else -> {
+                                        val enter = fadeIn(animationSpec = tween(fast, delayMillis = (base / 3).coerceAtMost(60), easing = md3StandardDecelerate)) + scaleIn(initialScale = 0.95f, animationSpec = tween(base, delayMillis = (base / 3).coerceAtMost(60), easing = md3EmphasizedDecelerate))
+                                        val exit = fadeOut(animationSpec = tween((fast * 0.6f).toInt(), easing = md3StandardAccelerate)) + scaleOut(targetScale = 0.97f, animationSpec = tween((fast * 0.6f).toInt(), easing = md3StandardAccelerate))
+                                        enter togetherWith exit
+                                    }
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize().padding(16.dp).graphicsLayer { },
+                    ) { route ->
+                        ScreenContent(route)
+                    }
+
+                    // ── 下载悬浮球 ────────────────────────────────────────
+                    val density = LocalDensity.current
+                    val fabSizePx = with(density) { 56.dp.toPx() }
+                    val fabPadPx = with(density) { 20.dp.toPx() }
+                    var fabOffsetX by remember { mutableStateOf(Float.MAX_VALUE) }
+                    var fabOffsetY by remember { mutableStateOf(Float.MAX_VALUE) }
+                    LaunchedEffect(fabContainerW, fabContainerH) {
+                        if (fabContainerW > 0 && fabContainerH > 0) {
+                            if (fabOffsetX == Float.MAX_VALUE || fabOffsetY == Float.MAX_VALUE) {
+                                fabOffsetX = fabContainerW - fabSizePx - fabPadPx
+                                fabOffsetY = fabContainerH - fabSizePx - fabPadPx
+                            }
+                            fabOffsetX = fabOffsetX.coerceIn(fabPadPx, (fabContainerW - fabSizePx - fabPadPx).coerceAtLeast(fabPadPx))
+                            fabOffsetY = fabOffsetY.coerceIn(fabPadPx, (fabContainerH - fabSizePx - fabPadPx).coerceAtLeast(fabPadPx))
+                        }
+                    }
+                    DownloadFab(
+                        modifier = Modifier.offset { IntOffset(fabOffsetX.roundToInt(), fabOffsetY.roundToInt()) },
+                        dragModifier = Modifier.pointerInput(Unit) {
+                            detectDragGestures { change, dragAmount ->
+                                change.consume()
+                                fabOffsetX = (fabOffsetX + dragAmount.x).coerceIn(fabPadPx, (fabContainerW - fabSizePx - fabPadPx).coerceAtLeast(fabPadPx))
+                                fabOffsetY = (fabOffsetY + dragAmount.y).coerceIn(fabPadPx, (fabContainerH - fabSizePx - fabPadPx).coerceAtLeast(fabPadPx))
+                            }
+                        },
+                        onClick = { Navigator.navigate(Route.DownloadManager) },
+                    )
+                }
             }
         }
 
-        // ── Right: Main content with Crossfade + 悬浮球 ──────────────────
-        var fabContainerW by remember { mutableStateOf(0) }
-        var fabContainerH by remember { mutableStateOf(0) }
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp)
-                .clip(RoundedCornerShape(cornerR))
-                .background(contentBgColor)
-                .onSizeChanged { fabContainerW = it.width; fabContainerH = it.height },
+        // ── 底部浮动导航栏（仅浮动导航模式显示）─────────────────────────────
+        AnimatedVisibility(
+            visible = navigationMode == "floating" && navBarAlpha > 0.01f,
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(animationSpec = tween(300)),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(animationSpec = tween(200)),
+            modifier = Modifier.align(Alignment.BottomCenter),
         ) {
-            // ── MD3 动画曲线 ──────────────────────────────────────────────
-            // Emphasized Decelerate: 进场——从快到慢，感觉内容「落定」
-            val md3EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1.0f)
-            // Emphasized Accelerate: 退场——从慢到快，感觉内容「飞走」
-            val md3EmphasizedAccelerate = CubicBezierEasing(0.3f, 0.0f, 0.8f, 0.15f)
-
-            AnimatedContent(
-                targetState = currentRoute,
-                transitionSpec = {
-                    val isPrimaryRoute = { r: Route ->
-                        r == Route.Launch || r == Route.Versions ||
-                        r == Route.Download || r == Route.Mods || r == Route.Settings ||
-                        r == Route.Log
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = ThemeState.navFloatingMarginSide.dp)
+                    .padding(bottom = ThemeState.navFloatingMarginBottom.dp)
+                    .graphicsLayer { alpha = navAlphaAnim },
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(ThemeState.navFloatingCornerRadius.dp),
+                    color = navBarBgColor,
+                    shadowElevation = 12.dp,
+                    tonalElevation = 3.dp,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .wrapContentWidth()
+                            .height(ThemeState.navFloatingHeight.dp)
+                            .padding(horizontal = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(0.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Screen.entries.forEach { screen ->
+                            if (screen == Screen.Log && !ThemeState.showLogSidebar) return@forEach
+                            val selected = activeTab == screen
+                            FloatingNavItem(
+                                screen = screen,
+                                selected = selected,
+                                locked = navLocked,
+                                label = if (isEn) screen.labelEn else screen.label,
+                                showLabel = ThemeState.navFloatingShowLabels,
+                                onClick = { if (!navLocked) Navigator.navigatePrimary(screen) },
+                            )
+                        }
                     }
-                    val toSub   = isPrimaryRoute(initialState) && !isPrimaryRoute(targetState)
-                    val fromSub = !isPrimaryRoute(initialState) && isPrimaryRoute(targetState)
+                }
+                // ── 版本号徽章（浮动导航栏上方，浮动模式下隐藏）────────────
+                if (ThemeState.uiShowVersionBadge && navigationMode != "floating") {
+                    Text(
+                        text = "v${AutoUpdater.CURRENT_VERSION}",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                        maxLines = 1,
+                        modifier = Modifier.align(Alignment.Center).padding(top = 2.dp).offset(y = (-4).dp),
+                    )
+                }
+            }
+        }
 
-                    val spd = ThemeState.uiAnimationSpeed
-                    if (spd == 0f) {
-                        EnterTransition.None togetherWith ExitTransition.None
-                    } else {
-                        val sub350 = (350 / spd).toInt()
-                        val sub200 = (200 / spd).toInt()
-                        val sub150 = (150 / spd).toInt()
-                        val sub220 = (220 / spd).toInt()
-                        val sub300 = (300 / spd).toInt()
-                        val sub90  = (90  / spd).toInt()
-                        when {
-                            toSub -> {
-                                val enter = slideInHorizontally(
-                                    initialOffsetX = { (it * 0.25f).toInt() },
-                                    animationSpec = tween(sub350, easing = md3EmphasizedDecelerate)
-                                ) + fadeIn(tween(sub200, easing = md3EmphasizedDecelerate))
-                                val exit = slideOutHorizontally(
-                                    targetOffsetX = { -(it * 0.1f).toInt() },
-                                    animationSpec = tween(sub200, easing = md3EmphasizedAccelerate)
-                                ) + fadeOut(tween(sub150, easing = md3EmphasizedAccelerate))
-                                enter togetherWith exit
-                            }
-                            fromSub -> {
-                                val enter = slideInHorizontally(
-                                    initialOffsetX = { -(it * 0.1f).toInt() },
-                                    animationSpec = tween(sub350, easing = md3EmphasizedDecelerate)
-                                ) + fadeIn(tween(sub200, easing = md3EmphasizedDecelerate))
-                                val exit = slideOutHorizontally(
-                                    targetOffsetX = { (it * 0.25f).toInt() },
-                                    animationSpec = tween(sub200, easing = md3EmphasizedAccelerate)
-                                ) + fadeOut(tween(sub150, easing = md3EmphasizedAccelerate))
-                                enter togetherWith exit
-                            }
-                            else -> {
-                                val enter = fadeIn(
-                                    animationSpec = tween(sub220, delayMillis = (90 / spd).toInt(), easing = md3EmphasizedDecelerate)
-                                ) + scaleIn(
-                                    initialScale = 0.92f,
-                                    animationSpec = tween(sub300, delayMillis = (90 / spd).toInt(), easing = md3EmphasizedDecelerate)
-                                )
-                                val exit = fadeOut(
-                                    animationSpec = tween(sub90, easing = md3EmphasizedAccelerate)
-                                ) + scaleOut(
-                                    targetScale = 0.96f,
-                                    animationSpec = tween(sub90, easing = md3EmphasizedAccelerate)
-                                )
-                                enter togetherWith exit
+        // ── 全局贴纸覆盖层（所有页面可见）──────────────────────────────────
+        val stickerScope = rememberCoroutineScope()
+        var stickers by remember { mutableStateOf<List<StickerData>>(emptyList()) }
+        var showFirstImportHint by remember { mutableStateOf(false) }
+        val isEn2 = ThemeState.language == "en"
+
+        LaunchedEffect(Unit) {
+            val loaded = StickerManager.load()
+            stickers = loaded
+        }
+
+        StickerBoard(
+            stickers = stickers,
+            onRemove = { id ->
+                stickerScope.launch {
+                    StickerManager.removeSticker(id)
+                    stickers = StickerManager.stickers
+                }
+            },
+            onMoved = { id, x, y ->
+                stickerScope.launch {
+                    StickerManager.updateSticker(id = id, x = x, y = y)
+                }
+            },
+            onScaleChanged = { id, scale ->
+                stickerScope.launch {
+                    StickerManager.updateSticker(id = id, scale = scale)
+                }
+            },
+            onPlaybackSpeedChanged = { id, speed ->
+                stickerScope.launch {
+                    StickerManager.updateSticker(id = id, playbackSpeed = speed)
+                }
+            },
+            showFirstImportHint = showFirstImportHint,
+            onFirstImportHintAcknowledged = { showFirstImportHint = false },
+        )
+
+        // ── 右上角贴纸添加按钮（全局）────────────────────────────────────
+        IconButton(
+            onClick = {
+                val chooser = javax.swing.JFileChooser().apply {
+                    fileFilter = javax.swing.filechooser.FileNameExtensionFilter(
+                        "图片文件", "png", "jpg", "jpeg", "gif", "webp", "bmp"
+                    )
+                    dialogTitle = if (isEn2) "Add Sticker" else "添加贴纸"
+                }
+                if (chooser.showOpenDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) {
+                    val file = chooser.selectedFile
+                    if (file != null) {
+                        stickerScope.launch {
+                            StickerManager.addSticker(file)
+                            stickers = StickerManager.stickers
+                            if (stickers.size == 1) {
+                                showFirstImportHint = true
                             }
                         }
                     }
-                },
-                modifier = Modifier.fillMaxSize().padding(16.dp),
-            ) { route ->
-                when (route) {
-                    is Route.Launch -> LaunchScreen()
-                    is Route.Versions -> VersionScreen()
-                    is Route.Download -> DownloadScreen()
-                    is Route.Mods -> ModScreen()
-                    is Route.BedrockMods -> BedrockModScreen()
-                    is Route.Settings -> SettingsScreen()
-                    is Route.VersionDetail -> VersionDetailScreen(route.version)
-                    is Route.BedrockVersionDetail -> BedrockVersionDetailScreen(route.version)
-                    is Route.ModDetail -> ModDetailScreen(route.project, route.edition, route.contentType)
-                    is Route.CfBedrockDetail -> CfBedrockDetailScreen(route.project)
-                    is Route.DownloadManager -> DownloadManagerScreen()
-                    is Route.BedrockPackManager -> BedrockPackManagerScreen(route.versionId, route.versionDir, route.packType)
-                    is Route.BedrockWorldManager -> BedrockWorldManagerScreen(route.versionId, route.versionDir)
-                    is Route.Log -> LogScreen()
                 }
-            }
-
-            // ── 下载悬浮球（可自由拖动）──────────────────────────────────────
-            val density = LocalDensity.current
-            val fabSizePx = with(density) { 56.dp.toPx() }
-            val fabPadPx = with(density) { 20.dp.toPx() }
-            var fabOffsetX by remember { mutableStateOf(Float.MAX_VALUE) }
-            var fabOffsetY by remember { mutableStateOf(Float.MAX_VALUE) }
-            LaunchedEffect(fabContainerW, fabContainerH) {
-                if (fabContainerW > 0 && fabContainerH > 0) {
-                    if (fabOffsetX == Float.MAX_VALUE || fabOffsetY == Float.MAX_VALUE) {
-                        fabOffsetX = fabContainerW - fabSizePx - fabPadPx
-                        fabOffsetY = fabContainerH - fabSizePx - fabPadPx
-                    }
-                    fabOffsetX = fabOffsetX.coerceIn(fabPadPx, (fabContainerW - fabSizePx - fabPadPx).coerceAtLeast(fabPadPx))
-                    fabOffsetY = fabOffsetY.coerceIn(fabPadPx, (fabContainerH - fabSizePx - fabPadPx).coerceAtLeast(fabPadPx))
-                }
-            }
-            DownloadFab(
-                modifier = Modifier
-                    .offset { IntOffset(fabOffsetX.roundToInt(), fabOffsetY.roundToInt()) },
-                dragModifier = Modifier.pointerInput(Unit) {
-                    detectDragGestures { change, dragAmount ->
-                        change.consume()
-                        fabOffsetX = (fabOffsetX + dragAmount.x).coerceIn(fabPadPx, (fabContainerW - fabSizePx - fabPadPx).coerceAtLeast(fabPadPx))
-                        fabOffsetY = (fabOffsetY + dragAmount.y).coerceIn(fabPadPx, (fabContainerH - fabSizePx - fabPadPx).coerceAtLeast(fabPadPx))
-                    }
-                },
-                onClick = { Navigator.navigate(Route.DownloadManager) },
+            },
+            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(36.dp),
+        ) {
+            Icon(
+                Icons.Filled.StickyNote2,
+                contentDescription = if (isEn2) "Add Sticker" else "添加贴纸",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.size(22.dp),
             )
         }
     }
@@ -380,21 +533,45 @@ private fun SidebarNavItem(
     val interactionSource = remember { MutableInteractionSource() }
     var isHovered by remember { mutableStateOf(false) }
 
-    val containerColor = when {
-        selected -> MaterialTheme.colorScheme.primaryContainer
-        isHovered -> MaterialTheme.colorScheme.surfaceContainerHighest
-        else -> Color.Transparent
-    }
-    val iconTint = when {
-        selected -> MaterialTheme.colorScheme.onPrimaryContainer
-        isHovered -> MaterialTheme.colorScheme.onSurface
-        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-    }
-    val labelColor = when {
-        selected -> MaterialTheme.colorScheme.primary
-        isHovered -> MaterialTheme.colorScheme.onSurface
-        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-    }
+    // 缓存动画规格，避免每次重组重新分配
+    val colorSpec = remember { tween<Color>(300, easing = CubicBezierEasing(0.2f, 0.0f, 0.0f, 1.0f)) }
+    val floatSpec = remember { tween<Float>(300, easing = CubicBezierEasing(0.2f, 0.0f, 0.0f, 1.0f)) }
+
+    // 使用 animateColorAsState 实现平滑颜色过渡
+    val containerColor by animateColorAsState(
+        targetValue = when {
+            selected -> MaterialTheme.colorScheme.primaryContainer
+            isHovered -> MaterialTheme.colorScheme.surfaceContainerHighest
+            else -> Color.Transparent
+        },
+        animationSpec = colorSpec,
+        label = "sidebarContainerColor",
+    )
+    val iconTint by animateColorAsState(
+        targetValue = when {
+            selected -> MaterialTheme.colorScheme.onPrimaryContainer
+            isHovered -> MaterialTheme.colorScheme.onSurface
+            else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+        },
+        animationSpec = colorSpec,
+        label = "sidebarIconTint",
+    )
+    val labelColor by animateColorAsState(
+        targetValue = when {
+            selected -> MaterialTheme.colorScheme.primary
+            isHovered -> MaterialTheme.colorScheme.onSurface
+            else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+        },
+        animationSpec = colorSpec,
+        label = "sidebarLabelColor",
+    )
+
+    // 选中时图标微放大
+    val iconScale by animateFloatAsState(
+        targetValue = if (selected) 1.1f else 1.0f,
+        animationSpec = floatSpec,
+        label = "sidebarIconScale",
+    )
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -415,7 +592,11 @@ private fun SidebarNavItem(
             modifier = Modifier
                 .size(if (compact) 38.dp else 44.dp)
                 .clip(RoundedCornerShape(cornerRadius))
-                .background(containerColor),
+                .background(containerColor)
+                .graphicsLayer {
+                    scaleX = iconScale
+                    scaleY = iconScale
+                },
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -435,6 +616,125 @@ private fun SidebarNavItem(
             color = labelColor,
             maxLines = 1,
         )
+    }
+}
+
+// ── Screen content router ─────────────────────────────────────────────────────
+@Composable
+private fun ScreenContent(route: Route) {
+    when (route) {
+        is Route.Launch -> LaunchScreen()
+        is Route.Versions -> VersionScreen()
+        is Route.Download -> DownloadScreen()
+        is Route.Mods -> ModScreen()
+        is Route.BedrockMods -> BedrockModScreen()
+        is Route.Multiplayer -> MultiplayerScreen()
+        is Route.Settings -> SettingsScreen()
+        is Route.VersionDetail -> VersionDetailScreen(route.version)
+        is Route.BedrockVersionDetail -> BedrockVersionDetailScreen(route.version)
+        is Route.ModDetail -> ModDetailScreen(route.project, route.edition, route.contentType)
+        is Route.CfBedrockDetail -> CfBedrockDetailScreen(route.project)
+        is Route.DownloadManager -> DownloadManagerScreen()
+        is Route.BedrockPackManager -> BedrockPackManagerScreen(route.versionId, route.versionDir, route.packType)
+        is Route.BedrockWorldManager -> BedrockWorldManagerScreen(route.versionId, route.versionDir)
+        is Route.Log -> LogScreen()
+    }
+}
+
+// ── Floating nav item（紧凑版）─────────────────────────────────────────────────
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@Composable
+private fun FloatingNavItem(
+    screen: launcher.ui.nav.Screen,
+    selected: Boolean,
+    locked: Boolean,
+    label: String = screen.label,
+    showLabel: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    var isHovered by remember { mutableStateOf(false) }
+
+    val colorSpec = remember { tween<Color>(300, easing = CubicBezierEasing(0.2f, 0.0f, 0.0f, 1.0f)) }
+    val floatSpec = remember { tween<Float>(300, easing = CubicBezierEasing(0.2f, 0.0f, 0.0f, 1.0f)) }
+
+    val containerColor by animateColorAsState(
+        targetValue = when {
+            selected -> MaterialTheme.colorScheme.primaryContainer
+            isHovered -> MaterialTheme.colorScheme.surfaceContainerHighest
+            else -> Color.Transparent
+        },
+        animationSpec = colorSpec,
+        label = "floatingNavContainerColor",
+    )
+    val iconTint by animateColorAsState(
+        targetValue = when {
+            selected -> MaterialTheme.colorScheme.onPrimaryContainer
+            isHovered -> MaterialTheme.colorScheme.onSurface
+            else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+        },
+        animationSpec = colorSpec,
+        label = "floatingNavIconTint",
+    )
+    val labelColor by animateColorAsState(
+        targetValue = when {
+            selected -> MaterialTheme.colorScheme.primary
+            isHovered -> MaterialTheme.colorScheme.onSurface
+            else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+        },
+        animationSpec = colorSpec,
+        label = "floatingNavLabelColor",
+    )
+    val iconScale by animateFloatAsState(
+        targetValue = if (selected) 1.1f else 1.0f,
+        animationSpec = floatSpec,
+        label = "floatingNavIconScale",
+    )
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .onPointerEvent(PointerEventType.Enter) { isHovered = true }
+            .onPointerEvent(PointerEventType.Exit) { isHovered = false }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = !locked,
+                onClick = onClick,
+            )
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(containerColor)
+                .graphicsLayer {
+                    scaleX = iconScale
+                    scaleY = iconScale
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = screen.icon,
+                contentDescription = label,
+                modifier = Modifier.size(17.dp),
+                tint = iconTint,
+            )
+        }
+        if (showLabel) {
+            Spacer(Modifier.height(1.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 9.sp,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                ),
+                color = labelColor,
+                maxLines = 1,
+            )
+        }
     }
 }
 

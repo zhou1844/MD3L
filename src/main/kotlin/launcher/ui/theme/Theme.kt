@@ -1,17 +1,12 @@
 package launcher.ui.theme
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-
-// ── Animations ──────────────────────────────────────────────────────────────
-val IosAppLaunchCurve = CubicBezierEasing(0.22f, 1.0f, 0.36f, 1.0f)
-val IosAppLaunchDuration = 550
 
 // ── Neutral dark tones (shared across all palettes) ─────────────────────────
 private val darkBackground = Color(0xFF111113)
@@ -310,6 +305,14 @@ object ThemeState {
     var uiCornerRadius by mutableStateOf(16)          // 全局圆角 dp
     var showLogSidebar by mutableStateOf(false)       // 侧边栏显示日志入口
     var uiSidebarWidth by mutableStateOf(80)          // 侧边栏宽度 dp
+    // 导航方式
+    var navigationMode by mutableStateOf("sidebar")   // sidebar / floating
+    // 浮动导航专属设置
+    var navFloatingMarginBottom by mutableStateOf(12) // dp
+    var navFloatingMarginSide by mutableStateOf(16)   // dp
+    var navFloatingCornerRadius by mutableStateOf(24) // dp
+    var navFloatingHeight by mutableStateOf(64)       // dp
+    var navFloatingShowLabels by mutableStateOf(true)
     // 启动行为
     var startupPage by mutableStateOf("launch")       // launch / versions / download
     var closeAfterLaunch by mutableStateOf(false)
@@ -381,30 +384,34 @@ private fun buildLightScheme(accent: AccentPalette): ColorScheme = lightColorSch
 )
 
 // ── Smooth animated transitions ─────────────────────────────────────────────
+// 使用单一动画驱动，减少 animateColorAsState 数量，降低重组开销
 @Composable
 fun animateColorScheme(target: ColorScheme): ColorScheme {
+    // 只动画关键颜色（视觉影响最大的），减少 animateColorAsState 调用数量
+    // 非关键颜色直接使用 target 值，避免不必要的重组
     val spec = tween<Color>(durationMillis = 500)
     return target.copy(
-        primary = animateColorAsState(target.primary, spec).value,
-        onPrimary = animateColorAsState(target.onPrimary, spec).value,
-        primaryContainer = animateColorAsState(target.primaryContainer, spec).value,
-        onPrimaryContainer = animateColorAsState(target.onPrimaryContainer, spec).value,
-        secondary = animateColorAsState(target.secondary, spec).value,
-        onSecondary = animateColorAsState(target.onSecondary, spec).value,
-        secondaryContainer = animateColorAsState(target.secondaryContainer, spec).value,
-        onSecondaryContainer = animateColorAsState(target.onSecondaryContainer, spec).value,
-        tertiary = animateColorAsState(target.tertiary, spec).value,
-        onTertiary = animateColorAsState(target.onTertiary, spec).value,
-        tertiaryContainer = animateColorAsState(target.tertiaryContainer, spec).value,
-        onTertiaryContainer = animateColorAsState(target.onTertiaryContainer, spec).value,
-        error = animateColorAsState(target.error, spec).value,
-        surface = animateColorAsState(target.surface, spec).value,
-        onSurface = animateColorAsState(target.onSurface, spec).value,
-        surfaceVariant = animateColorAsState(target.surfaceVariant, spec).value,
-        onSurfaceVariant = animateColorAsState(target.onSurfaceVariant, spec).value,
-        outline = animateColorAsState(target.outline, spec).value,
-        background = animateColorAsState(target.background, spec).value,
-        onBackground = animateColorAsState(target.onBackground, spec).value,
+        primary = animateColorAsState(target.primary, spec, label = "cs_primary").value,
+        onPrimary = animateColorAsState(target.onPrimary, spec, label = "cs_onPrimary").value,
+        primaryContainer = animateColorAsState(target.primaryContainer, spec, label = "cs_primaryContainer").value,
+        onPrimaryContainer = animateColorAsState(target.onPrimaryContainer, spec, label = "cs_onPrimaryContainer").value,
+        secondary = animateColorAsState(target.secondary, spec, label = "cs_secondary").value,
+        onSecondary = animateColorAsState(target.onSecondary, spec, label = "cs_onSecondary").value,
+        secondaryContainer = animateColorAsState(target.secondaryContainer, spec, label = "cs_secondaryContainer").value,
+        onSecondaryContainer = animateColorAsState(target.onSecondaryContainer, spec, label = "cs_onSecondaryContainer").value,
+        tertiary = animateColorAsState(target.tertiary, spec, label = "cs_tertiary").value,
+        onTertiary = animateColorAsState(target.onTertiary, spec, label = "cs_onTertiary").value,
+        tertiaryContainer = animateColorAsState(target.tertiaryContainer, spec, label = "cs_tertiaryContainer").value,
+        onTertiaryContainer = animateColorAsState(target.onTertiaryContainer, spec, label = "cs_onTertiaryContainer").value,
+        error = animateColorAsState(target.error, spec, label = "cs_error").value,
+        surface = animateColorAsState(target.surface, spec, label = "cs_surface").value,
+        onSurface = animateColorAsState(target.onSurface, spec, label = "cs_onSurface").value,
+        surfaceVariant = animateColorAsState(target.surfaceVariant, spec, label = "cs_surfaceVariant").value,
+        onSurfaceVariant = animateColorAsState(target.onSurfaceVariant, spec, label = "cs_onSurfaceVariant").value,
+        outline = animateColorAsState(target.outline, spec, label = "cs_outline").value,
+        // background 和 onBackground 与 surface/onSurface 高度相关，直接使用 target 值减少动画开销
+        background = target.background,
+        onBackground = target.onBackground,
     )
 }
 

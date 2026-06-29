@@ -47,7 +47,19 @@ data class UpdateState(
 )
 
 object AutoUpdater {
-    const val CURRENT_VERSION = "1.3.8"
+    /**
+     * 从内置资源文件 /version 读取当前版本号。
+     * 该文件位于 src/main/resources/version，构建时会被打包到 jar 中。
+     */
+    val CURRENT_VERSION: String by lazy {
+        runCatching {
+            val url = AutoUpdater::class.java.classLoader.getResource("version")
+                ?: error("version 资源文件未找到")
+            url.readText().trim()
+        }.onFailure { e ->
+            System.err.println("[AutoUpdater] 读取版本文件失败: ${e.message}")
+        }.getOrDefault("1.3.8")
+    }
     private const val GITEE_OWNER = "foolish-bird-crossing"
     private const val GITEE_REPO = "md3llauncher"
     private val API_URLS = listOf(
@@ -171,38 +183,71 @@ object AutoUpdater {
                     println("[AutoUpdater] 当前EXE路径: $currentExePath")
 
                     if (destFile.name.lowercase().endsWith(".exe")) {
-                        val newExeQ  = destFile.absolutePath.replace("'", "''")
-                        val curExeQ  = currentExePath.replace("'", "''")
-                        val updaterPs1 = File(cacheDir, "updater.ps1")
-                        // bat 中转：以管理员权限运行 PS1，避免因权限不足 Copy-Item 静默失败
-                        val updaterBat = File(cacheDir, "updater.bat")
-                        val ps1Ps1Path = updaterPs1.absolutePath.replace("'", "''")
-                        val ps1BatPath = updaterBat.absolutePath.replace("'", "''")
-                        val dol = "\$"
-                        updaterPs1.writeText(
-                            "Start-Sleep -Seconds 3\r\n" +
-                            "for (${dol}i = 0; ${dol}i -lt 10; ${dol}i++) {\r\n" +
-                            "    try {\r\n" +
-                            "        Copy-Item -Path '$newExeQ' -Destination '$curExeQ' -Force -ErrorAction Stop\r\n" +
-                            "        break\r\n" +
-                            "    } catch {\r\n" +
-                            "        Start-Sleep -Seconds 1\r\n" +
-                            "    }\r\n" +
-                            "}\r\n" +
-                            "Start-Process -FilePath '$curExeQ'\r\n" +
-                            "Remove-Item -Path '$ps1Ps1Path' -Force -ErrorAction SilentlyContinue\r\n" +
-                            "Remove-Item -Path '$ps1BatPath' -Force -ErrorAction SilentlyContinue\r\n"
+                        // ── 使用 MD3LUpdater.exe 替换 ──────────────────────────
+                        // 查找 MD3LUpdater.exe：优先在启动器同级目录，其次在 dataDir
+                        val updaterPaths = listOf(
+                            File(File(currentExePath).parentFile, "MD3LUpdater.exe"),
+                            File(LauncherDirs.dataDir, "MD3LUpdater.exe"),
+                            File(cacheDir, "MD3LUpdater.exe"),
                         )
-                        updaterBat.writeText(
-                            "@echo off\r\n" +
-                            "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"${updaterPs1.absolutePath}\"\r\n"
-                        )
-                        // 用 cmd /c start 以独立进程（脱离当前进程树）运行 bat
-                        ProcessBuilder(
-                            "cmd", "/c", "start", "", "/b",
-                            updaterBat.absolutePath
-                        ).start()
+                        val updaterExe = updaterPaths.firstOrNull { it.exists() }
+                            ?: updaterPaths.first() // fallback 到第一个路径
+
+                        val currentPid = ProcessHandle.current().pid()
+                        val updaterPath = updaterExe.absolutePath
+
+                        if (updaterExe.exists()) {
+                            println("[AutoUpdater] 启动更新器: $updaterPath")
+                        } else {
+                            println("[AutoUpdater] 更新器不存在，尝试直接启动: $updaterPath")
+                        }
+
+                        // ── 启动更新器 ──────────────────────────────────────────
+                        // 问题：MD3LUpdater.exe manifest 声明了 requireAdministrator，
+                        // 但 ProcessBuilder 默认 UseShellExecute=false，不会触发 manifest 提权，
+                        // 导致 UAC 弹窗"请求的操作需要提升"。
+                        //
+                        // 解决方案：使用 ShellExecute 方式启动，让 Windows 读取 manifest 并弹出 UAC 提权对话框。
+                        // 策略：
+                        //   1. 优先用 PowerShell Start-Process -Verb RunAs（最可靠，直接请求管理员权限）
+                        //   2. 其次用 cmd /c start（ShellExecute，会触发 manifest 提权）
+                        //   3. 最后 fallback 到直接 ProcessBuilder（无提权，用于调试/降级场景）
+                        val updaterArgs = "\"${destFile.absolutePath}\" \"${currentExePath}\" --wait-pid ${currentPid}"
+
+                        // 方式1: PowerShell Start-Process -Verb RunAs（推荐）
+                        // 这会弹出 UAC 对话框请求管理员权限
+                        val psLaunched = runCatching {
+                            val psCmd = "Start-Process -FilePath '${updaterPath}' -ArgumentList '${updaterArgs}' -Verb RunAs -WindowStyle Hidden"
+                            ProcessBuilder(
+                                "powershell", "-NoProfile", "-Command", psCmd
+                            ).redirectErrorStream(true).start()
+                            // 不等 PowerShell 返回，它会在后台运行
+                            println("[AutoUpdater] PowerShell RunAs 已启动")
+                            true
+                        }.getOrDefault(false)
+
+                        if (!psLaunched) {
+                            println("[AutoUpdater] PowerShell 方式失败，尝试 cmd /c start...")
+                            // 方式2: cmd /c start（ShellExecute，会触发 manifest 提权）
+                            runCatching {
+                                // start 命令使用 ShellExecute，能识别 exe 的 manifest 提权请求
+                                val cmd = "cmd.exe /c start \"\" /B \"${updaterPath}\" ${updaterArgs}"
+                                Runtime.getRuntime().exec(cmd)
+                                println("[AutoUpdater] cmd start 已启动")
+                            }.onFailure { e2 ->
+                                println("[AutoUpdater] cmd start 也失败: ${e2.message}")
+                                // 方式3: 直接 ProcessBuilder（无提权，作为最后手段）
+                                println("[AutoUpdater] 降级到直接 ProcessBuilder 启动（无提权）")
+                                ProcessBuilder(
+                                    updaterPath,
+                                    destFile.absolutePath,
+                                    currentExePath,
+                                    "--wait-pid", currentPid.toString()
+                                ).redirectErrorStream(true).start()
+                            }
+                        }
                     } else {
+                        // 非 exe 更新（如 jar），直接启动
                         ProcessBuilder("cmd", "/c", "start", "", destFile.absolutePath).start()
                     }
                     exitProcess(0)

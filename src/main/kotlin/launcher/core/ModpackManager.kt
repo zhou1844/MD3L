@@ -195,7 +195,7 @@ object ModpackManager {
     }
 
     private fun createImportLogger(minecraftDir: String, packFile: File): ImportLogger {
-        val logsDir = File(minecraftDir, "logs")
+        val logsDir = LauncherDirs.logDir
         logsDir.mkdirs()
         val ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
         val logFile = File(logsDir, "md3l-modpack-import-$ts.log")
@@ -720,10 +720,11 @@ object ModpackManager {
         }
 
         println("[ModpackImport] installLoaderIfNeeded: 查找已安装的 $loaderType $loaderVersion...")
-        findExistingLoaderVersionId(loaderType, mcVersion, loaderVersion, minecraftDir)?.let { existingId ->
+        val existingId = findExistingLoaderVersionId(loaderType, mcVersion, loaderVersion, minecraftDir)
+        if (existingId != null) {
             logger.info("复用已安装加载器: $loaderType $loaderVersion -> $existingId")
             println("[ModpackImport] installLoaderIfNeeded: 复用已安装 $existingId")
-            ensureForgeLikeLoaderReadyDuringImport(
+            val ready = ensureForgeLikeLoaderReadyDuringImport(
                 loaderType = loaderType,
                 installedVersionId = existingId,
                 minecraftDir = minecraftDir,
@@ -731,7 +732,11 @@ object ModpackManager {
                 logger = logger,
                 onLoaderProgress = onLoaderProgress,
             )
-            return LoaderInstallOutcome(installedVersionId = existingId)
+            if (ready) {
+                return LoaderInstallOutcome(installedVersionId = existingId)
+            }
+            logger.warn("已安装的 $loaderType $loaderVersion ($existingId) 不完整且修复失败，将尝试全新安装")
+            println("[ModpackImport] installLoaderIfNeeded: 已安装版本不完整，回退到全新安装")
         }
 
         logger.info("安装加载器: $loaderType $loaderVersion")
@@ -775,7 +780,7 @@ object ModpackManager {
                                 ?.also { logger.warn("NeoForge 安装异常，回收已存在加载器: ${error.message}") }
                                 ?: throw error
                         }
-                        ensureForgeLikeLoaderReadyDuringImport(
+                        val neoForgeReady = ensureForgeLikeLoaderReadyDuringImport(
                             loaderType = loaderType,
                             installedVersionId = id,
                             minecraftDir = minecraftDir,
@@ -783,6 +788,10 @@ object ModpackManager {
                             logger = logger,
                             onLoaderProgress = onLoaderProgress,
                         )
+                        if (!neoForgeReady) {
+                            logger.warn("NeoForge $loaderVersion 安装后校验不完整，但将继续导入")
+                            println("[ModpackImport] NeoForge 安装后校验不完整，继续导入")
+                        }
                         println("[ModpackImport] NeoForge 安装完成, id=$id")
                         hideVersionInJson(minecraftDir, id)
                         LoaderInstallOutcome(installedVersionId = id)
@@ -804,7 +813,7 @@ object ModpackManager {
                                 ?.also { logger.warn("Forge 安装异常，回收已存在加载器: ${error.message}") }
                                 ?: throw error
                         }
-                        ensureForgeLikeLoaderReadyDuringImport(
+                        val forgeReady = ensureForgeLikeLoaderReadyDuringImport(
                             loaderType = loaderType,
                             installedVersionId = id,
                             minecraftDir = minecraftDir,
@@ -812,6 +821,10 @@ object ModpackManager {
                             logger = logger,
                             onLoaderProgress = onLoaderProgress,
                         )
+                        if (!forgeReady) {
+                            logger.warn("Forge $loaderVersion 安装后校验不完整，但将继续导入")
+                            println("[ModpackImport] Forge 安装后校验不完整，继续导入")
+                        }
                         println("[ModpackImport] Forge 安装完成, id=$id")
                         hideVersionInJson(minecraftDir, id)
                         LoaderInstallOutcome(installedVersionId = id)
@@ -838,12 +851,14 @@ object ModpackManager {
         javaPath: String,
         logger: ImportLogger,
         onLoaderProgress: (String, Float) -> Unit,
-    ) {
-        if (loaderType != "Forge" && loaderType != "NeoForge") return
+    ): Boolean {
+        if (loaderType != "Forge" && loaderType != "NeoForge") return true
 
         val versionJsonFile = File(minecraftDir, "versions/$installedVersionId/$installedVersionId.json")
         if (!versionJsonFile.isFile) {
-            throw RuntimeException("$loaderType 安装不完整：缺少 ${versionJsonFile.absolutePath}")
+            logger.warn("$loaderType 安装不完整：缺少 ${versionJsonFile.absolutePath}")
+            println("[ModpackImport] ensureForgeLikeLoaderReadyDuringImport: 缺少 version json")
+            return false
         }
 
         logger.info("导入阶段校验 $loaderType 完整性: $installedVersionId")
@@ -858,9 +873,12 @@ object ModpackManager {
             },
         )
         if (!repaired) {
-            throw RuntimeException("$loaderType 安装不完整且修复失败，请在导入后重新安装该加载器")
+            logger.warn("$loaderType 安装不完整且修复失败，将尝试全新安装")
+            println("[ModpackImport] ensureForgeLikeLoaderReadyDuringImport: 修复失败")
+            return false
         }
         onLoaderProgress("$loaderType 安装校验完成", 1f)
+        return true
     }
 
     private fun copyLoaderVersionAs(sourceId: String, targetId: String, minecraftDir: String, mcVersion: String) {

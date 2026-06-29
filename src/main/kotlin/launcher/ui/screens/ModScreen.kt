@@ -1,5 +1,7 @@
 package launcher.ui.screens
 
+import launcher.ui.layout.NavBarScrollState
+
 import androidx.compose.animation.*
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
@@ -41,7 +43,7 @@ import org.jetbrains.skia.Image as SkiaImage
 
 private object ModScreenState {
     val searchQuery = mutableStateOf("")
-    val projects = mutableStateOf<List<ModrinthProject>>(emptyList())
+    val projects = mutableStateOf<List<UnifiedProjectItem>>(emptyList())
     val cfProjects = mutableStateOf<List<CfBedrockProject>>(emptyList())
     val isLoading = mutableStateOf(false)
     val selectedEdition = mutableStateOf("java")
@@ -54,6 +56,19 @@ private object ModScreenState {
     val listFirstVisibleItemIndex = mutableStateOf(0)
     val listFirstVisibleItemScrollOffset = mutableStateOf(0)
 }
+
+data class UnifiedProjectItem(
+    val source: String,
+    val title: String,
+    val description: String,
+    val iconUrl: String,
+    val downloads: Long,
+    val categories: List<String>,
+    val projectType: String,
+    val author: String,
+    val mrProject: ModrinthProject? = null,
+    val cfProject: CurseForgeProject? = null,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,13 +91,41 @@ fun ModScreen() {
         initialFirstVisibleItemIndex = ModScreenState.listFirstVisibleItemIndex.value,
         initialFirstVisibleItemScrollOffset = ModScreenState.listFirstVisibleItemScrollOffset.value,
     )
+    // 监听 Mod 列表滚动位置，更新底栏淡出隐藏状态
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            val canScrollForward = listState.canScrollForward
+            val layoutInfo = listState.layoutInfo
+            val firstVisible = layoutInfo.visibleItemsInfo.firstOrNull()
+            val totalItems = layoutInfo.totalItemsCount
+            Triple(canScrollForward, firstVisible?.index ?: 0, totalItems)
+        }.collect { (canScrollForward, firstIdx, totalItems) ->
+            NavBarScrollState.scrollFraction.value = when {
+                totalItems == 0 -> 0f
+                // 内容太少不足以滚动 → 保持导航栏可见
+                !canScrollForward && firstIdx == 0 -> 0f
+                !canScrollForward -> 1f
+                else -> (firstIdx.toFloat() / totalItems.toFloat()).coerceIn(0f, 0.99f)
+            }
+        }
+    }
     val mcVersions = remember { buildMcVersionFilters() }
 
     LaunchedEffect(Unit) {
         if (!isInitialLoad) return@LaunchedEffect
         isLoading = true
         loadError = ""
-        try { projects = ModrinthApi.search(query = "", projectType = "mod")
+        try {
+            val mr = ModrinthApi.search(query = "", projectType = "mod")
+            val cf = ModrinthApi.searchCurseForge(query = "", projectType = "mod")
+            projects = buildList {
+                addAll(mr.map {
+                    UnifiedProjectItem("MR", it.title, it.description, it.iconUrl, it.downloads, it.categories, it.projectType, it.author, mrProject = it)
+                })
+                addAll(cf.map {
+                    UnifiedProjectItem("CF", it.title, it.summary, it.iconUrl, it.downloads, it.categories, it.projectType, it.author, cfProject = it)
+                })
+            }
         } catch (e: Exception) { loadError = "加载失败: ${e.message?.take(60) ?: "未知错误"}" }
         isLoading = false
         isInitialLoad = false
@@ -111,9 +154,17 @@ fun ModScreen() {
                         if (mcVersionFilter.isNotBlank()) add("""["versions:$mcVersionFilter"]""")
                         if (loaderFilter.isNotBlank() && selectedType == "mod") add("""["categories:$loaderFilter"]""")
                     }.joinToString(",")
-                    val result = ModrinthApi.search(query = searchQuery, projectType = selectedType, facets = facets)
-                    projects = result
-                    if (result.isEmpty() && searchQuery.isBlank()) loadError = "加载失败，请检查网络连接"
+                    val mr = ModrinthApi.search(query = searchQuery, projectType = selectedType, facets = facets)
+                    val cf = if (selectedType == "mod") ModrinthApi.searchCurseForge(query = searchQuery, projectType = selectedType) else emptyList()
+                    projects = buildList {
+                        addAll(mr.map {
+                            UnifiedProjectItem("MR", it.title, it.description, it.iconUrl, it.downloads, it.categories, it.projectType, it.author, mrProject = it)
+                        })
+                        addAll(cf.map {
+                            UnifiedProjectItem("CF", it.title, it.summary, it.iconUrl, it.downloads, it.categories, it.projectType, it.author, cfProject = it)
+                        })
+                    }
+                    if (projects.isEmpty() && searchQuery.isBlank()) loadError = "加载失败，请检查网络连接"
                 }
             } catch (e: Exception) {
                 loadError = "加载失败: ${e.message?.take(60) ?: "未知错误"}"
@@ -155,8 +206,20 @@ fun ModScreen() {
                                 if (selectedEdition != edition) {
                                     selectedEdition = edition; searchQuery = ""; isLoading = true
                                     scope.launch {
-                                        if (edition == "bedrock") cfProjects = BedrockResourceApi.search("", bedrockType)
-                                        else projects = ModrinthApi.search("", selectedType)
+                                        if (edition == "bedrock") {
+                                            cfProjects = BedrockResourceApi.search("", bedrockType)
+                                        } else {
+                                            val mr = ModrinthApi.search("", selectedType)
+                                            val cf = if (selectedType == "mod") ModrinthApi.searchCurseForge("", selectedType) else emptyList()
+                                            projects = buildList {
+                                                addAll(mr.map {
+                                                    UnifiedProjectItem("MR", it.title, it.description, it.iconUrl, it.downloads, it.categories, it.projectType, it.author, mrProject = it)
+                                                })
+                                                addAll(cf.map {
+                                                    UnifiedProjectItem("CF", it.title, it.summary, it.iconUrl, it.downloads, it.categories, it.projectType, it.author, cfProject = it)
+                                                })
+                                            }
+                                        }
                                         isLoading = false
                                     }
                                 }
@@ -257,7 +320,7 @@ fun ModScreen() {
                 }
                 if (selectedType == "mod") {
                     item { Spacer(Modifier.width(4.dp)) }
-                    val loaders = listOf("" to (if (isEn) "All" else "全部"), "fabric" to "Fabric", "forge" to "Forge", "neoforge" to "NeoForge", "quilt" to "Quilt")
+                    val loaders = listOf("" to (if (isEn) "All" else "全部"), "fabric" to "Fabric", "forge" to "Forge", "neoforge" to "NeoForge")
                     items(loaders) { (loader, label) ->
                         ModPill(label = label, selected = loaderFilter == loader, primary = false) {
                             loaderFilter = loader; doSearch()
@@ -322,7 +385,9 @@ fun ModScreen() {
                 if (projects.isEmpty()) ModEmptyState(isEn)
                 else Box(Modifier.fillMaxSize()) {
                     LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize().padding(end = 8.dp)) {
-                        items(projects, key = { it.slug }) { ModProjectCard(it, "java", selectedType) }
+                        items(projects, key = { "${it.source}:${it.title}" }) { item ->
+                            UnifiedProjectCard(item, "java", selectedType)
+                        }
                     }
                     VerticalScrollbar(rememberScrollbarAdapter(listState), Modifier.align(Alignment.CenterEnd).fillMaxHeight())
                 }
@@ -400,6 +465,39 @@ private fun CfProjectCard(project: CfBedrockProject) {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun UnifiedProjectCard(project: UnifiedProjectItem, edition: String, contentType: String) {
+    ElevatedCard(
+        onClick = { Navigator.navigate(Route.ModDetail(project.mrProject ?: ModrinthProject(slug = "cf:${project.cfProject?.modId ?: 0}", title = project.title, description = project.description, iconUrl = project.iconUrl, downloads = project.downloads, categories = project.categories, projectType = project.projectType, author = project.author), edition, contentType)) },
+        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+    ) {
+        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            ModIconAsync(iconUrl = project.iconUrl, projectType = project.projectType, size = 56)
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(project.title, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Spacer(Modifier.width(6.dp))
+                    SourceBadge(project.source, isCf = project.source == "CF")
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(project.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (project.downloads >= 0) MetaChip(icon = Icons.Filled.Download, text = formatDl(project.downloads))
+                    if (project.author.isNotBlank()) MetaChip(icon = Icons.Filled.Person, text = project.author)
+                    if (project.categories.isNotEmpty()) MetaChip(icon = Icons.Filled.Label, text = project.categories.first())
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            Icon(Icons.Filled.ArrowForwardIos, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f), modifier = Modifier.size(14.dp))
+        }
+    }
+}
+
 @Composable
 private fun ModProjectCard(project: ModrinthProject, edition: String, contentType: String) {
     ElevatedCard(

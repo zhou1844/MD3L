@@ -1,9 +1,16 @@
 ﻿package launcher.ui.screens
 
+import launcher.ui.layout.NavBarScrollState
+
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -13,6 +20,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,23 +38,31 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import io.kamel.image.KamelImage
 import io.kamel.image.asyncPainterResource
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.jsonObject
@@ -55,6 +71,11 @@ import kotlinx.serialization.json.contentOrNull
 import launcher.core.*
 import launcher.ui.components.LocalVersionTreeSheetContent
 import launcher.ui.components.VersionIcon
+import launcher.ui.components.loadSkinFaceBitmap
+import io.ktor.client.*
+import io.ktor.client.engine.cio.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import java.awt.Desktop
 import java.io.File
@@ -62,18 +83,17 @@ import java.net.URL
 import java.io.PrintWriter
 import java.io.StringWriter
 import java.net.URI
-import launcher.ui.theme.IosAppLaunchCurve
-import launcher.ui.theme.IosAppLaunchDuration
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LaunchScreen() {
     val scope = rememberCoroutineScope()
     val isEn = launcher.ui.theme.ThemeState.language == "en"
-    var settings by remember { mutableStateOf(AppSettings()) }
-    var versions by remember { mutableStateOf<List<LocalVersion>>(emptyList()) }
-    var bedrockVersions by remember { mutableStateOf<List<LocalVersion>>(emptyList()) }
-    var selectedVersion by remember { mutableStateOf<LocalVersion?>(null) }
+    // 使用全局持久化状态，确保切换页面后启动页状态不丢失
+    var settings by LaunchScreenState.settings
+    var versions by LaunchScreenState.versions
+    var bedrockVersions by LaunchScreenState.bedrockVersions
+    var selectedVersion by LaunchScreenState.selectedVersion
     val globalLaunching by LaunchState.isLaunching.collectAsState()
     val globalStatusMsg by LaunchState.statusMessage.collectAsState()
     val globalProgress by LaunchState.progress.collectAsState()
@@ -81,9 +101,10 @@ fun LaunchScreen() {
     val processMsg by GameProcessManager.statusMessage.collectAsState()
     val gameProgress by GameProcessManager.launchProgress.collectAsState()
     val crashReport by GameProcessManager.crashReport.collectAsState()
-    val gameRunning = activeProcess != null
-    val uiLocked = globalLaunching || gameRunning
-    var launchMessage by remember { mutableStateOf("") }
+    // 使用 derivedStateOf 缓存计算值，避免每次重组都重新计算
+    val gameRunning by remember { derivedStateOf { activeProcess != null } }
+    val uiLocked by remember { derivedStateOf { globalLaunching || gameRunning } }
+    var launchMessage by LaunchScreenState.launchMessage
     val downloadProgress by DownloadManager.progress.collectAsState()
     val bedrockDownloading by BedrockDownloadManager.downloadingVersions.collectAsState()
     val bedrockDownloadResults by BedrockDownloadManager.downloadResults.collectAsState()
@@ -105,6 +126,19 @@ fun LaunchScreen() {
     var authPolling by remember { mutableStateOf(false) }
     var authError by remember { mutableStateOf("") }
     var skinModelDialogForUuid by remember { mutableStateOf<String?>(null) }
+
+    // 皮肤导入成功提示（右下角弹窗）
+    var skinToastData by remember { mutableStateOf<SkinToastInfo?>(null) }
+
+    // 监听皮肤导入事件 → 显示右下角弹窗（5秒后自动消失）
+    LaunchedEffect(Unit) {
+        AccountRepository.skinImportEvent.collect { event ->
+            val modelLabel = if (isEn) event.model else if (event.model == "slim") "纤细(Alex)" else "经典(Steve)"
+            skinToastData = SkinToastInfo(event.username, modelLabel)
+            delay(5000)
+            skinToastData = null
+        }
+    }
 
     // 致命错误弹窗
     var showErrorDialog by remember { mutableStateOf(false) }
@@ -177,6 +211,8 @@ fun LaunchScreen() {
     }
 
     LaunchedEffect(Unit) {
+        if (LaunchScreenState.initialized) return@LaunchedEffect
+        LaunchScreenState.initialized = true
         val loadedSettings = withContext(Dispatchers.IO) { AppSettings.load() }
         settings = loadedSettings
         nameInput = loadedSettings.playerName
@@ -238,12 +274,30 @@ fun LaunchScreen() {
     // 主布局：Row 左 45% 右 55%
     // ══════════════════════════════════════════════════════════════════════════
 
+    // MD3 缓动曲线（定义在 Row 外部顶层作用域，供底部 Column 和版本 Popup 共用）
+    val md3EmphasizedDecelerate = remember { CubicBezierEasing(0.05f, 0.7f, 0.1f, 1.0f) }
+    val md3StandardDecelerate = remember { CubicBezierEasing(0.0f, 0.0f, 0.2f, 1.0f) }
+    val md3StandardAccelerate = remember { CubicBezierEasing(0.4f, 0.0f, 1.0f, 1.0f) }
+
+    Box(modifier = Modifier.fillMaxSize()) {
     Row(modifier = Modifier.fillMaxSize()) {
 
         // ── 左区：玩家仪表盘 ────────────────────────────────────────
         val stats by PlayerStats.data.collectAsState()
-        val totalLaunches = stats.javaLaunchCount + stats.bedrockLaunchCount
-        val totalSec = stats.javaPlayTimeSec + stats.bedrockPlayTimeSec
+        // 使用 derivedStateOf 缓存统计数据计算，避免每次重组都重新计算
+        val statsData by remember {
+            derivedStateOf {
+                val totalLaunches = stats.javaLaunchCount + stats.bedrockLaunchCount
+                val totalSec = stats.javaPlayTimeSec + stats.bedrockPlayTimeSec
+                val javaFrac = if (totalLaunches > 0) stats.javaLaunchCount.toFloat() / totalLaunches else 0f
+                val bedrockFrac = 1f - javaFrac
+                StatsData(totalLaunches, totalSec, javaFrac, bedrockFrac)
+            }
+        }
+        val totalLaunches = statsData.totalLaunches
+        val totalSec = statsData.totalSec
+        val javaFrac = statsData.javaFrac
+        val bedrockFrac = statsData.bedrockFrac
 
         // 格式化游玩时长
         fun fmtTime(sec: Long): String = when {
@@ -251,9 +305,6 @@ fun LaunchScreen() {
             sec < 3600 -> "${sec / 60}m"
             else -> "${sec / 3600}h ${(sec % 3600) / 60}m"
         }
-        // 圆环比例
-        val javaFrac = if (totalLaunches > 0) stats.javaLaunchCount.toFloat() / totalLaunches else 0f
-        val bedrockFrac = 1f - javaFrac
 
         val primaryColor = MaterialTheme.colorScheme.primary
         val tertiaryColor = MaterialTheme.colorScheme.tertiary
@@ -261,13 +312,21 @@ fun LaunchScreen() {
         val onSurface = MaterialTheme.colorScheme.onSurface
         val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
 
+        val statsScrollState = rememberScrollState()
+        // 监听统计面板滚动位置，更新底栏淡出隐藏状态
+        LaunchedEffect(statsScrollState) {
+            snapshotFlow { statsScrollState.value to statsScrollState.maxValue }
+                .collect { (value, max) ->
+                    NavBarScrollState.scrollFraction.value = if (max > 0) value.toFloat() / max.toFloat() else 0f
+                }
+        }
         Column(
             modifier = Modifier
                 .weight(0.618f)
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(16.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.55f))
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(statsScrollState)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -438,21 +497,20 @@ fun LaunchScreen() {
 
         Spacer(Modifier.width(12.dp))
 
-        // ── 右区 (Control Node) ─── Box 绝对定位，彻底杜绝错位 ────────
-        Box(
+        // ── 右区 (Control Node) ─── Column 堆叠，杜绝错位 ──────────
+        Column(
             modifier = Modifier
                 .weight(0.382f)
-                .fillMaxHeight(),
+                .fillMaxHeight()
+                .padding(top = 8.dp),
         ) {
             // ════════════════════════════════════════════════════════════════
             //  顶部区域 —— 账号切换 + 按钮 + 进度条 + 离线名编辑
-            //  Align.TopCenter，自然向下堆叠
             // ════════════════════════════════════════════════════════════════
             Column(
                 modifier = Modifier
-                    .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .padding(top = 8.dp),
+                    .wrapContentHeight(),
             ) {
                 // ── Windows 风格账号卡片 ──────────────────────────────────
                 Column(
@@ -469,35 +527,37 @@ fun LaunchScreen() {
                     Box(modifier = Modifier.size(96.dp)
                         .clip(RoundedCornerShape(22.dp))
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
-                        if (acct != null && acct.type == AccountType.MSA && acct.avatarUri.isNotBlank()
-                            && acct.avatarUri.startsWith("http")) {
-                            KamelImage(
-                                resource = asyncPainterResource(data = acct.avatarUri),
-                                contentDescription = "Xbox Gamerpic",
-                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)),
-                                contentScale = ContentScale.Crop,
-                                onLoading = { AvatarPlaceholder(acct.username, 96) },
-                                onFailure = { AvatarPlaceholder(acct.username, 96) },
-                            )
-                        } else if (acct != null && acct.avatarUri.isNotBlank()
-                            && !acct.avatarUri.startsWith("http")) {
-                            val avatarFile = File(acct.avatarUri)
-                            val avatarBitmap = remember(acct.avatarUri, acct.uuid, avatarFile.lastModified()) {
-                                try {
-                                    val bytes = avatarFile.readBytes()
-                                    org.jetbrains.skia.Image.makeFromEncoded(bytes).toComposeImageBitmap()
-                                } catch (_: Exception) { null }
-                            }
-                            val bmp = avatarBitmap
-                            if (bmp != null) {
-                                androidx.compose.foundation.Image(
-                                    bitmap = bmp,
+                        if (acct != null && acct.avatarUri.isNotBlank()) {
+                            if (acct.avatarUri.startsWith("http")) {
+                                // 网络头像（crafatar 等）
+                                KamelImage(
+                                    resource = asyncPainterResource(data = acct.avatarUri),
                                     contentDescription = "头像",
                                     modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)),
                                     contentScale = ContentScale.Crop,
+                                    onLoading = { AvatarPlaceholder(acct.username, 96) },
+                                    onFailure = { AvatarPlaceholder(acct.username, 96) },
                                 )
                             } else {
-                                AvatarPlaceholder(acct.username, 96)
+                                // 本地文件头像
+                                val avatarFile = File(acct.avatarUri)
+                                val avatarBitmap = remember(acct.avatarUri, acct.uuid, avatarFile.lastModified()) {
+                                    try {
+                                        val bytes = avatarFile.readBytes()
+                                        org.jetbrains.skia.Image.makeFromEncoded(bytes).toComposeImageBitmap()
+                                    } catch (_: Exception) { null }
+                                }
+                                val bmp = avatarBitmap
+                                if (bmp != null) {
+                                    androidx.compose.foundation.Image(
+                                        bitmap = bmp,
+                                        contentDescription = "头像",
+                                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                } else {
+                                    AvatarPlaceholder(acct.username, 96)
+                                }
                             }
                         } else {
                             AvatarPlaceholder(acct?.username ?: "?", 96)
@@ -568,30 +628,49 @@ fun LaunchScreen() {
                             Text(if (isEn) (if (accountList.isEmpty()) "Login" else "Add") else (if (accountList.isEmpty()) "登录" else "添加"), style = MaterialTheme.typography.labelSmall)
                         }
                         if (acct != null) {
-                            Spacer(Modifier.width(6.dp))
-                            FilledTonalButton(
-                                onClick = {
-                                    scope.launch { AccountRepository.pickOfflineAvatar(acct.uuid) }
-                                },
-                                shape = RoundedCornerShape(10.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                            ) {
-                                Icon(Icons.Filled.Image, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text(if (isEn) "Avatar" else "头像", style = MaterialTheme.typography.labelSmall)
+                            // 离线账号：头像 + 换皮肤；第三方：头像 + 刷新皮肤；正版：刷新皮肤
+                            if (acct.type == AccountType.Offline || acct.type == AccountType.ThirdParty) {
+                                Spacer(Modifier.width(6.dp))
+                                FilledTonalButton(
+                                    onClick = {
+                                        scope.launch { AccountRepository.pickOfflineAvatar(acct.uuid) }
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                ) {
+                                    Icon(Icons.Filled.Image, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(if (isEn) "Avatar" else "头像", style = MaterialTheme.typography.labelSmall)
+                                }
                             }
                             if (acct.type == AccountType.Offline) {
                                 Spacer(Modifier.width(6.dp))
                                 FilledTonalButton(
-                                    onClick = {
-                                        skinModelDialogForUuid = acct.uuid
-                                    },
+                                    onClick = { skinModelDialogForUuid = acct.uuid },
                                     shape = RoundedCornerShape(10.dp),
                                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                                 ) {
                                     Icon(Icons.Filled.Checkroom, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(4.dp))
                                     Text(if (isEn) "Skin" else "皮肤", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                            if (acct.type == AccountType.MSA || acct.type == AccountType.ThirdParty) {
+                                Spacer(Modifier.width(6.dp))
+                                FilledTonalButton(
+                                    onClick = {
+                                        scope.launch {
+                                            try {
+                                                AccountRepository.refreshSkin(acct.uuid)
+                                            } catch (_: Exception) {}
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                ) {
+                                    Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(if (isEn) "Refresh" else "刷新", style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                             Spacer(Modifier.width(6.dp))
@@ -708,53 +787,334 @@ fun LaunchScreen() {
             }
 
             // ════════════════════════════════════════════════════════════════
+            //  中间区域 —— 启动圆环 / 面部皮肤预览（条件切换）
+            //  launchProgress > 0 时显示居中的加载圆环 + 下方文字，
+            //  否则显示紧凑型面部皮肤预览（已导入/默认 Steve）
+            // ════════════════════════════════════════════════════════════════
+
+            // 将 displayMsg / launchProgress 定义提前，供中间区域使用
+            val displayMsg by remember {
+                derivedStateOf {
+                    when {
+                        globalLaunching -> globalStatusMsg
+                        gameRunning -> processMsg
+                        processMsg.isNotBlank() && ("异常" in processMsg || "exit" in processMsg) ->
+                            processMsg.lineSequence().filter { it.isNotBlank() }.take(2).joinToString("\n")
+                        else -> launchMessage
+                    }
+                }
+            }
+            val launchProgress by remember {
+                derivedStateOf {
+                    when {
+                        globalLaunching -> globalProgress
+                        gameRunning && gameProgress > 0 -> gameProgress
+                        else -> 0
+                    }
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .wrapContentHeight(align = Alignment.CenterVertically),
+            ) {
+                if (launchProgress > 0) {
+                    // ── 启动中：居中圆环 + 下方启动文字 ──
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        val animatedProgress by animateFloatAsState(
+                            targetValue = launchProgress / 100f,
+                            animationSpec = tween(500, easing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1.0f)),
+                            label = "launch_progress",
+                        )
+
+                        val progressRotation = remember { Animatable(0f) }
+                        LaunchedEffect(Unit) {
+                            while (true) {
+                                progressRotation.animateTo(
+                                    targetValue = 360f,
+                                    animationSpec = infiniteRepeatable(
+                                        animation = tween(2000, easing = LinearEasing),
+                                        repeatMode = RepeatMode.Restart,
+                                    ),
+                                )
+                            }
+                        }
+
+                        val primaryColor = MaterialTheme.colorScheme.primary
+
+                        Box(contentAlignment = Alignment.Center) {
+                            Canvas(modifier = Modifier.size(72.dp)) {
+                                val strokeWidth = 4f
+                                val sweep = animatedProgress * 360f
+
+                                drawArc(
+                                    color = primaryColor.copy(alpha = 0.12f),
+                                    startAngle = 0f,
+                                    sweepAngle = 360f,
+                                    useCenter = false,
+                                    topLeft = Offset(strokeWidth / 2f, strokeWidth / 2f),
+                                    size = Size(size.width - strokeWidth, size.height - strokeWidth),
+                                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                                )
+                                drawArc(
+                                    color = primaryColor,
+                                    startAngle = progressRotation.value - 90f,
+                                    sweepAngle = sweep.coerceAtLeast(5f),
+                                    useCenter = false,
+                                    topLeft = Offset(strokeWidth / 2f, strokeWidth / 2f),
+                                    size = Size(size.width - strokeWidth, size.height - strokeWidth),
+                                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(12.dp))
+
+                        Text(
+                            "启动进度 $launchProgress%",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = primaryColor,
+                        )
+
+                        if (displayMsg.isNotBlank()) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                displayMsg,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                } else {
+                    // ── 未启动：紧凑型皮肤预览 ──
+                    val acct = activeAccount
+                    val isOffline = acct?.type == AccountType.Offline
+                    val isMsaOrThirdParty = acct?.type == AccountType.MSA || acct?.type == AccountType.ThirdParty
+                    // 离线账户取本地路径，正版/第三方取URL（可能是 https://textures.minecraft.net/...）
+                    val skinUri = acct?.skinUri.orEmpty()
+                    val skinModelStr = if (isOffline) acct?.skinModel.orEmpty() else "classic"
+                    val offlineUuid = acct?.uuid.orEmpty()
+                    val hasSkinFile = isOffline && skinUri.isNotBlank() && File(skinUri).exists()
+                    val hasSkinUrl = isMsaOrThirdParty && skinUri.startsWith("http")
+
+                    val faceBmp = remember(skinUri, offlineUuid) {
+                        if (hasSkinFile) loadSkinFaceBitmap(skinUri, 64) else null
+                    }
+
+                    // 对正版/第三方账户：从URL下载皮肤图，提取面部像素，缓存到内存
+                    var networkFaceBmp by remember(skinUri) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+                    LaunchedEffect(skinUri) {
+                        if (!hasSkinUrl) return@LaunchedEffect
+                        networkFaceBmp = null
+                        val bmp = withContext(Dispatchers.IO) {
+                            runCatching {
+                                val tmpFile = java.io.File.createTempFile("md3l_net_skin", ".png").apply { deleteOnExit() }
+                                val httpClient = HttpClient(CIO) { engine { requestTimeout = 15_000 } }
+                                val bytes = httpClient.get(skinUri).readBytes()
+                                httpClient.close()
+                                tmpFile.writeBytes(bytes)
+                                loadSkinFaceBitmap(tmpFile.absolutePath, 64)
+                            }.getOrNull()
+                        }
+                        networkFaceBmp = bmp
+                    }
+
+                    val steveFaceBmp = remember {
+                        runCatching {
+                            val stream = javaClass.getResourceAsStream("/icons/steve.png") ?: return@runCatching null
+                            val tmpFile = java.io.File.createTempFile("md3l_steve_face", ".png").apply { deleteOnExit() }
+                            stream.use { input -> tmpFile.outputStream().use { output -> input.copyTo(output) } }
+                            loadSkinFaceBitmap(tmpFile.absolutePath, 64)
+                        }.getOrNull()
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.58f),
+                        tonalElevation = 1.dp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 88.dp)
+                            .border(
+                                width = 1.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+                                shape = RoundedCornerShape(16.dp),
+                            ),
+                    ) {
+                        if (hasSkinFile && faceBmp != null) {
+                            // ── 离线账户：本地皮肤文件预览 ──
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
+                            ) {
+                                androidx.compose.foundation.Image(
+                                    bitmap = faceBmp,
+                                    contentDescription = "皮肤面部预览",
+                                    modifier = Modifier.size(64.dp).clip(RoundedCornerShape(14.dp)),
+                                    contentScale = ContentScale.Crop,
+                                )
+                                Spacer(Modifier.width(14.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        if (isEn) "Skin Preview" else "皮肤预览",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Text(
+                                        if (skinModelStr == "slim") "Slim (Alex)" else "Classic (Steve)",
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                                    )
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                FilledTonalIconButton(
+                                    onClick = { skinModelDialogForUuid = offlineUuid },
+                                    modifier = Modifier.size(40.dp),
+                                    shape = RoundedCornerShape(10.dp),
+                                ) {
+                                    Icon(Icons.Filled.Checkroom, contentDescription = "更换皮肤", modifier = Modifier.size(20.dp))
+                                }
+                            }
+                        } else if (hasSkinUrl) {
+                            // ── 正版/第三方账户：网络皮肤预览 ──
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
+                            ) {
+                                if (networkFaceBmp != null) {
+                                    androidx.compose.foundation.Image(
+                                        bitmap = networkFaceBmp!!,
+                                        contentDescription = "皮肤面部预览",
+                                        modifier = Modifier.size(64.dp).clip(RoundedCornerShape(14.dp)),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                } else {
+                                    // 加载中：使用头像 crafatar 预览
+                                    val avatarUrl = acct?.avatarUri.orEmpty()
+                                    if (avatarUrl.startsWith("http")) {
+                                        KamelImage(
+                                            resource = asyncPainterResource(data = avatarUrl),
+                                            contentDescription = "头像预览",
+                                            modifier = Modifier.size(64.dp).clip(RoundedCornerShape(14.dp)),
+                                            contentScale = ContentScale.Crop,
+                                            onLoading = {
+                                                Box(
+                                                    modifier = Modifier.size(64.dp).clip(RoundedCornerShape(14.dp))
+                                                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                                                    contentAlignment = Alignment.Center,
+                                                ) {
+                                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                                }
+                                            },
+                                            onFailure = {
+                                                Box(
+                                                    modifier = Modifier.size(64.dp).clip(RoundedCornerShape(14.dp))
+                                                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                                                    contentAlignment = Alignment.Center,
+                                                ) {
+                                                    Text("👤", fontSize = 28.sp)
+                                                }
+                                            },
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier.size(64.dp).clip(RoundedCornerShape(14.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                        }
+                                    }
+                                }
+                                Spacer(Modifier.width(14.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        if (isEn) "Account Skin" else "账号皮肤",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Text(
+                                        acct?.username.orEmpty().ifBlank { if (isEn) "Loading…" else "加载中…" },
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        acct?.displayType.orEmpty(),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
+                        } else if (steveFaceBmp != null) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
+                            ) {
+                                androidx.compose.foundation.Image(
+                                    bitmap = steveFaceBmp,
+                                    contentDescription = "Steve 默认皮肤",
+                                    modifier = Modifier.size(64.dp).clip(RoundedCornerShape(14.dp)),
+                                    contentScale = ContentScale.Crop,
+                                )
+                                Spacer(Modifier.width(14.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        if (isEn) "Default Skin" else "默认皮肤",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Text(
+                                        "Classic (Steve)",
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                                    )
+                                }
+                            }
+                        } else {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 18.dp),
+                            ) {
+                                Text("👤", fontSize = 32.sp)
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    if (isEn) "Import a skin to preview" else "导入皮肤后显示预览",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ════════════════════════════════════════════════════════════════
             //  底部区域 —— 状态消息 + 版本锚点 + 启动按钮
-            //  Align.BottomCenter，死钉底部，绝不因状态改变而偏移
             // ════════════════════════════════════════════════════════════════
             Column(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    .wrapContentHeight(),
             ) {
-                val displayMsg = when {
-                    globalLaunching -> globalStatusMsg
-                    gameRunning -> processMsg
-                    // 游戏退出后如果有异常信息，优先显示
-                    processMsg.isNotBlank() && ("异常" in processMsg || "exit" in processMsg) ->
-                        processMsg.lineSequence().filter { it.isNotBlank() }.take(2).joinToString("\n")
-                    else -> launchMessage
-                }
-                if (displayMsg.isNotBlank()) {
+                // 底部仅在不启动时显示状态消息，启动时的状态已挪到中间区域
+                if (displayMsg.isNotBlank() && launchProgress == 0) {
                     Text(
                         displayMsg,
                         style = MaterialTheme.typography.labelSmall,
                         color = when {
                             "失败" in displayMsg || "错误" in displayMsg || "崩溃" in displayMsg || "异常" in displayMsg -> MaterialTheme.colorScheme.error
-                            gameRunning -> MaterialTheme.colorScheme.tertiary
                             else -> MaterialTheme.colorScheme.primary
                         },
                         modifier = Modifier.padding(bottom = 6.dp),
                     )
-                }
-
-                val launchProgress = when {
-                    globalLaunching -> globalProgress
-                    gameRunning && gameProgress > 0 -> gameProgress
-                    else -> 0
-                }
-                if (launchProgress > 0) {
-                    Text(
-                        "启动进度 $launchProgress%",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(bottom = 4.dp),
-                    )
-                    LinearProgressIndicator(
-                        progress = { launchProgress / 100f },
-                        modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(Modifier.height(8.dp))
                 }
 
                 val unfoldRotation by animateFloatAsState(
@@ -854,8 +1214,8 @@ fun LaunchScreen() {
 
                                         engine.onProgress = { pct, msg -> LaunchState.updateProgress(pct, msg) }
                                         val bedrockLogFile = java.io.File(
-                                            launcher.core.LauncherDirs.dataDir,
-                                            "crashes/${ver.id}-bedrock-${System.currentTimeMillis()}.log"
+                                            launcher.core.LauncherDirs.bedrockLogDir,
+                                            "game-${ver.id}-${System.currentTimeMillis()}.log"
                                         ).also { it.parentFile?.mkdirs() }
                                         val process = withContext(Dispatchers.IO) { engine.execute(context) }
 
@@ -868,7 +1228,7 @@ fun LaunchScreen() {
                                         e.printStackTrace(PrintWriter(sw))
                                         val trace = sw.toString()
                                         errorStackTrace = trace
-                                        errorLogPath = writeLaunchFailureLog(ver.id, trace)
+                                        errorLogPath = writeLaunchFailureLog(ver.id, trace, isBedrock = true)
                                         showErrorDialog = true
                                         launchMessage = "启动失败，详情见错误弹窗/日志"
                                     } finally {
@@ -918,6 +1278,11 @@ fun LaunchScreen() {
                                             jvmG1MaxNewSizePercent = s.jvmG1MaxNewSizePercent,
                                             jvmG1HeapRegionSize = s.jvmG1HeapRegionSize,
                                             jvmG1GCPauseTarget = s.jvmG1GCPauseTarget,
+                                            jvmZUncommitDelay = s.jvmZUncommitDelay,
+                                            jvmConcGCThreads = s.jvmConcGCThreads,
+                                            jvmShenandoahMode = s.jvmShenandoahMode,
+                                            jvmShenandoahHeapSizePercent = s.jvmShenandoahHeapSizePercent,
+                                            jvmParallelGCThreads = s.jvmParallelGCThreads,
                                             jvmUseLargePages = s.jvmUseLargePages,
                                             jvmAlwaysPreTouch = s.jvmAlwaysPreTouch,
                                             jvmDisableExplicitGC = s.jvmDisableExplicitGC,
@@ -941,7 +1306,9 @@ fun LaunchScreen() {
                                         val engine = JavaLaunchEngine()
                                         LaunchState.updateProgress(80, "正在启动游戏进程…")
                                         val process = withContext(Dispatchers.IO) { engine.execute(context) }
-                                        LaunchState.attachProcess(process, ver.id, engine.lastLogFile)
+                                        LaunchState.attachProcess(process, ver.id, engine.lastLogFile, onExit = {
+                                            engine.stopSkinServer()
+                                        })
                                         launchMessage = if (isEn) "Game launched: ${ver.id}" else "游戏已启动: ${ver.id}"
                                     } catch (e: Exception) {
                                         val sw = StringWriter()
@@ -1019,9 +1386,12 @@ fun LaunchScreen() {
                         }
                     }
                 }
+
             }
         }
-    }
+    } // ← Row 结束
+
+    } // ← Box 结束
 
     // ══════════════════════════════════════════════════════════════════════════
     // 版本选择 Popup —— 悬浮于界面上方，绝对禁止破坏底部布局流
@@ -1035,15 +1405,15 @@ fun LaunchScreen() {
         ) {
             AnimatedVisibility(
                 visibleState = versionPopupVisible,
-                enter = fadeIn(tween(IosAppLaunchDuration, easing = IosAppLaunchCurve)) +
+                enter = fadeIn(tween(300, easing = md3StandardDecelerate)) +
                     scaleIn(
                         initialScale = 0.94f,
-                        animationSpec = tween(IosAppLaunchDuration, easing = IosAppLaunchCurve)
+                        animationSpec = tween(350, easing = md3EmphasizedDecelerate)
                     ),
-                exit = fadeOut(tween(IosAppLaunchDuration / 2, easing = IosAppLaunchCurve)) +
+                exit = fadeOut(tween(150, easing = md3StandardAccelerate)) +
                     scaleOut(
                         targetScale = 0.97f,
-                        animationSpec = tween(IosAppLaunchDuration / 2, easing = IosAppLaunchCurve)
+                        animationSpec = tween(150, easing = md3StandardAccelerate)
                     ),
                 modifier = Modifier
                     .width(420.dp)
@@ -1583,13 +1953,86 @@ fun LaunchScreen() {
             },
         )
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 皮肤导入成功右下角弹窗（5秒自动消失）
+    // ══════════════════════════════════════════════════════════════════════════
+    skinToastData?.let { info ->
+        val animAlpha by animateFloatAsState(
+            targetValue = if (skinToastData != null) 1f else 0f,
+            animationSpec = tween(300),
+            label = "skin_toast_alpha",
+        )
+        val density = LocalDensity.current
+        Popup(
+            alignment = Alignment.BottomEnd,
+            offset = with(density) { IntOffset(x = (-20).dp.roundToPx(), y = (-20).dp.roundToPx()) },
+            onDismissRequest = { skinToastData = null },
+            properties = PopupProperties(focusable = false, dismissOnBackPress = true, dismissOnClickOutside = true),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.inverseSurface,
+                shadowElevation = 8.dp,
+                tonalElevation = 4.dp,
+                modifier = Modifier.alpha(animAlpha),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Filled.AutoAwesome,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.inverseOnSurface,
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            if (isEn) "Skin imported" else "皮肤导入成功",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.inverseOnSurface,
+                        )
+                        Text(
+                            if (isEn) "${info.username} · ${info.modelLabel}"
+                            else "${info.username} · ${info.modelLabel}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.8f),
+                        )
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    TextButton(onClick = { skinToastData = null }) {
+                        Text(
+                            if (isEn) "OK" else "知道了",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.inverseOnSurface,
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
-private fun writeLaunchFailureLog(versionId: String, trace: String): String {
+/** 皮肤导入成功时右下角弹窗的数据 */
+private data class SkinToastInfo(val username: String, val modelLabel: String)
+
+/** 缓存统计数据的数据类，避免在 derivedStateOf 中返回 Pair/Triple */
+private data class StatsData(
+    val totalLaunches: Int,
+    val totalSec: Long,
+    val javaFrac: Float,
+    val bedrockFrac: Float,
+)
+
+private fun writeLaunchFailureLog(versionId: String, trace: String, isBedrock: Boolean = false): String {
     return try {
+        val logDir = if (isBedrock) launcher.core.LauncherDirs.bedrockLogDir
+            else launcher.core.LauncherDirs.javaLogDir
         val file = File(
-            launcher.core.LauncherDirs.dataDir,
-            "crashes/${versionId.ifBlank { "unknown" }}-launch-${System.currentTimeMillis()}.log",
+            logDir,
+            "launch-failure-${versionId.ifBlank { "unknown" }}-${System.currentTimeMillis()}.log",
         )
         file.parentFile?.mkdirs()
         file.writeText(trace, Charsets.UTF_8)

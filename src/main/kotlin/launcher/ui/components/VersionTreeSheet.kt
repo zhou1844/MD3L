@@ -1,6 +1,7 @@
 package launcher.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
@@ -29,8 +30,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import launcher.core.RemoteVersion
-import launcher.ui.theme.IosAppLaunchCurve
-import launcher.ui.theme.IosAppLaunchDuration
 
 /**
  * 二级树状版本选择器 —— 作为 ModalBottomSheet 的内容。
@@ -186,13 +185,16 @@ fun LocalVersionTreeSheetContent(
                 categories.forEach { category ->
                     val catExpanded = expandedCategory == category.type
                     item(key = "lcat_group_${category.type}") {
+                        // MD3 Standard Decelerate 曲线
+                        val md3StandardDecelerate = remember { CubicBezierEasing(0.0f, 0.0f, 0.2f, 1.0f) }
+                        
                         val containerColor by animateColorAsState(
                             if (catExpanded) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
                             else MaterialTheme.colorScheme.surfaceContainerHigh,
                             animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
                         )
                         
-                        Column(modifier = Modifier.fillMaxWidth().animateContentSize(tween(IosAppLaunchDuration, easing = IosAppLaunchCurve))) {
+                        Column(modifier = Modifier.fillMaxWidth().animateContentSize(tween(350, easing = md3StandardDecelerate))) {
                             ElevatedCard(
                                 onClick = { expandedCategory = if (catExpanded) null else category.type },
                                 shape = RoundedCornerShape(12.dp),
@@ -228,8 +230,8 @@ fun LocalVersionTreeSheetContent(
                             
                             AnimatedVisibility(
                                 visible = catExpanded,
-                                enter = expandVertically(tween(IosAppLaunchDuration, easing = IosAppLaunchCurve)) + fadeIn(),
-                                exit = shrinkVertically(tween(IosAppLaunchDuration / 2, easing = IosAppLaunchCurve)) + fadeOut(),
+                                enter = expandVertically(tween(350, easing = md3StandardDecelerate)) + fadeIn(),
+                                exit = shrinkVertically(tween(200, easing = md3StandardDecelerate)) + fadeOut(),
                             ) {
                                 Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
                                     category.versions.forEach { version ->
@@ -296,6 +298,8 @@ fun VersionTreeSheetContent(
 ) {
     var expandedNode by remember { mutableStateOf<String?>(null) }
     var expandedCategory by remember { mutableStateOf<String?>(null) }
+    // 缓存 MD3 曲线，避免每次重组重新分配
+    val md3StandardDecelerate = remember { CubicBezierEasing(0.0f, 0.0f, 0.2f, 1.0f) }
 
     Column(modifier = modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
         Text(
@@ -376,10 +380,10 @@ fun VersionTreeSheetContent(
                             )
                             val iconRotation by animateFloatAsState(
                                 targetValue = if (catExpanded) 180f else 0f,
-                                animationSpec = tween(IosAppLaunchDuration / 2, easing = IosAppLaunchCurve)
+                                animationSpec = tween(200, easing = md3StandardDecelerate)
                             )
                             
-                            Column(modifier = Modifier.fillMaxWidth().animateContentSize(tween(IosAppLaunchDuration, easing = IosAppLaunchCurve))) {
+                            Column(modifier = Modifier.fillMaxWidth().animateContentSize(tween(350, easing = md3StandardDecelerate))) {
                                 Surface(
                                     onClick = { expandedCategory = if (catExpanded) null else catKey },
                                     shape = RoundedCornerShape(10.dp),
@@ -420,8 +424,8 @@ fun VersionTreeSheetContent(
 
                                 AnimatedVisibility(
                                     visible = catExpanded,
-                                    enter = expandVertically(tween(IosAppLaunchDuration, easing = IosAppLaunchCurve)) + fadeIn(),
-                                    exit = shrinkVertically(tween(IosAppLaunchDuration / 2, easing = IosAppLaunchCurve)) + fadeOut(),
+                                    enter = expandVertically(tween(350, easing = md3StandardDecelerate)) + fadeIn(),
+                                    exit = shrinkVertically(tween(200, easing = md3StandardDecelerate)) + fadeOut(),
                                 ) {
                                     Column(modifier = Modifier.fillMaxWidth().padding(top = 2.dp)) {
                                         val displayVersions = category.versions.take(100)

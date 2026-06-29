@@ -1,5 +1,6 @@
 package launcher.ui.screens
 
+import launcher.ui.layout.NavBarScrollState
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -31,6 +32,7 @@ import launcher.core.*
 import launcher.ui.components.VersionIcon
 import java.awt.Desktop
 import java.io.File
+import kotlin.text.Charsets
 
 @Composable
 private fun VersionPill(label: String, selected: Boolean, onClick: () -> Unit) {
@@ -86,15 +88,19 @@ fun VersionScreen() {
         refresh()
     }
 
-    // 全部 tab 时合并 Java + Bedrock
-    val allVersions = when {
-        filterBedrock -> bedrockVersions
-        filterType == null -> repoVersions + bedrockVersions          // 「全部」合并
-        else -> repoVersions
-    }
-    val filteredVersions = allVersions.filter { v ->
-        (filterBedrock || filterType == null || v.loaderType == filterType) &&
-                (searchQuery.isBlank() || v.id.contains(searchQuery, ignoreCase = true))
+    // 使用 derivedStateOf 缓存过滤结果，避免每次重组都重新计算
+    val filteredVersions by remember {
+        derivedStateOf {
+            val allVersions = when {
+                filterBedrock -> bedrockVersions
+                filterType == null -> repoVersions + bedrockVersions
+                else -> repoVersions
+            }
+            allVersions.filter { v ->
+                (filterBedrock || filterType == null || v.loaderType == filterType) &&
+                        (searchQuery.isBlank() || v.id.contains(searchQuery, ignoreCase = true))
+            }
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -220,6 +226,24 @@ fun VersionScreen() {
             }
         } else {
             val gridState = rememberLazyGridState()
+            // 监听网格滚动位置，更新底栏淡出隐藏状态
+            LaunchedEffect(gridState) {
+                snapshotFlow {
+                    val canScrollForward = gridState.canScrollForward
+                    val layoutInfo = gridState.layoutInfo
+                    val firstVisible = layoutInfo.visibleItemsInfo.firstOrNull()
+                    val totalItems = layoutInfo.totalItemsCount
+                    Triple(canScrollForward, firstVisible?.index ?: 0, totalItems)
+                }.collect { (canScrollForward, firstIdx, totalItems) ->
+                    NavBarScrollState.scrollFraction.value = when {
+                        totalItems == 0 -> 0f
+                        // 内容太少不足以滚动 → 保持导航栏可见
+                        !canScrollForward && firstIdx == 0 -> 0f
+                        !canScrollForward -> 1f
+                        else -> (firstIdx.toFloat() / totalItems.toFloat()).coerceIn(0f, 0.99f)
+                    }
+                }
+            }
             Box(modifier = Modifier.fillMaxSize()) {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 280.dp),
@@ -299,6 +323,81 @@ fun VersionScreen() {
                             Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
                             Text(if (isEn) "Confirm" else "确认")
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                }
+
+                // ── 自定义 Java 路径（仅 Java 版支持）────────────────────
+                if (ver.type != "bedrock") {
+                    Text(if (isEn) "Custom Java Path (optional)" else "自定义 Java 路径（可选）", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = ver.customJavaPath,
+                            onValueChange = { newPath ->
+                                selectedVersion = ver.copy(customJavaPath = newPath)
+                                // 自动保存到 .md3l_java 文件
+                                scope.launch(Dispatchers.IO) {
+                                    val javaCfgFile = File(ver.versionDir, ".md3l_java")
+                                    if (newPath.isBlank()) {
+                                        javaCfgFile.delete()
+                                    } else {
+                                        javaCfgFile.writeText(newPath, Charsets.UTF_8)
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f),
+                            label = { Text(if (isEn) "Java executable path" else "Java 可执行文件路径") },
+                            placeholder = { Text(if (isEn) "Leave empty to use global setting" else "留空则使用全局设置") },
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        FilledTonalIconButton(
+                            onClick = {
+                                scope.launch {
+                                    val chosen = withContext(Dispatchers.IO) {
+                                        val chooser = javax.swing.JFileChooser()
+                                        chooser.dialogTitle = if (isEn) "Select Java Executable" else "选择 Java 可执行文件"
+                                        chooser.fileFilter = object : javax.swing.filechooser.FileFilter() {
+                                            override fun accept(f: File?): Boolean =
+                                                f != null && (f.isDirectory || f.name.endsWith(".exe", ignoreCase = true))
+                                            override fun getDescription(): String = "Java 可执行文件 (*.exe)"
+                                        }
+                                        if (chooser.showOpenDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) {
+                                            chooser.selectedFile.absolutePath
+                                        } else null
+                                    }
+                                    if (chosen != null) {
+                                        selectedVersion = ver.copy(customJavaPath = chosen)
+                                        // 自动保存
+                                        withContext(Dispatchers.IO) {
+                                            File(ver.versionDir, ".md3l_java").writeText(chosen, Charsets.UTF_8)
+                                        }
+                                        sheetMessage = if (isEn) "Custom Java path saved" else "自定义 Java 路径已保存"
+                                    }
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Icon(Icons.Filled.FolderOpen, contentDescription = "浏览", modifier = Modifier.size(20.dp))
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        if (ver.customJavaPath.isNotBlank()) {
+                            FilledTonalIconButton(
+                                onClick = {
+                                    selectedVersion = ver.copy(customJavaPath = "")
+                                    // 自动清除
+                                    scope.launch(Dispatchers.IO) {
+                                        File(ver.versionDir, ".md3l_java").delete()
+                                    }
+                                    sheetMessage = if (isEn) "Custom Java path cleared" else "已清除自定义 Java 路径"
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                            ) {
+                                Icon(Icons.Filled.Clear, contentDescription = "清除", modifier = Modifier.size(20.dp))
+                            }
                         }
                     }
                     Spacer(Modifier.height(16.dp))

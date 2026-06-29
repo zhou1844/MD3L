@@ -85,11 +85,17 @@ object BedrockResourceApi {
     suspend fun getModFiles(modId: Int): List<CfBedrockFile> = withContext(Dispatchers.IO) {
         runCatching {
             val resp = client.get("$CF_PROXY/mods/$modId/files") {
-                parameter("pageSize", 20)
+                parameter("pageSize", 50)
+                parameter("index", 0)
                 header("Accept", "application/json")
                 header("User-Agent", "MD3L-Launcher/1.3")
             }
-            parseCfFiles(resp.bodyAsText())
+            val body = resp.bodyAsText()
+            println("[DEBUG] getModFiles($modId) response: ${body.take(500)}")
+            parseCfFiles(body)
+        }.onFailure { e ->
+            println("[ERROR] getModFiles($modId) failed: ${e.message}")
+            e.printStackTrace()
         }.getOrDefault(emptyList())
     }
 

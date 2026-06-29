@@ -12,6 +12,7 @@ sealed class Route {
     data object Download : Route()
     data object Mods : Route()
     data object BedrockMods : Route()
+    data object Multiplayer : Route()
     data object Settings : Route()
 
     // ── 二级页面 (从一级页面跳转进入) ──────────────────────────────────────────
@@ -30,6 +31,7 @@ fun Route.primaryTab(): Screen = when (this) {
     is Route.Versions -> Screen.Versions
     is Route.Download, is Route.VersionDetail, is Route.BedrockVersionDetail, is Route.DownloadManager -> Screen.Download
     is Route.Mods, is Route.BedrockMods, is Route.ModDetail, is Route.CfBedrockDetail -> Screen.Mods
+    is Route.Multiplayer -> Screen.Multiplayer
     is Route.Settings -> Screen.Settings
     is Route.Log -> Screen.Log
     is Route.BedrockPackManager -> Screen.Versions

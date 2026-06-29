@@ -471,138 +471,119 @@ class BedrockLaunchEngine : ILaunchEngine {
         return true // 完全相等也算 GDK
     }
 
+    /**
+     * 仿照 BedrockBoot 的启动流程重构：
+     * 1. 版本隔离（Junction 切换） → 2. COM 激活（注册+启动） → 3. 驻留等待进程退出
+     * 移除了窗口句柄检测和超时强杀逻辑。
+     */
     override fun execute(context: LaunchContext): Process {
         runtimeChecked = true
 
         if (context.version.type == "bedrock" && context.version.versionDir.isNotBlank()) {
             val versionDir = File(context.version.versionDir)
-
             val versionId = versionDir.name
 
-            if (isGdkVersion(versionId)) {
-                val isMsaAccount = context.accountType == AccountType.MSA
-
-                if (isMsaAccount) {
-                    // 正版 MSA 用户本机持有 Xbox/GamePass license，直接跑 EXE 不触发试用版
-                    onProgress?.invoke(30, "正版账户，GDK 快速启动…")
-                    val exeFile = File(versionDir, "Minecraft.Windows.exe")
-                    if (!exeFile.isFile) throw RuntimeException(
-                        "GDK 版本 $versionId 目录中未找到 Minecraft.Windows.exe。\n目录: ${versionDir.absolutePath}"
-                    )
-                    onProgress?.invoke(80, "正在启动 Minecraft.Windows.exe…")
-                    println("[MD3L] GDK 正版快速启动: ${exeFile.absolutePath}")
-                    val beforePids = ProcessHandle.allProcesses()
-                        .filter { it.info().command().orElse("").endsWith("Minecraft.Windows.exe") }
-                        .map { it.pid() }.toList()
-                    val pb = ProcessBuilder(exeFile.absolutePath).directory(versionDir)
-                    configureVcLibsEnvironment(pb)
-                    pb.start()
-                    onProgress?.invoke(95, "已启动，等待游戏进程…")
-                    return waitForMinecraftProcess(beforePids, timeoutMs = 30_000)
-                }
-
-                // 非正版（离线/第三方）：走 -Register + COM 激活，绕过 license 检查
-                onProgress?.invoke(30, "GDK 版本，切换 com.mojang 存档…")
-                val gdkProfile = resolveBedrockVersionComMojang(context.minecraftDir, context.version.id)
-                runCatching { switchProfileJunction(gdkProfile) }
-
-                val manifestFile = File(versionDir, "AppxManifest.xml")
-                if (!manifestFile.isFile) throw RuntimeException(
-                    "GDK 版本 $versionId 目录中未找到 AppxManifest.xml。\n目录: ${versionDir.absolutePath}"
-                )
-                val packageFile = resolveSelectedVersionPackage(versionDir) ?: manifestFile
-                val prewarmed = getPrewarmedSlot(versionDir)
-                val fastSlot = prewarmed ?: resolveInstalledSelectedVersionSlot(versionDir, packageFile)
-                val slot = if (fastSlot != null) {
-                    onProgress?.invoke(85, if (prewarmed != null) "预热命中，直接激活…" else "命中已注册槽位，准备激活…")
-                    fastSlot
-                } else {
-                    onProgress?.invoke(50, "正在注册 GDK 应用包…")
-                    installSelectedVersionPackageSlot(versionDir, packageFile, onProgress)
-                }
-                onProgress?.invoke(90, "正在激活 GDK 游戏进程…")
-                try {
-                    val pid = activateUwpApplication(slot.aumid)
-                    println("[MD3L] GDK COM 激活成功: PID=$pid, AUMID=${slot.aumid}")
-                } catch (e: Exception) {
-                    println("[MD3L] GDK COM 激活失败，清除 marker 重注册: ${e.message}")
-                    File(versionDir, ".installed").delete()
-                    invalidateInstalledPackageFamilyCache()
-                    invalidatePrewarm(versionDir)
-                    onProgress?.invoke(50, "GDK 槽位失效，重新注册…")
-                    val newSlot = installSelectedVersionPackageSlot(versionDir, packageFile, onProgress)
-                    onProgress?.invoke(90, "重注册完成，激活中…")
-                    val pid2 = activateUwpApplication(newSlot.aumid)
-                    println("[MD3L] GDK 重注册激活成功: PID=$pid2")
-                }
-                onProgress?.invoke(95, "已激活，等待游戏进程…")
-                return uwpMonitorProcess()
+            // GDK + MSA 正版：直接启动 EXE（最快路径，无需 COM 激活）
+            if (isGdkVersion(versionId) && context.accountType == AccountType.MSA) {
+                return launchGdkMsaDirect(versionDir, versionId)
             }
 
+            // ── 版本隔离：切换 com.mojang Junction ──
             onProgress?.invoke(30, "正在切换版本存档…")
             val targetProfile = resolveBedrockVersionComMojang(context.minecraftDir, context.version.id)
-            switchProfileJunction(targetProfile)
+            runCatching { switchProfileJunction(targetProfile) }
             println("[MD3L] 版本存档已隔离: ${targetProfile.absolutePath}")
-            injectBedrockGameOptions(targetProfile, context)
 
-            val manifestFile = File(versionDir, "AppxManifest.xml")
-            if (!manifestFile.isFile) throw RuntimeException(
-                "基岩版 ${context.version.id} 目录中未找到 AppxManifest.xml。\n" +
-                "目录: ${versionDir.absolutePath}\n请重新下载并安装该版本。"
-            )
-            val packageFile = resolveSelectedVersionPackage(versionDir) ?: manifestFile
-            val prewarmed = getPrewarmedSlot(versionDir)
-            val fastSlot = prewarmed ?: resolveInstalledSelectedVersionSlot(versionDir, packageFile)
-            val slot = if (fastSlot != null) {
-                onProgress?.invoke(85, if (prewarmed != null) "预热命中，直接激活…" else "命中已注册槽位，准备激活…")
-                fastSlot
-            } else {
-                onProgress?.invoke(50, "正在注册 UWP 应用包…")
-                installSelectedVersionPackageSlot(versionDir, packageFile, onProgress)
+            // 非 GDK 路径额外注入游戏选项（GDK 版本隔离由 Junction 完成，选项注入会干扰）
+            if (!isGdkVersion(versionId)) {
+                injectBedrockGameOptions(targetProfile, context)
             }
-            onProgress?.invoke(90, "正在激活游戏进程…")
-            try {
-                val pid = activateUwpApplication(slot.aumid)
-                println("[MD3L] UWP COM 激活成功: PID=$pid, AUMID=${slot.aumid}")
-            } catch (e: Exception) {
-                println("[MD3L] UWP COM 激活失败，清除 marker 重注册: ${e.message}")
-                File(versionDir, ".installed").delete()
-                invalidateInstalledPackageFamilyCache()
-                invalidatePrewarm(versionDir)
-                onProgress?.invoke(50, "槽位失效，重新注册…")
-                val newSlot = installSelectedVersionPackageSlot(versionDir, packageFile, onProgress)
-                onProgress?.invoke(90, "重注册完成，激活中…")
-                val pid2 = activateUwpApplication(newSlot.aumid)
-                println("[MD3L] UWP 重注册激活成功: PID=$pid2")
-            }
-            onProgress?.invoke(95, "已激活，等待游戏进程…")
-            return uwpMonitorProcess()
 
-        } else {
-            val detectedAumid = detectInstalledMinecraft()
-                ?: throw RuntimeException(
-                    "基岩版启动失败：未检测到已安装的 Minecraft 基岩版。\n" +
-                    "请确保已通过 Microsoft Store 或下载安装页完成安装。"
-                )
-            activateUwpApplication(detectedAumid)
-            println("[MD3L] COM 系统包激活成功 AUMID=$detectedAumid")
-            onProgress?.invoke(95, "已激活，等待游戏进程…")
-            return uwpMonitorProcess()
+            // ── COM 注册 + 激活（GDK 离线 / UWP 通用） ──
+            return launchViaComActivation(versionDir, versionId)
         }
+
+        // 系统已安装的基岩版（未托管版本目录）
+        val detectedAumid = detectInstalledMinecraft()
+            ?: throw RuntimeException(
+                "基岩版启动失败：未检测到已安装的 Minecraft 基岩版。\n" +
+                "请确保已通过 Microsoft Store 或下载安装页完成安装。"
+            )
+        activateUwpApplication(detectedAumid)
+        println("[MD3L] COM 系统包激活成功 AUMID=$detectedAumid")
+        onProgress?.invoke(95, "已激活，等待游戏进程…")
+        return uwpMonitorProcess()
+    }
+
+    /**
+     * GDK + MSA 正版快速启动：直接执行 EXE，不经过 COM 激活。
+     */
+    private fun launchGdkMsaDirect(versionDir: File, versionId: String): Process {
+        onProgress?.invoke(30, "正版账户，GDK 快速启动…")
+        val exeFile = File(versionDir, "Minecraft.Windows.exe")
+        if (!exeFile.isFile) throw RuntimeException(
+            "GDK 版本 $versionId 目录中未找到 Minecraft.Windows.exe。\n目录: ${versionDir.absolutePath}"
+        )
+        onProgress?.invoke(80, "正在启动 Minecraft.Windows.exe…")
+        println("[MD3L] GDK 正版快速启动: ${exeFile.absolutePath}")
+        val beforePids = ProcessHandle.allProcesses()
+            .filter { it.info().command().orElse("").endsWith("Minecraft.Windows.exe") }
+            .map { it.pid() }.toList()
+        val pb = ProcessBuilder(exeFile.absolutePath).directory(versionDir)
+        configureVcLibsEnvironment(pb)
+        pb.start()
+        onProgress?.invoke(95, "已启动，等待游戏进程…")
+        return waitForMinecraftProcess(beforePids, timeoutMs = 30_000)
+    }
+
+    /**
+     * COM 激活通用流程：查找/注册包 → COM 激活 → 驻留监控。
+     * GDK 离线版和标准 UWP 版共用此路径，消除冗余代码。
+     */
+    private fun launchViaComActivation(versionDir: File, versionId: String): Process {
+        val manifestFile = File(versionDir, "AppxManifest.xml")
+        if (!manifestFile.isFile) throw RuntimeException(
+            "版本 $versionId 目录中未找到 AppxManifest.xml。\n目录: ${versionDir.absolutePath}"
+        )
+        val packageFile = resolveSelectedVersionPackage(versionDir) ?: manifestFile
+        val prewarmed = getPrewarmedSlot(versionDir)
+        val fastSlot = prewarmed ?: resolveInstalledSelectedVersionSlot(versionDir, packageFile)
+        val slot = if (fastSlot != null) {
+            onProgress?.invoke(85, if (prewarmed != null) "预热命中，直接激活…" else "命中已注册槽位，准备激活…")
+            fastSlot
+        } else {
+            onProgress?.invoke(50, "正在注册应用包…")
+            installSelectedVersionPackageSlot(versionDir, packageFile, onProgress)
+        }
+        onProgress?.invoke(90, "正在激活游戏进程…")
+        try {
+            val pid = activateUwpApplication(slot.aumid)
+            println("[MD3L] COM 激活成功: PID=$pid, AUMID=${slot.aumid}")
+        } catch (e: Exception) {
+            println("[MD3L] COM 激活失败，清除 marker 重注册: ${e.message}")
+            File(versionDir, ".installed").delete()
+            invalidateInstalledPackageFamilyCache()
+            invalidatePrewarm(versionDir)
+            onProgress?.invoke(50, "槽位失效，重新注册…")
+            val newSlot = installSelectedVersionPackageSlot(versionDir, packageFile, onProgress)
+            onProgress?.invoke(90, "重注册完成，激活中…")
+            val pid2 = activateUwpApplication(newSlot.aumid)
+            println("[MD3L] 重注册激活成功: PID=$pid2")
+        }
+        onProgress?.invoke(95, "已激活，等待游戏进程…")
+        return uwpMonitorProcess()
     }
 
     private fun uwpMonitorProcess(): Process {
-        val s = "\$"
+        // 简化版：仿照 BedrockBoot，只等待 Minecraft.Windows 进程出现，不检查窗口句柄
         val script = """
-            ${"\$"}proc = ${"\$"}null
-            for (${"\$"}i = 0; ${"\$"}i -lt 120; ${"\$"}i++) {
-                ${"\$"}proc = Get-Process -Name 'Minecraft.Windows' -ErrorAction SilentlyContinue | Select-Object -First 1
-                if (${"\$"}proc) { break }
-                Start-Sleep -Milliseconds 500
-            }
-            if (${"\$"}proc) {
-                Wait-Process -Id ${"\$"}proc.Id -ErrorAction SilentlyContinue
-            }
+            ${'$'}deadline = (Get-Date).AddSeconds(30)
+            do {
+                Start-Sleep -Milliseconds 200
+                ${'$'}mc = Get-Process -Name 'Minecraft.Windows' -ErrorAction SilentlyContinue | Select-Object -First 1
+            } while (-not ${'$'}mc -and (Get-Date) -lt ${'$'}deadline)
+            if (-not ${'$'}mc) { exit 1 }
+            Wait-Process -Id ${'$'}mc.Id -ErrorAction SilentlyContinue
         """.trimIndent()
         return ProcessBuilder("powershell", "-NoProfile", "-Command", script)
             .redirectErrorStream(true).start()
@@ -617,23 +598,15 @@ class BedrockLaunchEngine : ILaunchEngine {
                 .filter { !beforePids.contains(it.pid()) }
                 .findFirst().orElse(null)
             if (mcHandle != null) break
-            Thread.sleep(300)
+            Thread.sleep(200)
         }
         val foundHandle = mcHandle
             ?: throw RuntimeException("等待 Minecraft.Windows.exe 超时（${timeoutMs / 1000}s），游戏未能启动。")
         println("[MD3L] 游戏进程已就绪: PID=${foundHandle.pid()}")
         onProgress?.invoke(100, "游戏已启动")
+        // 轻量驻留：仅等待进程退出，仿照 BedrockBoot 的 WaitForProcessExitAsync
         val sentinelScript = """
-            ${'$'}deadline = (Get-Date).AddSeconds(60)
-            do {
-                Start-Sleep -Milliseconds 500
-                ${'$'}mc = Get-Process -Name 'Minecraft.Windows' -ErrorAction SilentlyContinue
-            } while (-not ${'$'}mc -and (Get-Date) -lt ${'$'}deadline)
-            while (${'$'}true) {
-                ${'$'}mc = Get-Process -Name 'Minecraft.Windows' -ErrorAction SilentlyContinue
-                if (-not ${'$'}mc) { exit 0 }
-                Start-Sleep -Milliseconds 500
-            }
+            Wait-Process -Id ${foundHandle.pid()} -ErrorAction SilentlyContinue
         """.trimIndent()
         val sentinel = ProcessBuilder("powershell", "-NoProfile", "-Command", sentinelScript)
             .redirectErrorStream(true).start()

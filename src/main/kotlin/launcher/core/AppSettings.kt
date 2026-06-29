@@ -57,6 +57,14 @@ data class AppSettings(
     val jvmEnableAggressiveOpts: Boolean = false,
     val jvmStringDedup: Boolean = true,
     val jvmUseZGC: Boolean = false,
+    // GC 精细调节 — ZGC
+    val jvmZUncommitDelay: Int = 60,        // -XX:ZUncommitDelay (秒)
+    val jvmConcGCThreads: Int = 0,          // -XX:ConcGCThreads, 0=auto
+    // GC 精细调节 — Shenandoah
+    val jvmShenandoahMode: String = "iu",   // -XX:ShenandoahGCMode (iu/passive)
+    val jvmShenandoahHeapSizePercent: Int = 10, // -XX:ShenandoahHeapSizePercent
+    // GC 精细调节 — Parallel
+    val jvmParallelGCThreads: Int = 0,      // -XX:ParallelGCThreads, 0=auto
     // Java版高级设置 — 启动行为
     val launchDemoMode: Boolean = false,
     val skipVersionCheck: Boolean = false,
@@ -118,6 +126,14 @@ data class AppSettings(
     val uiShowVersionBadge: Boolean = true, // 侧边栏底部显示版本号
     val uiCornerRadius: Int = 16,           // dp，全局圆角半径
     val showLogSidebar: Boolean = false,    // 侧边栏显示日志入口（需手动开启）
+    // 通用 — 导航方式 (sidebar / floating)
+    val navigationMode: String = "sidebar",
+    // 浮动导航专属设置
+    val navFloatingMarginBottom: Int = 12,  // dp，浮动导航距窗口底部距离
+    val navFloatingMarginSide: Int = 16,    // dp，浮动导航距窗口左右距离
+    val navFloatingCornerRadius: Int = 24,  // dp，浮动导航自身圆角
+    val navFloatingHeight: Int = 64,        // dp，浮动导航高度
+    val navFloatingShowLabels: Boolean = true,
 ) {
     companion object {
         private val json = Json {

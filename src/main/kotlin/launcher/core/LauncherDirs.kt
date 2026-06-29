@@ -6,6 +6,11 @@ import java.io.File
  * 启动器数据目录管理。
  * 所有持久化数据存储在启动器 EXE/JAR 同目录下的 "data" 子文件夹，
  * 而非用户主目录，保证便携性。
+ *
+ * 日志目录结构：
+ *   <launcherDir>/log/          ← 启动器自身日志（渲染、启动事件等）
+ *   <launcherDir>/log/Java/     ← Java 版游戏相关日志
+ *   <launcherDir>/log/bedrock/  ← 基岩版游戏相关日志
  */
 object LauncherDirs {
 
@@ -22,6 +27,30 @@ object LauncherDirs {
      */
     val dataDir: File by lazy {
         File(launcherDir, "data").also { it.mkdirs() }
+    }
+
+    /**
+     * 启动器日志根目录：<launcherDir>/log
+     * 所有启动器自身事件（渲染、启动流程等）写入此目录。
+     */
+    val logDir: File by lazy {
+        File(launcherDir, "log").also { it.mkdirs() }
+    }
+
+    /**
+     * Java 版游戏日志目录：<launcherDir>/log/Java
+     * Java 版启动、游戏输出等日志写入此目录。
+     */
+    val javaLogDir: File by lazy {
+        File(logDir, "Java").also { it.mkdirs() }
+    }
+
+    /**
+     * 基岩版游戏日志目录：<launcherDir>/log/bedrock
+     * 基岩版启动、游戏输出等日志写入此目录。
+     */
+    val bedrockLogDir: File by lazy {
+        File(logDir, "bedrock").also { it.mkdirs() }
     }
 
     /**

@@ -40,5 +40,13 @@ copy /b "scripts\stub.exe" + "%APP_JAR%" "dist\MD3L.exe" >nul
 echo [MD3L] Cleanup...
 del "scripts\stub.exe"
 
-echo [MD3L] Done! Output: dist\MD3L.exe
+echo [MD3L] Compiling MD3LUpdater (?????)...
+C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /target:winexe /win32icon:src\main\resources\app_icon.ico /win32manifest:updater\updater.manifest /out:dist\MD3LUpdater.exe updater\MD3LUpdater.cs
+if %ERRORLEVEL% neq 0 (
+    echo [MD3L] WARNING: MD3LUpdater compilation failed! Updates will fall back to PowerShell method.
+) else (
+    echo [MD3L] MD3LUpdater compiled successfully: dist\MD3LUpdater.exe
+)
+
+echo [MD3L] Done! Output: dist\MD3L.exe  +  dist\MD3LUpdater.exe
 pause
