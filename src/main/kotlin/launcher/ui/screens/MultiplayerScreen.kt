@@ -120,37 +120,36 @@ fun MultiplayerScreen() {
                 IdleContent(
                     isEn = isEn,
                     roomCodeInput = roomCodeInput,
-                    onRoomCodeChange = { roomCodeInput = it.uppercase().take(6) },
+                    onRoomCodeChange = { roomCodeInput = it.uppercase().take(32) },
                     onCreateRoom = { MultiplayerManager.createRoom() },
                     onJoinRoom = { MultiplayerManager.joinRoom(roomCodeInput) },
                 )
             }
             MultiplayerManager.State.HostScanning -> {
-                ScanningContent(isEn = isEn, message = statusMessage, onBack = { MultiplayerManager.reset() })
+                ScanningContent(isEn = isEn, message = statusMessage)
             }
             MultiplayerManager.State.HostOK -> {
                 HostOkContent(
                     isEn = isEn,
                     roomInfo = roomInfo,
                     serverAddress = serverAddress,
-                    onReset = { MultiplayerManager.reset() },
+                    onReset = { MultiplayerManager.cancelToIdle() },
                 )
             }
             MultiplayerManager.State.GuestConnecting -> {
-                ConnectingContent(isEn = isEn, message = statusMessage, onBack = { MultiplayerManager.reset() })
+                ConnectingContent(isEn = isEn, message = statusMessage)
             }
             MultiplayerManager.State.GuestOK -> {
                 GuestOkContent(
                     isEn = isEn,
                     serverAddress = serverAddress,
-                    onReset = { MultiplayerManager.reset() },
+                    onReset = { MultiplayerManager.cancelToIdle() },
                 )
             }
             MultiplayerManager.State.Exception -> {
                 ExceptionContent(
                     isEn = isEn,
                     error = errorMessage,
-                    onReset = { MultiplayerManager.reset() },
                     onRecover = { MultiplayerManager.recover() },
                 )
             }
@@ -377,7 +376,7 @@ private fun IdleContent(
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     shape = RoundedCornerShape(8.dp),
-                    textStyle = MaterialTheme.typography.titleMedium.copy(letterSpacing = 3.sp),
+                    textStyle = MaterialTheme.typography.titleMedium.copy(letterSpacing = 1.sp),
                 )
                 Button(
                     onClick = onJoinRoom,
@@ -394,7 +393,7 @@ private fun IdleContent(
 //  Scanning — 扫描中继节点
 // ═════════════════════════════════════════════════════════════════════════════
 @Composable
-private fun ScanningContent(isEn: Boolean, message: String, onBack: () -> Unit) {
+private fun ScanningContent(isEn: Boolean, message: String) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
@@ -412,7 +411,7 @@ private fun ScanningContent(isEn: Boolean, message: String, onBack: () -> Unit) 
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(16.dp))
-        TextButton(onClick = onBack) {
+        TextButton(onClick = { MultiplayerManager.cancelToIdle() }) {
             Text(if (isEn) "Cancel" else "取消")
         }
     }
@@ -429,6 +428,11 @@ private fun HostOkContent(
     onReset: () -> Unit,
 ) {
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+
+    // 解析自己的玩家名（当前房主）
+    val myName = remember {
+        launcher.core.AccountRepository.activeAccount.value?.username ?: "MD3L_Player"
+    }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -487,14 +491,22 @@ private fun HostOkContent(
             }
         }
 
-        // 玩家列表
+        // 玩家列表（带踢人按钮）
         if (roomInfo != null && roomInfo.profiles.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
-            Text(
-                text = if (isEn) "Players in Room" else "房间内玩家",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = if (isEn) "Players in Room" else "房间内玩家",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = if (isEn) "(${roomInfo.profiles.size} players)" else "(${roomInfo.profiles.size} 位玩家)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             roomInfo.profiles.forEach { profile ->
                 Spacer(Modifier.height(8.dp))
                 Card(
@@ -505,13 +517,39 @@ private fun HostOkContent(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(12.dp),
                     ) {
-                        Icon(Icons.Filled.Person, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Icon(
+                            if (profile.type == "host") Icons.Filled.Star else Icons.Filled.Person,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = if (profile.type == "host") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         Spacer(Modifier.width(8.dp))
                         Text(profile.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                         AssistChip(
                             onClick = {},
-                            label = { Text(profile.type, fontSize = 11.sp) },
+                            label = {
+                                Text(
+                                    if (profile.type == "host") (if (isEn) "Host" else "房主")
+                                    else (if (isEn) "Guest" else "客机"),
+                                    fontSize = 11.sp,
+                                )
+                            },
                         )
+                        // 房主可以踢客机（不能踢自己）
+                        if (profile.type != "host" && profile.name != myName) {
+                            Spacer(Modifier.width(8.dp))
+                            IconButton(
+                                onClick = { MultiplayerManager.kickPlayer(profile.name) },
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(
+                                    Icons.Filled.PersonRemove,
+                                    contentDescription = if (isEn) "Kick ${profile.name}" else "踢出 ${profile.name}",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -535,7 +573,7 @@ private fun HostOkContent(
 //  Connecting — 连接中
 // ═════════════════════════════════════════════════════════════════════════════
 @Composable
-private fun ConnectingContent(isEn: Boolean, message: String, onBack: () -> Unit) {
+private fun ConnectingContent(isEn: Boolean, message: String) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
@@ -553,7 +591,7 @@ private fun ConnectingContent(isEn: Boolean, message: String, onBack: () -> Unit
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(16.dp))
-        TextButton(onClick = onBack) {
+        TextButton(onClick = { MultiplayerManager.cancelToIdle() }) {
             Text(if (isEn) "Cancel" else "取消")
         }
     }
@@ -618,7 +656,6 @@ private fun GuestOkContent(isEn: Boolean, serverAddress: String, onReset: () -> 
 private fun ExceptionContent(
     isEn: Boolean,
     error: String?,
-    onReset: () -> Unit,
     onRecover: () -> Unit,
 ) {
     Column(
@@ -654,7 +691,7 @@ private fun ExceptionContent(
         }
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onReset) {
+            OutlinedButton(onClick = { MultiplayerManager.cancelToIdle() }) {
                 Text(if (isEn) "Back" else "返回")
             }
             Button(onClick = onRecover) {
