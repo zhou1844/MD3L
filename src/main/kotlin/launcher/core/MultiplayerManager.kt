@@ -67,7 +67,7 @@ object MultiplayerManager {
     data class PlayerProfile(
         val name: String,
         val vendor: String = "",
-        val type: String = "host",
+        val type: String = "guest",
     )
 
     // ── 房间码信息 ────────────────────────────────────────────────────
@@ -237,6 +237,38 @@ object MultiplayerManager {
             } catch (e: Exception) {
                 _errorMessage.value = "创建房间失败: ${e.message}"
                 _state.value = State.Exception
+            }
+        }
+    }
+
+    // ── 踢出玩家（仅房主可用） ────────────────────────────────────────
+    fun kickPlayer(playerName: String) {
+        if (playerName.isBlank()) return
+        scope.launch {
+            try {
+                _errorMessage.value = null
+                val encoded = java.net.URLEncoder.encode(playerName, "UTF-8")
+                httpPost("/state/kick", "player=$encoded")
+                _statusMessage.value = "已踢出玩家: $playerName"
+            } catch (e: Exception) {
+                _errorMessage.value = "踢出玩家失败: ${e.message}"
+            }
+        }
+    }
+
+    // ── 取消 / 断开回到空闲（不杀进程） ─────────────────────────────
+    fun cancelToIdle() {
+        scope.launch {
+            try {
+                httpGet("/state/ide")
+                _state.value = State.Idle
+                _statusMessage.value = "就绪 — 请选择创建或加入房间"
+                _errorMessage.value = null
+                _roomInfo.value = null
+                _serverAddress.value = ""
+            } catch (_: Exception) {
+                // 如果 HTTP 不通（进程异常），回退到 reset
+                reset()
             }
         }
     }
