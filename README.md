@@ -37,7 +37,7 @@
 
 系统要求：Windows 10 / 11 64 位，不需要装 Java（内置了）。
 
-也可以访问项目网站：[md3l.pages.dev](https://md3l.pages.dev)
+也可以访问项目网站：https://md3l.top
 
 ## 构建
 
@@ -77,6 +77,7 @@ src/main/kotlin/launcher/
 - [BMCLAPI](https://bmclapidoc.bangbang93.com/) — 国内下载镜像
 - [Terracotta](https://github.com/Glavo/Terracotta) — 联机中继工具
 - [HMCL](https://github.com/HMCL-dev/HMCL) — 很多实现思路的参考
+- [MCAPPX](https://www.mcappx.com) -基岩版下载源
 - Minecraft 当然是 Mojang 的
 
 ## License
