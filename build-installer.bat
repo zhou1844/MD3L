@@ -18,6 +18,12 @@ if not exist "dist\runtime\bin\java.exe" (
     exit /b 1
 )
 
+REM Check for MD3LUpdater.exe (optional but recommended)
+if not exist "dist\MD3LUpdater.exe" (
+    echo [MD3L] WARNING: dist\MD3LUpdater.exe not found. Updates will fall back to PowerShell method.
+    echo [MD3L] Run build-update.bat first to generate the updater.
+)
+
 REM Read version from AutoUpdater.kt  (line: "    const val CURRENT_VERSION = "x.y.z"")
 set "APP_VERSION="
 set "RAW="

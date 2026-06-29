@@ -62,7 +62,31 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
             }
             selectedTargetVersion = localVersions.firstOrNull()
         }
-        versions = ModrinthApi.getProjectVersions(project.slug)
+        // 检测是否为 CurseForge 源（slug 以 "cf:" 开头）
+        val slug = project.slug
+        if (slug.startsWith("cf:")) {
+            val modId = slug.removePrefix("cf:").toIntOrNull()
+            if (modId != null) {
+                val cfFiles = ModrinthApi.getCurseForgeProjectFiles(modId)
+                versions = cfFiles.map { file ->
+                    ModrinthVersion(
+                        id = "cf_${file.fileId}",
+                        name = file.fileName.removeSuffix(".jar").removeSuffix(".zip"),
+                        versionNumber = file.fileName,
+                        gameVersions = file.gameVersions,
+                        files = listOf(ModrinthFile(
+                            url = file.downloadUrl,
+                            filename = file.fileName,
+                            primary = true,
+                            size = file.fileSize,
+                        )),
+                        dependencies = emptyList(),
+                    )
+                }
+            }
+        } else {
+            versions = ModrinthApi.getProjectVersions(slug)
+        }
         isLoading = false
     }
 

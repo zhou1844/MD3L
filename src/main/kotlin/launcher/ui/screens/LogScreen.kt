@@ -1,5 +1,7 @@
 package launcher.ui.screens
 
+import launcher.ui.layout.NavBarScrollState
+
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,6 +30,24 @@ fun LogScreen() {
     val isEn = launcher.ui.theme.ThemeState.language == "en"
     val lines = AppLogger.lines
     val listState = rememberLazyListState()
+    // 监听日志列表滚动位置，更新底栏淡出隐藏状态
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            val canScrollForward = listState.canScrollForward
+            val layoutInfo = listState.layoutInfo
+            val firstVisible = layoutInfo.visibleItemsInfo.firstOrNull()
+            val totalItems = layoutInfo.totalItemsCount
+            Triple(canScrollForward, firstVisible?.index ?: 0, totalItems)
+        }.collect { (canScrollForward, firstIdx, totalItems) ->
+            NavBarScrollState.scrollFraction.value = when {
+                totalItems == 0 -> 0f
+                // 内容太少不足以滚动 → 保持导航栏可见
+                !canScrollForward && firstIdx == 0 -> 0f
+                !canScrollForward -> 1f
+                else -> (firstIdx.toFloat() / totalItems.toFloat()).coerceIn(0f, 0.99f)
+            }
+        }
+    }
     var autoScroll by remember { mutableStateOf(true) }
     var filterQuery by remember { mutableStateOf("") }
     var showErrOnly by remember { mutableStateOf(false) }

@@ -164,7 +164,12 @@ object JavaManager {
     ): String {
         val required = resolveRequiredJavaMajor(version)
         val displayId = version.inheritsFrom ?: version.id
-        return resolveJavaForRequired(displayId, required, userJavaPath, onProgress)
+        // 优先使用版本自定义 Java 路径
+        val effectiveUserPath = version.customJavaPath.takeIf { it.isNotBlank() } ?: userJavaPath
+        if (version.customJavaPath.isNotBlank()) {
+            onProgress("使用版本自定义 Java: $effectiveUserPath")
+        }
+        return resolveJavaForRequired(displayId, required, effectiveUserPath, onProgress)
     }
 
     private suspend fun resolveJavaForRequired(

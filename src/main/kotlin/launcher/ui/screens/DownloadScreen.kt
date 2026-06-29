@@ -1,5 +1,7 @@
 package launcher.ui.screens
 
+import launcher.ui.layout.NavBarScrollState
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
@@ -485,6 +487,24 @@ private fun JavaDownloadContent() {
         initialFirstVisibleItemIndex = DownloadScreenState.javaListFirstVisibleItemIndex.value,
         initialFirstVisibleItemScrollOffset = DownloadScreenState.javaListFirstVisibleItemScrollOffset.value,
     )
+    // 监听 Java 列表滚动位置，更新底栏淡出隐藏状态
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            val canScrollForward = listState.canScrollForward
+            val layoutInfo = listState.layoutInfo
+            val firstVisible = layoutInfo.visibleItemsInfo.firstOrNull()
+            val totalItems = layoutInfo.totalItemsCount
+            Triple(canScrollForward, firstVisible?.index ?: 0, totalItems)
+        }.collect { (canScrollForward, firstIdx, totalItems) ->
+            NavBarScrollState.scrollFraction.value = when {
+                totalItems == 0 -> 0f
+                // 内容太少不足以滚动 → 保持导航栏可见
+                !canScrollForward && firstIdx == 0 -> 0f
+                !canScrollForward -> 1f
+                else -> (firstIdx.toFloat() / totalItems.toFloat()).coerceIn(0f, 0.99f)
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         if (remoteVersions.isNotEmpty() || loadError.isNotBlank()) return@LaunchedEffect
@@ -656,6 +676,24 @@ private fun BedrockDownloadContent() {
         initialFirstVisibleItemIndex = DownloadScreenState.bedrockListFirstVisibleItemIndex.value,
         initialFirstVisibleItemScrollOffset = DownloadScreenState.bedrockListFirstVisibleItemScrollOffset.value,
     )
+    // 监听基岩版列表滚动位置，更新底栏淡出隐藏状态
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            val canScrollForward = listState.canScrollForward
+            val layoutInfo = listState.layoutInfo
+            val firstVisible = layoutInfo.visibleItemsInfo.firstOrNull()
+            val totalItems = layoutInfo.totalItemsCount
+            Triple(canScrollForward, firstVisible?.index ?: 0, totalItems)
+        }.collect { (canScrollForward, firstIdx, totalItems) ->
+            NavBarScrollState.scrollFraction.value = when {
+                totalItems == 0 -> 0f
+                // 内容太少不足以滚动 → 保持导航栏可见
+                !canScrollForward && firstIdx == 0 -> 0f
+                !canScrollForward -> 1f
+                else -> (firstIdx.toFloat() / totalItems.toFloat()).coerceIn(0f, 0.99f)
+            }
+        }
+    }
 
     val downloadingVersions by BedrockDownloadManager.downloadingVersions.collectAsState()
     val downloadResults by BedrockDownloadManager.downloadResults.collectAsState()

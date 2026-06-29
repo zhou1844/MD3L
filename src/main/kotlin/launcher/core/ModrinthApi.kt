@@ -16,6 +16,34 @@ import java.net.URLEncoder
 import java.net.URLDecoder
 
 @Serializable
+data class CurseForgeProject(
+    val modId: Int = 0,
+    val slug: String = "",
+    val title: String = "",
+    val summary: String = "",
+    val iconUrl: String = "",
+    val downloads: Long = 0,
+    val categories: List<String> = emptyList(),
+    val projectType: String = "mod",
+    val author: String = "",
+    val pageUrl: String = "",
+    val latestFileName: String = "",
+    val latestDownloadUrl: String = "",
+    val latestFileSize: Long = 0,
+)
+
+@Serializable
+data class CurseForgeFile(
+    val fileId: Int = 0,
+    val fileName: String = "",
+    val displayName: String = "",
+    val downloadUrl: String = "",
+    val fileSize: Long = 0,
+    val gameVersions: List<String> = emptyList(),
+    val releaseDate: String = "",
+)
+
+@Serializable
 data class ModrinthProject(
     val slug: String = "",
     val title: String = "",
@@ -57,6 +85,13 @@ data class ModrinthFile(
 object ModrinthApi {
 
     private const val BASE = "https://api.modrinth.com/v2"
+    private const val CF_API = "https://api.curseforge.com/v1"
+    private const val CF_PROXY = "https://api.curse.tools/v1"
+    private const val CF_GAME_ID = 432
+    private const val CF_CLASS_MOD = 6
+    private const val CF_CLASS_RESOURCEPACK = 12
+    private const val CF_CLASS_SHADER = 6552
+    private const val CF_CLASS_MODPACK = 4471
 
     private val client = HttpClient(CIO) {
         engine { requestTimeout = 20_000 }
@@ -470,6 +505,157 @@ object ModrinthApi {
                 header("User-Agent", "MD3L/1.1")
             }
             dest.writeBytes(resp.readBytes())
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // CurseForge Java / Java-like resources
+    // ─────────────────────────────────────────────────────────────────────
+
+    private fun cfClassIdFor(projectType: String): Int = when (projectType) {
+        "resourcepack" -> CF_CLASS_RESOURCEPACK
+        "shader" -> CF_CLASS_SHADER
+        "modpack" -> CF_CLASS_MODPACK
+        else -> CF_CLASS_MOD
+    }
+
+    private fun cfTypeLabel(projectType: String): String = when (projectType) {
+        "resourcepack" -> "资源包"
+        "shader" -> "光影"
+        "modpack" -> "整合包"
+        else -> "模组"
+    }
+
+    private fun cfLatestFileName(fileObj: JsonObject): String {
+        val name = fileObj["fileName"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        if (name.isNotBlank()) return name
+        val download = fileObj["downloadUrl"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        return download.substringAfterLast('/').substringBefore('?').ifBlank { "curseforge_file.jar" }
+    }
+
+    private fun parseCurseForgeProjects(body: String, projectType: String): List<CurseForgeProject> {
+        val root = json.parseToJsonElement(body).jsonObject
+        val arr = root["data"]?.jsonArray ?: return emptyList()
+        return arr.mapNotNull { el ->
+            runCatching {
+                val obj = el.jsonObject
+                val latestFile = obj["latestFiles"]?.jsonArray?.firstOrNull()?.jsonObject
+                val logo = obj["logo"]?.jsonObject
+                val links = obj["links"]?.jsonObject
+                val authors = obj["authors"]?.jsonArray?.firstOrNull()?.jsonObject
+                CurseForgeProject(
+                    modId = obj["id"]?.jsonPrimitive?.intOrNull ?: 0,
+                    slug = obj["slug"]?.jsonPrimitive?.contentOrNull ?: "",
+                    title = obj["name"]?.jsonPrimitive?.contentOrNull ?: "",
+                    summary = obj["summary"]?.jsonPrimitive?.contentOrNull ?: "",
+                    iconUrl = logo?.get("thumbnailUrl")?.jsonPrimitive?.contentOrNull
+                        ?: logo?.get("url")?.jsonPrimitive?.contentOrNull
+                        ?: "",
+                    downloads = obj["downloadCount"]?.jsonPrimitive?.longOrNull ?: 0L,
+                    categories = obj["categories"]?.jsonArray?.mapNotNull { cEl ->
+                        cEl.jsonObject["name"]?.jsonPrimitive?.contentOrNull
+                    } ?: emptyList(),
+                    projectType = projectType,
+                    author = authors?.get("name")?.jsonPrimitive?.contentOrNull ?: "CurseForge",
+                    pageUrl = links?.get("websiteUrl")?.jsonPrimitive?.contentOrNull
+                        ?: "https://www.curseforge.com/minecraft/mc-mods",
+                    latestFileName = latestFile?.let(::cfLatestFileName).orEmpty(),
+                    latestDownloadUrl = latestFile?.get("downloadUrl")?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    latestFileSize = latestFile?.get("fileLength")?.jsonPrimitive?.longOrNull ?: 0L,
+                )
+            }.getOrNull()
+        }
+    }
+
+    private fun parseCurseForgeFiles(body: String): List<CurseForgeFile> {
+        val root = json.parseToJsonElement(body).jsonObject
+        val arr = root["data"]?.jsonArray ?: return emptyList()
+        return arr.mapNotNull { el ->
+            runCatching {
+                val obj = el.jsonObject
+                CurseForgeFile(
+                    fileId = obj["id"]?.jsonPrimitive?.intOrNull ?: 0,
+                    fileName = obj["fileName"]?.jsonPrimitive?.contentOrNull ?: "",
+                    displayName = obj["displayName"]?.jsonPrimitive?.contentOrNull ?: "",
+                    downloadUrl = obj["downloadUrl"]?.jsonPrimitive?.contentOrNull ?: "",
+                    fileSize = obj["fileLength"]?.jsonPrimitive?.longOrNull ?: 0L,
+                    gameVersions = obj["gameVersions"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList(),
+                    releaseDate = obj["fileDate"]?.jsonPrimitive?.contentOrNull ?: "",
+                )
+            }.getOrNull()
+        }
+    }
+
+    suspend fun searchCurseForge(
+        query: String,
+        projectType: String = "mod",
+        limit: Int = 20,
+        index: Int = 0,
+    ): List<CurseForgeProject> = withContext(Dispatchers.IO) {
+        try {
+            val actualQuery = if (query.isNotBlank() && containsChinese(query)) {
+                translateToEnglish(query) ?: query
+            } else query
+            val classId = cfClassIdFor(projectType)
+            val resp = client.get("$CF_PROXY/mods/search") {
+                parameter("gameId", CF_GAME_ID)
+                parameter("classId", classId)
+                parameter("pageSize", limit)
+                parameter("index", index)
+                parameter("sortField", 2)
+                parameter("sortOrder", "desc")
+                if (actualQuery.isNotBlank()) parameter("searchFilter", actualQuery)
+                header("Accept", "application/json")
+                header("User-Agent", "MD3L/1.1")
+            }
+            parseCurseForgeProjects(resp.bodyAsText(), projectType)
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun getCurseForgeProjectFiles(modId: Int): List<CurseForgeFile> = withContext(Dispatchers.IO) {
+        try {
+            val resp = client.get("$CF_PROXY/mods/$modId/files") {
+                parameter("pageSize", 20)
+                header("Accept", "application/json")
+                header("User-Agent", "MD3L/1.1")
+            }
+            parseCurseForgeFiles(resp.bodyAsText())
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun getCurseForgeProject(modId: Int, projectType: String = "mod"): CurseForgeProject? = withContext(Dispatchers.IO) {
+        try {
+            val resp = client.get("$CF_PROXY/mods/$modId") {
+                header("Accept", "application/json")
+                header("User-Agent", "MD3L/1.1")
+            }
+            val root = json.parseToJsonElement(resp.bodyAsText()).jsonObject
+            val data = root["data"]?.jsonObject ?: return@withContext null
+            val fakeBody = json.encodeToString(JsonObject.serializer(), JsonObject(mapOf("data" to JsonArray(listOf(data)))))
+            parseCurseForgeProjects(fakeBody, projectType).firstOrNull()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    suspend fun downloadCurseForgeFile(file: CurseForgeFile, targetDir: File): Boolean = withContext(Dispatchers.IO) {
+        try {
+            targetDir.mkdirs()
+            val dest = File(targetDir, file.fileName.ifBlank { file.displayName.ifBlank { "curseforge_file.jar" } })
+            val url = file.downloadUrl.ifBlank { return@withContext false }
+            ResourceDownloadManager.launch(
+                name = dest.name,
+                url = url,
+                dest = dest,
+                size = file.fileSize,
+            )
             true
         } catch (_: Exception) {
             false

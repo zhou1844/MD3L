@@ -1,10 +1,13 @@
-﻿package launcher.core
+package launcher.core
 
 import kotlinx.serialization.json.*
 import java.io.File
 import java.security.MessageDigest
+import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import java.awt.image.BufferedImage
+import javax.imageio.ImageIO
 
 class JavaLaunchEngine : ILaunchEngine {
 
@@ -13,6 +16,11 @@ class JavaLaunchEngine : ILaunchEngine {
     // 缓存：每次 execute 计算一次，避免 resolveArgTemplate 反复读文件
     private var cachedAssetsIndex: String = ""
     var lastLogFile: File? = null
+        private set
+
+    // HMCL 方案：本地 Yggdrasil 服务器（用于离线账户皮肤）
+    // 在 execute() 中启动、在进程退出后由外部 stop
+    var skinServer: OfflineSkinServer? = null
         private set
 
     override fun execute(context: LaunchContext): Process {
@@ -24,7 +32,7 @@ class JavaLaunchEngine : ILaunchEngine {
 
         val inheritanceRoots = resolveInheritanceRoots(root, context.minecraftDir)
 
-        // 预计算 assetsIndex：优先自身 → 继承链最近可用 assets 字段 → 当前版本 ID
+        // 预计算 assetsIndex：优先自身 → 继承链最近可用 assets 字段 → 回退到 mc 版本号
         cachedAssetsIndex = context.version.assetsIndex.ifBlank {
             inheritanceRoots.asReversed().firstNotNullOfOrNull { parent ->
                 parent["assets"]?.jsonPrimitive?.contentOrNull
@@ -33,19 +41,37 @@ class JavaLaunchEngine : ILaunchEngine {
             }
                 ?: context.version.id
         }
-
-        val mainClass = resolveMainClass(root, inheritanceRoots)
-        val classPath = buildClassPath(root, context, inheritanceRoots)
-        val gameArgs = buildGameArguments(root, context, inheritanceRoots)
-        val jvmArgs = buildJvmArguments(root, context, classPath, inheritanceRoots)
-
-        val command = mutableListOf<String>().apply {
-            add(context.javaPath)
-            addAll(jvmArgs)
-            add(mainClass)
-            addAll(gameArgs)
+        // 修复：assetIndex 必须是有效的 Minecraft 资源索引标识符（如 "1.16.5"、"5" 等），
+        // 不能是整合包自定义版本名。如果解析结果看起来不像有效 assetIndex，回退到继承链中父版本的 ID。
+        if (cachedAssetsIndex.length > 20 || cachedAssetsIndex.contains(" ", ignoreCase = true)) {
+            val fallback = inheritanceRoots.asReversed().firstNotNullOfOrNull { parent ->
+                parent["assets"]?.jsonPrimitive?.contentOrNull
+                    ?: parent["assetIndex"]?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull
+            } ?: run {
+                // 尝试从继承链的 id 中提取 MC 版本号（如 "1.16.5-forge-36.2.39" → "1.16.5"）
+                inheritanceRoots.asReversed().firstNotNullOfOrNull { parent ->
+                    parent["id"]?.jsonPrimitive?.contentOrNull?.let { id ->
+                        // 匹配 MC 版本号模式如 1.16.5, 1.20.1, 1.21 等
+                        """\d+\.\d+(\.\d+)?""".toRegex().find(id)?.value
+                    }
+                }
+            }
+            if (fallback != null) {
+                println("[Launch] assetIndex 修正: '$cachedAssetsIndex' -> '$fallback'")
+                cachedAssetsIndex = fallback
+            }
         }
 
+        // ── 解析 MC 版本号（从继承链获取原始版本 ID，如 "1.20.4"） ──────────
+        val mcVersionStr = resolveMcVersionString(root, inheritanceRoots, cachedAssetsIndex)
+        val (mcMajor, mcMinor, mcPatch) = parseMcVersion(mcVersionStr)
+        println("[SkinServer] MC版本: $mcVersionStr → ($mcMajor, $mcMinor, $mcPatch), 皮肤模型: ${context.skinModel}")
+
+        // HMCL 方案：通过 Yggdrasil 服务器直接传递皮肤模型（slim/wide），
+        // 不再需要 UUID 操控来匹配纹理路径。MC 从 profile 响应的 textures metadata
+        // 读取模型信息，因此对所有版本（包括 1.21.11+、快照版）通用。
+
+        // ── 目录初始化 ──────────────────────────────────────────────────
         val nativesDir = context.nativesDir
         if (!nativesDir.exists()) nativesDir.mkdirs()
 
@@ -73,7 +99,23 @@ class JavaLaunchEngine : ILaunchEngine {
         File(isolatedDir, "config").mkdirs()
         File(isolatedDir, "shaderpacks").mkdirs()
         ensureOptions(isolatedDir)
-        ensureOfflineSkinResourcePack(context, isolatedDir)
+
+        // ⚠️ 必须在 buildJvmArguments 之前启动 Yggdrasil 服务器，
+        // 否则 skinServer 为 null，authlib-injector JVM 参数永远不会被加入
+        ensureOfflineSkin(context, isolatedDir)
+
+        // ── 构建启动参数（JVM 参数在此处读取 skinServer 状态）────────────────
+        val mainClass = resolveMainClass(root, inheritanceRoots)
+        val classPath = buildClassPath(root, context, inheritanceRoots)
+        val gameArgs = buildGameArguments(root, context, inheritanceRoots)
+        val jvmArgs = buildJvmArguments(root, context, classPath, inheritanceRoots)
+
+        val command = mutableListOf<String>().apply {
+            add(context.javaPath)
+            addAll(jvmArgs)
+            add(mainClass)
+            addAll(gameArgs)
+        }
 
         val pb = ProcessBuilder(command)
             .directory(isolatedDir)
@@ -82,7 +124,7 @@ class JavaLaunchEngine : ILaunchEngine {
         pb.environment()["APPDATA"] = File(context.minecraftDir).parent ?: context.rootGameDir.absolutePath
 
         // ── 启动日志写入文件，方便排查崩溃 ──────────────────────────────────
-        val logFile = File(isolatedDir, "logs/md3l-launch-${java.time.LocalDateTime.now().toString().replace(':', '-')}.log")
+        val logFile = File(LauncherDirs.javaLogDir, "launch-${context.version.id}-${java.time.LocalDateTime.now().toString().replace(':', '-')}.log")
         logFile.parentFile?.mkdirs()
         lastLogFile = logFile
         val logLines = buildString {
@@ -189,7 +231,9 @@ class JavaLaunchEngine : ILaunchEngine {
         val optionsFile = File(gameDir, "options.txt")
         if (!optionsFile.exists()) {
             optionsFile.parentFile?.mkdirs()
-            optionsFile.writeText("lang:zh_cn\n", Charsets.UTF_8)
+            // 必须包含 resourcePacks:["vanilla"]，否则后续 addSkinPack 添加的
+            // 资源包列表缺少 "vanilla" 会导致 Minecraft 不加载默认纹理 → "整个都是乱的"
+            optionsFile.writeText("lang:zh_cn\nresourcePacks:[\"vanilla\"]\n", Charsets.UTF_8)
             return
         }
         val lines = optionsFile.readLines(Charsets.UTF_8).toMutableList()
@@ -203,22 +247,68 @@ class JavaLaunchEngine : ILaunchEngine {
             lines.add("lang:zh_cn")
             optionsFile.writeText(lines.joinToString("\n") + "\n", Charsets.UTF_8)
         }
+        // 确保 resourcePacks 行存在（兜底，防止外部工具删除该行）
+        if (lines.none { it.startsWith("resourcePacks:") }) {
+            lines.add("resourcePacks:[\"vanilla\"]")
+            optionsFile.writeText(lines.joinToString("\n") + "\n", Charsets.UTF_8)
+        }
     }
 
-    private fun ensureOfflineSkinResourcePack(context: LaunchContext, gameDir: File) {
+    /**
+     * 参照 HMCL 方案：使用本地 Yggdrasil 服务器 + authlib-injector 提供离线皮肤。
+     *
+     * HMCL 完全不用资源包方式——资源包方案在高版本 MC（1.21.11+、快照版 26w06a 等）存在
+     * pack_format 与 supported_formats 兼容性问题，即使格式正确也可能被 known_packs.json 缓存拒绝。
+     *
+     * 本方案通过 authlib-injector 将 MC 的认证请求重定向到本地 HTTP 服务器，
+     * 由服务器返回包含皮肤纹理 URL 的 profile 响应。MC 通过原生认证管线加载皮肤，
+     * 完全绕过资源包兼容性检查，对所有 MC 版本通用。
+     *
+     * 同时清理旧的资源包文件（如果存在），确保不会残留。
+     */
+    private fun ensureOfflineSkin(context: LaunchContext, gameDir: File) {
         val skinFile = File(context.skinUri)
-        val packFile = File(gameDir, "resourcepacks/MD3L_Offline_Skin.zip")
+
+        // 清理旧版资源包文件（迁移到新方案后不再需要）
+        val oldPackFile = File(gameDir, "resourcepacks/MD3L_Offline_Skin.zip")
+        if (oldPackFile.exists()) {
+            oldPackFile.delete()
+            removeResourcePackFromOptions(gameDir, oldPackFile.name)
+            println("[SkinServer] 已清理旧版皮肤资源包: ${oldPackFile.absolutePath}")
+        }
+
+        // 非离线账户或没有皮肤文件 → 停止旧服务器，不做其他事
         if (context.accessToken != "0" || !skinFile.isFile) {
-            if (packFile.exists()) packFile.delete()
-            removeResourcePackFromOptions(gameDir, packFile.name)
+            stopSkinServer()
             return
         }
-        createSkinResourcePack(packFile, skinFile, context.skinModel)
-        enableResourcePack(gameDir, packFile.name)
+
+        // 启动本地 Yggdrasil 服务器并注册角色
+        val server = OfflineSkinServer()
+        server.start()
+        skinServer = server
+
+        val isSlim = context.skinModel == "slim"
+        server.addCharacter(
+            uuid = context.uuid,
+            name = context.playerName,
+            skinFile = skinFile,
+            isSlim = isSlim
+        )
+        println("[SkinServer] 离线皮肤服务器已启动: ${server.rootUrl}, 角色=${context.playerName}, slim=$isSlim")
     }
 
-    private fun createSkinResourcePack(packFile: File, skinFile: File, skinModel: String) {
+    fun stopSkinServer() {
+        skinServer?.stop()
+        skinServer = null
+    }
+
+    private fun createSkinResourcePack(packFile: File, skinFile: File, isSlim: Boolean, mcMajor: Int, mcMinor: Int, mcPatch: Int) {
         packFile.parentFile?.mkdirs()
+        val packFormat = calculatePackFormat(mcMajor, mcMinor, mcPatch)
+        // 1.7.x 及以下不支持 slim，强制 wide；1.8+ 才有 Alex/slim 模型
+        val effectiveIsSlim = isSlim && mcMajor >= 8
+        val subfolder = if (effectiveIsSlim) "slim" else "wide"
         ZipOutputStream(packFile.outputStream()).use { zip ->
             fun putText(path: String, text: String) {
                 zip.putNextEntry(ZipEntry(path))
@@ -227,61 +317,159 @@ class JavaLaunchEngine : ILaunchEngine {
             }
             fun putFile(path: String) {
                 zip.putNextEntry(ZipEntry(path))
-                skinFile.inputStream().use { it.copyTo(zip) }
+                // 对 1.6-1.7（mcMajor<=7），若皮肤是 64x64 则裁剪到 64x32（旧格式）
+                if (mcMajor <= 7) {
+                    val cropped = runCatching {
+                        val img = javax.imageio.ImageIO.read(skinFile)
+                        if (img != null && img.width == 64 && img.height == 64) {
+                            val top = img.getSubimage(0, 0, 64, 32)
+                            javax.imageio.ImageIO.write(top, "png", zip)
+                            true
+                        } else false
+                    }.getOrDefault(false)
+                    if (!cropped) skinFile.inputStream().use { it.copyTo(zip) }
+                } else {
+                    skinFile.inputStream().use { it.copyTo(zip) }
+                }
                 zip.closeEntry()
             }
-            putText("pack.mcmeta", """{"pack":{"pack_format":1,"description":"MD3L Offline Skin"}}""")
-            putFile("assets/minecraft/textures/entity/steve.png")
-            putFile("assets/minecraft/textures/entity/alex.png")
-            putFile("assets/minecraft/textures/entity/player/wide/steve.png")
-            putFile("assets/minecraft/textures/entity/player/slim/alex.png")
-            val selected = if (skinModel == "slim") "alex" else "steve"
-            putText("assets/minecraft/textures/entity/md3l_skin_model.txt", selected)
-        }
-    }
-
-    private fun enableResourcePack(gameDir: File, packName: String) {
-        val optionsFile = File(gameDir, "options.txt")
-        val lines = if (optionsFile.exists()) optionsFile.readLines(Charsets.UTF_8).toMutableList() else mutableListOf()
-        val fileEntry = "file/$packName"
-
-        fun insertIntoPackLine(key: String) {
-            val idx = lines.indexOfFirst { it.startsWith("$key:") }
-            if (idx >= 0) {
-                val existing = lines[idx].substringAfter("$key:")
-                // 已包含则不重复添加
-                if (fileEntry in existing) return
-                // 将条目插入到已有列表的末尾（保留 vanilla 等默认包）
-                val trimmed = existing.trim()
-                val newList = if (trimmed == "[]" || trimmed.isBlank()) {
-                    "[\"$fileEntry\"]"
-                } else {
-                    trimmed.trimEnd(']') + ",\"$fileEntry\"]"
-                }
-                lines[idx] = "$key:$newList"
+            // PCL2 的 pack.mcmeta 只写 pack_format + description；那是针对 ≤1.20.x。
+            // MC 1.21.2+ (pack_format≥46) 强制要求 supported_formats，对象格式 {"min_inclusive":X,"max_inclusive":Y}。
+            // 1.20.5-1.21.1 用数组格式 [min,max]；此处按 packFormat 版本自适应。
+            val sf = if (packFormat >= 46) {
+                """{"min_inclusive":$packFormat,"max_inclusive":$packFormat}"""
             } else {
-                lines.add("$key:[\"$fileEntry\"]")
+                """[$packFormat,$packFormat]"""
+            }
+            putText("pack.mcmeta", """{"pack":{"pack_format":$packFormat,"supported_formats":$sf,"description":"MD3L Offline Skin"}}""")
+            // major==0 表示版本解析失败（快照版如 26w06a），视为最新版使用 1.19.3+ 纹理路径
+            when {
+                // ── 1.19.3+ (22w45a) / 快照版 ── 写入全部 9 个玩家生物纹理（slim 或 wide 子目录）
+                mcMajor == 0 || mcMajor > 19 || (mcMajor == 19 && mcMinor >= 3) -> {
+                    val playerNames = listOf("alex", "ari", "efe", "kai", "makena", "noor", "steve", "sunny", "zuri")
+                    for (name in playerNames) {
+                        putFile("assets/minecraft/textures/entity/player/$subfolder/$name.png")
+                    }
+                }
+                // ── 1.13 ~ 1.19.2 ── 写入 player 子目录的双纹理（slim 或 wide）
+                mcMajor >= 13 -> {
+                    putFile("assets/minecraft/textures/entity/player/$subfolder/steve.png")
+                    putFile("assets/minecraft/textures/entity/player/$subfolder/alex.png")
+                }
+                // ── 1.8 ~ 1.12 ── 写入 entity 根目录的双纹理（steve.png=classic, alex.png=slim）
+                // MC 1.8 根据 UUID hash 决定用哪个纹理，两个都写入确保覆盖
+                mcMajor >= 8 -> {
+                    putFile("assets/minecraft/textures/entity/steve.png")
+                    putFile("assets/minecraft/textures/entity/alex.png")
+                }
+                // ── 1.7.x ── 只有 Steve 模型（无 Alex/slim 支持），只写 steve.png
+                mcMajor == 7 -> {
+                    putFile("assets/minecraft/textures/entity/steve.png")
+                }
+                // ── 1.6 ── 只有 Steve 模型，写入单纹理
+                else -> {
+                    putFile("assets/minecraft/textures/entity/steve.png")
+                }
             }
         }
+        // MC 1.20.5+ 引入 known_packs.json 缓存资源包兼容性判定。
+        // 之前被拒绝的同名资源包即使修复后，缓存也会导致继续被拒绝。
+        // PCL2 发布时 MC 尚未引入此机制，故 PCL2 未处理；此处为 1.21+ 补充清理。
+        val knownPacksFile = File(packFile.parentFile?.parentFile, "known_packs.json")
+        if (knownPacksFile.exists()) {
+            knownPacksFile.delete()
+            println("[SkinPack] 已清理 known_packs.json 缓存: ${knownPacksFile.absolutePath}")
+        }
+        println("[SkinPack] 已创建离线皮肤资源包 (pack_format=$packFormat, model=$subfolder, mc=$mcMajor.$mcMinor.$mcPatch): ${packFile.absolutePath} (size=${packFile.length()})")
+    }
 
-        insertIntoPackLine("resourcePacks")
-        optionsFile.writeText(lines.joinToString("\n") + "\n", Charsets.UTF_8)
+    /**
+     * 参考 PCL2 的 resourcePacks 写入逻辑：
+     *   - 只写 resourcePacks 键，不碰 enabledResourcePacks（1.20.5+ 已废弃）
+     *   - 重建整个列表：读现有列表 → 过滤旧 MD3L 条目 → 追加 → 写回全部行
+     *   - MC ≥ 13（1.13+）使用 "file/PackName.zip" 格式，"vanilla" 始终排第一
+     *   - MC < 13 使用 "PackName.zip" 格式（无 "file/" 前缀），不带 "vanilla"
+     */
+    private fun rebuildResourcePacksLine(gameDir: File, packName: String, mcMajor: Int) {
+        val optionsFile = File(gameDir, "options.txt")
+        val allLines = if (optionsFile.exists()) optionsFile.readLines(Charsets.UTF_8).toMutableList()
+                        else mutableListOf()
+        val key = "resourcePacks"
+        // mcMajor==0 为快照版（如 26w06a），视为最新版使用 file/ 前缀
+        val useModernFormat = mcMajor == 0 || mcMajor >= 13
+        val packEntry = if (useModernFormat) "file/$packName" else packName
+
+        // 解析现有 resourcePacks 行（格式：resourcePacks:["vanilla","file/X","Y"]）
+        val idx = allLines.indexOfFirst { it.startsWith("$key:") }
+        val raw = if (idx >= 0) allLines[idx].substringAfter("$key:") else "[]"
+
+        // 提取 JSON 数组中的条目（手动解析，避免依赖 JSON 库处理可能非标准格式）
+        val items = mutableListOf<String>()
+        // 匹配带引号的条目，例如 "vanilla", "file/abc.zip", "abc.zip"
+        val entryPattern = Regex("\"([^\"]+)\"")
+        entryPattern.findAll(raw).forEach { match ->
+            items.add(match.groupValues[1])
+        }
+
+        // 过滤掉旧的 MD3L 皮肤包条目（兼容 file/ 前缀和无前缀两种写法）
+        items.removeAll { it == packName || it == "file/$packName" }
+
+        // 按 PCL2 规则重建列表：
+        //   现代格式（≥1.13 / 快照）：vanilla 永远排在第一位，然后是我们的 pack
+        //   旧格式（<1.13）：只放 pack 名称（无 file/ 前缀和 vanilla）
+        val rebuilt = if (useModernFormat) {
+            // 确保 vanilla 存在（如果原始列表中没有则补上）
+            val hasVanilla = items.any { it == "vanilla" }
+            val list = mutableListOf<String>()
+            if (!hasVanilla) list.add("vanilla")
+            list.addAll(items)
+            list.add(packEntry)
+            list
+        } else {
+            // 旧版不需要 file/ 前缀和 vanilla
+            items.add(packEntry)
+            items
+        }
+
+        val jsonList = rebuilt.joinToString(",") { "\"$it\"" }
+
+        if (idx >= 0) {
+            allLines[idx] = "$key:[$jsonList]"
+        } else {
+            allLines.add("$key:[$jsonList]")
+        }
+
+        // 移除 enabledResourcePacks 行（1.20.5+ 已废弃此键，且 PCL2 从不写入）
+        allLines.removeAll { it.startsWith("enabledResourcePacks:") }
+
+        optionsFile.writeText(allLines.joinToString("\n") + "\n", Charsets.UTF_8)
+        println("[SkinPack] options.txt 已更新: resourcePacks=[$jsonList], useModernFormat=$useModernFormat, gameDir=${gameDir.absolutePath}")
     }
 
     private fun removeResourcePackFromOptions(gameDir: File, packName: String) {
         val optionsFile = File(gameDir, "options.txt")
         if (!optionsFile.exists()) return
-        val fileEntry = "file/$packName"
-        val lines = optionsFile.readLines(Charsets.UTF_8).toMutableList()
-        val idx = lines.indexOfFirst { it.startsWith("resourcePacks:") }
-        if (idx >= 0 && fileEntry in lines[idx]) {
-            // 只移除皮肤包条目，保留其他包
-            lines[idx] = lines[idx]
-                .replace(",\"$fileEntry\"", "")
-                .replace("\"$fileEntry\",", "")
-                .replace("\"$fileEntry\"", "")
-            optionsFile.writeText(lines.joinToString("\n") + "\n", Charsets.UTF_8)
+        val allLines = optionsFile.readLines(Charsets.UTF_8).toMutableList()
+        val key = "resourcePacks"
+        val idx = allLines.indexOfFirst { it.startsWith("$key:") }
+        if (idx < 0) return
+
+        val raw = allLines[idx].substringAfter("$key:")
+        val entryPattern = Regex("\"([^\"]+)\"")
+        val items = entryPattern.findAll(raw).map { it.groupValues[1] }.toMutableList()
+        
+        // 移除旧条目（兼容 file/ 前缀和无前缀两种写法）
+        val removed = items.removeAll { it == packName || it == "file/$packName" }
+        if (!removed) return
+
+        // 如果 vanilla 被意外移除，补回来
+        if (items.none { it == "vanilla" }) {
+            items.add(0, "vanilla")
         }
+        
+        val jsonList = items.joinToString(",") { "\"$it\"" }
+        allLines[idx] = "$key:[$jsonList]"
+        optionsFile.writeText(allLines.joinToString("\n") + "\n", Charsets.UTF_8)
     }
 
     private fun resolveMainClass(root: JsonObject, inheritanceRoots: List<JsonObject>): String {
@@ -716,12 +904,14 @@ class JavaLaunchEngine : ILaunchEngine {
                     args.add("-XX:+UnlockExperimentalVMOptions")
                     if (context.jvmDisableExplicitGC) args.add("-XX:+DisableExplicitGC")
                     if (context.jvmAlwaysPreTouch)    args.add("-XX:+AlwaysPreTouch")
-                    args.add("-XX:ZUncommitDelay=60")
+                    args.add("-XX:ZUncommitDelay=${context.jvmZUncommitDelay}")
+                    if (context.jvmConcGCThreads > 0) args.add("-XX:ConcGCThreads=${context.jvmConcGCThreads}")
                 }
                 "ShenandoahGC" -> {
                     args.add("-XX:+UseShenandoahGC")
                     args.add("-XX:+UnlockExperimentalVMOptions")
-                    args.add("-XX:ShenandoahGCMode=iu")
+                    args.add("-XX:ShenandoahGCMode=${context.jvmShenandoahMode}")
+                    args.add("-XX:ShenandoahHeapSizePercent=${context.jvmShenandoahHeapSizePercent}")
                     if (context.jvmDisableExplicitGC) args.add("-XX:+DisableExplicitGC")
                     if (context.jvmAlwaysPreTouch)    args.add("-XX:+AlwaysPreTouch")
                 }
@@ -729,6 +919,7 @@ class JavaLaunchEngine : ILaunchEngine {
                     args.add("-XX:+UseParallelGC")
                     if (context.jvmDisableExplicitGC) args.add("-XX:+DisableExplicitGC")
                     if (context.jvmAlwaysPreTouch)    args.add("-XX:+AlwaysPreTouch")
+                    if (context.jvmParallelGCThreads > 0) args.add("-XX:ParallelGCThreads=${context.jvmParallelGCThreads}")
                 }
                 "SerialGC" -> args.add("-XX:+UseSerialGC")
             }
@@ -740,8 +931,18 @@ class JavaLaunchEngine : ILaunchEngine {
             userArgs.filter { it !in gcFlags }.forEach { args.add(it) }
         }
 
-        // 如果是第三方登录，添加 authlib-injector
-        if (context.authServerUrl.isNotBlank()) {
+        // ── authlib-injector（HMCL 方案）─────────────────────────────────
+        // 两种场景需要 authlib-injector：
+        //   1. 第三方登录 → 重定向到外部 Yggdrasil 服务器
+        //   2. 离线账户且有皮肤 → 重定向到本地 Yggdrasil 服务器（OfflineSkinServer）
+        val needsAuthlibInjector = context.authServerUrl.isNotBlank() || skinServer != null
+        if (needsAuthlibInjector) {
+            val targetUrl = if (context.authServerUrl.isNotBlank()) {
+                context.authServerUrl
+            } else {
+                skinServer!!.rootUrl
+            }
+
             val authlibInjectorPath = File(context.minecraftDir, "cache/authlib-injector.jar")
             if (!authlibInjectorPath.exists() || authlibInjectorPath.length() == 0L) {
                 println("[Launch] Downloading authlib-injector...")
@@ -752,7 +953,7 @@ class JavaLaunchEngine : ILaunchEngine {
                     val latestJson = Json.parseToJsonElement(text).jsonObject
                     val downloadUrl = latestJson["download_url"]?.jsonPrimitive?.contentOrNull
                         ?: throw RuntimeException("authlib-injector download url not found")
-                    
+
                     authlibInjectorPath.parentFile?.mkdirs()
                     val downloadProc = ProcessBuilder(
                         "curl.exe", "-sL", "-o", authlibInjectorPath.absolutePath, downloadUrl
@@ -764,27 +965,51 @@ class JavaLaunchEngine : ILaunchEngine {
                 }
             }
             if (authlibInjectorPath.exists() && authlibInjectorPath.length() > 0L) {
-                args.add("-javaagent:${authlibInjectorPath.absolutePath}=${context.authServerUrl}")
-            } else {
+                args.add("-javaagent:${authlibInjectorPath.absolutePath}=$targetUrl")
+                // 参照 HMCL: OfflineAuthInfo.getLaunchArguments() 也添加此属性
+                args.add("-Dauthlibinjector.side=client")
+            } else if (context.authServerUrl.isNotBlank()) {
                 throw RuntimeException("authlib-injector.jar 不存在且下载失败，无法进行第三方登录")
+            } else {
+                println("[SkinServer] authlib-injector.jar 不可用，离线皮肤将无法加载")
             }
         }
+
+        // 已添加的参数名集合，用于去重（避免硬编码参数与 JSON 中的参数重复）
+        val addedArgKeys = mutableSetOf<String>()
 
         // 收集 JVM 参数（先读父版本、再读当前版本，保证 Forge/NeoForge 继承原版参数）
         fun collectJvmArgs(obj: JsonObject) {
             obj["arguments"]?.jsonObject?.get("jvm")?.jsonArray?.forEach { arg ->
                 when {
                     arg is JsonPrimitive -> {
-                        args.add(resolveArgTemplate(arg.content, context, classPath, nativesDir))
+                        val resolved = resolveArgTemplate(arg.content, context, classPath, nativesDir)
+                        // 去重：跳过已添加的 -D 属性和 -XX 标志
+                        val key = argKey(resolved)
+                        if (key != null && key in addedArgKeys) return@forEach
+                        args.add(resolved)
+                        key?.let { addedArgKeys.add(it) }
                     }
                     arg is JsonObject -> {
                         val rules = arg["rules"]?.jsonArray
                         if (rules == null || isRuleAllowed(rules)) {
                             val value = arg["value"]
                             when {
-                                value is JsonPrimitive -> args.add(resolveArgTemplate(value.content, context, classPath, nativesDir))
+                                value is JsonPrimitive -> {
+                                    val resolved = resolveArgTemplate(value.content, context, classPath, nativesDir)
+                                    val key = argKey(resolved)
+                                    if (key != null && key in addedArgKeys) return@forEach
+                                    args.add(resolved)
+                                    key?.let { addedArgKeys.add(it) }
+                                }
                                 value is JsonArray -> value.forEach { v ->
-                                    if (v is JsonPrimitive) args.add(resolveArgTemplate(v.content, context, classPath, nativesDir))
+                                    if (v is JsonPrimitive) {
+                                        val resolved = resolveArgTemplate(v.content, context, classPath, nativesDir)
+                                        val key = argKey(resolved)
+                                        if (key != null && key in addedArgKeys) return@forEach
+                                        args.add(resolved)
+                                        key?.let { addedArgKeys.add(it) }
+                                    }
                                 }
                             }
                         }
@@ -792,6 +1017,13 @@ class JavaLaunchEngine : ILaunchEngine {
                 }
             }
         }
+
+        // 将已硬编码添加的参数注册到去重集合中
+        fun registerHardcodedArg(arg: String) {
+            argKey(arg)?.let { addedArgKeys.add(it) }
+        }
+        // 注册所有已硬编码添加的 -D 和 -XX 参数
+        args.forEach { registerHardcodedArg(it) }
 
         // 注意：Forge/NeoForge 的 JVM 参数包含模块路径(-p)、--add-modules 等，
         // 如果同时加入父版本的 -cp（全量 classpath），会导致 Java 模块系统冲突。
@@ -801,6 +1033,39 @@ class JavaLaunchEngine : ILaunchEngine {
             collectJvmArgs(inheritanceRoots.last())
         }
         collectJvmArgs(root)
+
+        // ── Java 22+ 兼容性标志 ─────────────────────────────────────────────
+        // NeoForge/Forge 1.21.1 版本 JSON 的 JVM 参数是针对 Java 21 编写的，
+        // 缺少 Java 22+ 所需的 --enable-native-access（LWJGL 原生绑定要求）和
+        // 额外的 --add-opens（Java 22+ 模块系统更严格的封装检查）。
+        // 自动检测运行时 Java 版本并补充这些标志，确保在高版本 JDK 上正常运行。
+        val javaMajor = probeJavaMajorVersion(context.javaPath)
+        if (javaMajor >= 22) {
+            val compatArgs = listOf(
+                "--enable-native-access=ALL-UNNAMED",
+                "--add-opens=java.base/java.lang=ALL-UNNAMED",
+                "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+                "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED",
+                "--add-opens=java.base/java.util=ALL-UNNAMED",
+                "--add-opens=java.base/java.io=ALL-UNNAMED",
+                "--add-opens=java.base/java.nio=ALL-UNNAMED",
+                "--add-opens=java.base/java.net=ALL-UNNAMED",
+                "--add-opens=java.base/java.text=ALL-UNNAMED",
+                "--add-opens=java.base/java.time=ALL-UNNAMED",
+                "--add-opens=java.base/java.math=ALL-UNNAMED",
+                "--add-opens=java.base/java.security=ALL-UNNAMED",
+                "--add-opens=java.base/java.util.concurrent=ALL-UNNAMED",
+            )
+            for (compatArg in compatArgs) {
+                val key = argKey(compatArg)
+                // 检查是否已存在于 args 中（可能由版本 JSON 提供）
+                if (key == null || compatArg !in args) {
+                    args.add(compatArg)
+                    key?.let { addedArgKeys.add(it) }
+                }
+            }
+            println("[JavaLaunch] 已添加 Java $javaMajor 兼容性标志 (${compatArgs.size} 个)")
+        }
 
         if (!root.containsKey("arguments") && inheritanceRoots.isEmpty()) {
             args.add("-cp")
@@ -812,6 +1077,67 @@ class JavaLaunchEngine : ILaunchEngine {
         }
 
         return args
+    }
+
+    /**
+     * 提取参数的"键名"用于去重。
+     * - `-Dkey=value` → `-Dkey`
+     * - `-XX:+Flag` → `-XX:+Flag`
+     * - `-XX:Key=value` → `-XX:Key`
+     * - 其他参数返回 null（不参与去重，如 -cp、-Xmx 等允许重复的由 JSON 控制）
+     */
+    private fun argKey(arg: String): String? {
+        return when {
+            arg.startsWith("-D") -> {
+                val eq = arg.indexOf('=', 2)
+                if (eq > 0) arg.substring(0, eq) else arg
+            }
+            arg.startsWith("-XX:") -> {
+                val colon = arg.indexOf(':', 4)
+                val eq = arg.indexOf('=', 4)
+                // -XX:+UseG1GC / -XX:-TieredCompilation → 完整标志
+                if (arg.length > 4 && (arg[4] == '+' || arg[4] == '-')) arg
+                // -XX:MetaspaceSize=256m → -XX:MetaspaceSize
+                else if (eq > 0) arg.substring(0, eq)
+                else if (colon > 0) arg.substring(0, colon)
+                else arg
+            }
+            // --add-opens=java.base/java.lang=ALL-UNNAMED → --add-opens（允许去重，但注意同一个 key 可以有多个不同值）
+            arg.startsWith("--add-opens=") || arg.startsWith("--add-exports=") ||
+                arg.startsWith("--add-reads=") || arg.startsWith("--add-modules=") ||
+                arg.startsWith("--enable-native-access=") -> {
+                val eq = arg.indexOf('=', 2)
+                if (eq > 0) arg.substring(0, eq) else arg
+            }
+            else -> null
+        }
+    }
+
+    /**
+     * 检测 Java 运行时主版本号（如 25、21、17、8 等）。
+     * 运行 `java -version` 并解析输出中的版本号。
+     */
+    private fun probeJavaMajorVersion(javaPath: String): Int {
+        return runCatching {
+            val proc = ProcessBuilder(javaPath, "-version")
+                .redirectErrorStream(true)
+                .start()
+            val output = proc.inputStream.bufferedReader().readText()
+            if (!proc.waitFor(3, TimeUnit.SECONDS)) {
+                proc.destroyForcibly()
+                return@runCatching 0
+            }
+            // 解析版本行："openjdk version "25.0.3" 2025-04-15" 或 "java version "1.8.0_401""
+            val verLine = output.lineSequence().firstOrNull { "version" in it }?.trim() ?: return@runCatching 0
+            val quoted = verLine.substringAfter('"').substringBefore('"')
+            val major = if (quoted.startsWith("1.")) {
+                quoted.split(".").getOrNull(1)?.toIntOrNull() ?: 0
+            } else {
+                quoted.split(".").firstOrNull()?.toIntOrNull() ?: 0
+            }
+            println("[JavaLaunch] 检测到 Java 版本: $major ($quoted)")
+            major
+        }.getOrDefault(0)
     }
 
     private fun buildGameArguments(root: JsonObject, context: LaunchContext, inheritanceRoots: List<JsonObject>): List<String> {
@@ -1057,4 +1383,129 @@ class JavaLaunchEngine : ILaunchEngine {
         }.getOrNull()
     }
 
+    // ══════════════════════════════════════════════════════════════════════
+    // 皮肤辅助函数：MC 版本解析、UUID 操控、pack_format 计算
+    // 参考 PCL2 (Plain Craft Launcher 2) 的实现
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * 解析 Minecraft 版本号字符串，提取主版本号（如 1.19.3 → (19, 3, 0)）。
+     * 返回值：三元素元组 (mcMajor, mcMinor, mcPatch)
+     *   - mcMajor: 第二个数字（1.X → X），如 1.20.4 → 20
+     *   - mcMinor: 第三个数字，如 1.20.4 → 4
+     *   - mcPatch: 第四个数字（极少见），如 1.20.4 → 0
+     */
+    private fun parseMcVersion(versionStr: String): Triple<Int, Int, Int> {
+        val match = Regex("""1\.(\d+)(?:\.(\d+))?(?:\.(\d+))?""").find(versionStr)
+            ?: return Triple(0, 0, 0)
+        val major = match.groupValues.getOrNull(1)?.toIntOrNull() ?: return Triple(0, 0, 0)
+        val minor = match.groupValues.getOrNull(2)?.takeIf { it.isNotBlank() }?.toIntOrNull() ?: 0
+        val patch = match.groupValues.getOrNull(3)?.takeIf { it.isNotBlank() }?.toIntOrNull() ?: 0
+        return Triple(major, minor, patch)
+    }
+
+    private fun resolveMcVersionString(root: JsonObject, inheritanceRoots: List<JsonObject>, fallback: String): String {
+        val candidates = buildList {
+            add(root["assets"]?.jsonPrimitive?.contentOrNull.orEmpty())
+            add(root["assetIndex"]?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull.orEmpty())
+            add(root["inheritsFrom"]?.jsonPrimitive?.contentOrNull.orEmpty())
+            add(root["id"]?.jsonPrimitive?.contentOrNull.orEmpty())
+            inheritanceRoots.asReversed().forEach { parent ->
+                add(parent["assets"]?.jsonPrimitive?.contentOrNull.orEmpty())
+                add(parent["assetIndex"]?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull.orEmpty())
+                add(parent["id"]?.jsonPrimitive?.contentOrNull.orEmpty())
+            }
+            add(fallback)
+        }
+        return candidates.firstNotNullOfOrNull { Regex("""1\.\d+(?:\.\d+)?(?:\.\d+)?""").find(it)?.value }
+            ?: fallback
+    }
+
+    /**
+     * 计算适用于目标 MC 版本的 pack_format 值。
+     * 参考 Minecraft Wiki 官方版本映射表（已修正）：
+     *   1.6.1-1.8.9 → 1, 1.9-1.10.2 → 2, 1.11-1.12.2 → 3,
+     *   1.13-1.14.4 → 4, 1.15-1.16.1 → 5, 1.16.2-1.16.5 → 6,
+     *   1.17-1.17.1 → 7, 1.18-1.18.2 → 8, 1.19-1.19.2 → 9,
+     *   1.19.3 → 12, 1.19.4 → 13, 1.20-1.20.1 → 15,
+     *   1.20.2 → 18, 1.20.3-1.20.4 → 22, 1.20.5-1.20.6 → 32,
+     *   1.21-1.21.1 → 34, 1.21.2-1.21.3 → 46, 1.21.4 → 47,
+     *   1.21.5+ → 55
+     */
+    private fun calculatePackFormat(major: Int, minor: Int, patch: Int): Int {
+        // 如果版本解析失败（major==0，例如快照 "26w06a" 无法匹配 "1.x" 正则），
+        // 使用当前已知最高 pack_format 作为安全回退，确保资源包被新版 MC 接受。
+        // 参考 PCL2 对快照版（Major=9999）使用 Case Else → 17 的做法。
+        return when {
+            major == 0 -> 55                  // 版本解析失败（快照版等），使用最新 pack_format
+            major >= 21 && minor >= 5 -> 55   // 1.21.5+
+            major >= 21 && minor >= 4 -> 47   // 1.21.4
+            major >= 21 && minor >= 2 -> 46   // 1.21.2-1.21.3
+            major >= 21 -> 34                 // 1.21-1.21.1
+            major >= 20 && minor >= 5 -> 32   // 1.20.5-1.20.6
+            major >= 20 && minor >= 3 -> 22   // 1.20.3-1.20.4
+            major >= 20 && minor >= 2 -> 18   // 1.20.2
+            major >= 20 -> 15                 // 1.20-1.20.1
+            major >= 19 && minor >= 4 -> 13   // 1.19.4
+            major >= 19 && minor >= 3 -> 12   // 1.19.3
+            major >= 19 -> 9                  // 1.19-1.19.2
+            major >= 18 -> 8                  // 1.18-1.18.2
+            major >= 17 -> 7                  // 1.17-1.17.1
+            major >= 16 && minor >= 2 -> 6    // 1.16.2-1.16.5
+            major >= 16 -> 5                  // 1.16-1.16.1
+            major >= 15 -> 5                  // 1.15-1.15.2
+            major >= 13 -> 4                  // 1.13-1.14.4
+            major >= 11 -> 3                  // 1.11-1.12.2
+            major >= 9 -> 2                   // 1.9-1.10.2
+            major >= 7 -> 1                   // 1.7.2-1.8.9
+            else -> 1                         // 1.6.1+
+        }
+    }
+
+    /**
+     * 判断给定 UUID 在 Minecraft 中对应的皮肤模型是否为 slim (Alex)。
+     * Minecraft 使用 UUID 的 hashCode() 末位决定模型：
+     *   0 → classic (Steve, wide)
+     *   1 → slim (Alex)
+     */
+    private fun isSlimUuid(uuid: String): Boolean {
+        val u = java.util.UUID.fromString(uuid)
+        return (u.hashCode() and 1) == 1
+    }
+
+    /**
+     * UUID 操控：递增 UUID 末 5 位十六进制字符直到其 hashCode 匹配期望的皮肤模型。
+     * 参考 PCL2 的 McLoginLegacyUuidWithCustomSkin 实现。
+     *
+     * 原理：Minecraft 根据 UUID.hashCode() & 1 决定加载 Steve(wide) 还是 Alex(slim) 纹理。
+     * 通过微调 UUID（不影响玩家名），可以控制游戏使用哪个纹理路径，从而确保
+     * 用户导入的 slim/classic 皮肤能正确渲染。
+     *
+     * @param uuid 原始 UUID
+     * @param desiredIsSlim true=希望匹配 slim(Alex), false=希望匹配 wide(Steve)
+     * @return 调整后的 UUID（尽可能接近原始值）
+     */
+    private fun manipulateUuidForSkinModel(uuid: String, desiredIsSlim: Boolean): String {
+        if (isSlimUuid(uuid) == desiredIsSlim) return uuid
+        var modified = uuid
+        var iterations = 0
+        val maxIterations = 2000 // 安全上限
+        while (iterations < maxIterations) {
+            iterations++
+            // 如果末 5 位已达到 FFFFF，则回绕到 00000
+            if (modified.endsWith("FFFFF", ignoreCase = true)) {
+                modified = modified.dropLast(5) + "00000"
+            } else {
+                val last5 = modified.takeLast(5)
+                val incremented = (last5.toLong(16) + 1)
+                    .toString(16)
+                    .padStart(5, '0')
+                    .takeLast(5)
+                modified = modified.dropLast(5) + incremented
+            }
+            if (isSlimUuid(modified) == desiredIsSlim) return modified
+        }
+        // 达到上限仍未匹配，返回原值
+        return uuid
+    }
 }

@@ -22,11 +22,16 @@ dependencies {
     // Kotlin Serialization (JSON)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 
-    // Ktor Client for HTTP (Auth, API, Downloads)
+    // Ktor Client/Server for HTTP, WebSocket, relay service
     implementation("io.ktor:ktor-client-core:2.3.8")
     implementation("io.ktor:ktor-client-cio:2.3.8")
     implementation("io.ktor:ktor-client-content-negotiation:2.3.8")
     implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.8")
+    implementation("io.ktor:ktor-client-websockets:2.3.8")
+    implementation("io.ktor:ktor-server-core:2.3.8")
+    implementation("io.ktor:ktor-server-netty:2.3.8")
+    implementation("io.ktor:ktor-server-websockets:2.3.8")
+    implementation("io.ktor:ktor-server-content-negotiation:2.3.8")
 
     // Image loading
     implementation("media.kamel:kamel-image:0.9.3")
@@ -38,6 +43,10 @@ dependencies {
 
     // Jsoup HTML Parser
     implementation("org.jsoup:jsoup:1.17.2")
+
+    // SLF4J NOP binding（消除 "Failed to load class StaticLoggerBinder" 警告）
+    // 应用已自建 AppLogger，不需 SLF4J 输出日志
+    implementation("org.slf4j:slf4j-nop:2.0.9")
 
 }
 
@@ -59,7 +68,7 @@ compose.desktop {
                 iconFile.set(project.file("src/main/resources/app_icon.ico"))
             }
 
-            jvmArgs += listOf("-Dfile.encoding=UTF-8", "-Dsun.java2d.opengl=true")
+            jvmArgs += listOf("-Dfile.encoding=UTF-8")
         }
     }
 }

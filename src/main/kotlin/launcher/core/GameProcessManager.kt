@@ -45,7 +45,7 @@ object GameProcessManager {
      * @param process 游戏进程句柄
      * @param versionId 启动的版本 ID（用于 UI 显示）
      */
-    fun attachProcess(process: Process, versionId: String = "", logFile: File? = null, edition: GameEdition = GameEdition.Java) {
+    fun attachProcess(process: Process, versionId: String = "", logFile: File? = null, edition: GameEdition = GameEdition.Java, onExit: (() -> Unit)? = null) {
         _activeProcess.value = process
         _processInfo.value = ProcessInfo(
             versionId = versionId,
@@ -105,13 +105,18 @@ object GameProcessManager {
                 if (exitCode != 0) {
                     val allOutput = synchronized(lastLines) { lastLines.joinToString("\n") }
                     val tail = allOutput.lines().takeLast(18).joinToString("\n")
+                    val crashDir = when (_processInfo.value.edition) {
+                        GameEdition.Java -> LauncherDirs.javaLogDir
+                        GameEdition.Bedrock -> LauncherDirs.bedrockLogDir
+                    }
                     val targetLog = outputLog ?: File(
-                        LauncherDirs.dataDir,
-                        "crashes/${versionId.ifBlank { "unknown" }}-${System.currentTimeMillis()}.log",
+                        crashDir,
+                        "crash-${versionId.ifBlank { "unknown" }}-${System.currentTimeMillis()}.log",
                     )
                     targetLog.parentFile?.mkdirs()
-                    targetLog.appendText("\n\n── Game Output (exit $exitCode) ──\n$allOutput\n", Charsets.UTF_8)
-                    _statusMessage.value = "游戏异常退出 (exit $exitCode) · ${elapsedSec}s\n崩溃日志: ${targetLog.absolutePath}"
+                    val exitMsg = "exit $exitCode"
+                    targetLog.appendText("\n\n── Game Output ($exitMsg) ──\n$allOutput\n", Charsets.UTF_8)
+                    _statusMessage.value = "游戏异常退出 ($exitMsg) · ${elapsedSec}s\n崩溃日志: ${targetLog.absolutePath}"
                     _crashReport.value = CrashReport(
                         versionId = versionId,
                         exitCode = exitCode,
@@ -133,6 +138,8 @@ object GameProcessManager {
                 _launchProgress.value = 0
                 drainJob.cancel()
                 windowJob.cancel()
+                // 通知调用方进程已退出（如停止皮肤服务器等清理工作）
+                onExit?.invoke()
             }
         }
     }
@@ -147,11 +154,9 @@ object GameProcessManager {
 
     /**
      * 强制销毁当前游戏进程。
-     * 对 Bedrock 额外执行 taskkill 确保 Minecraft.Windows 真正被终结（sentinel 只是监控 shell）。
      */
     fun forceKill() {
         _activeProcess.value?.destroyForcibly()
-        // Bedrock sentinel 不等于游戏进程本体，额外强杀
         try {
             ProcessBuilder("taskkill", "/F", "/IM", "Minecraft.Windows.exe")
                 .redirectErrorStream(true).start()
@@ -162,25 +167,6 @@ object GameProcessManager {
         _processInfo.value = ProcessInfo()
         _statusMessage.value = "游戏进程已被强制终结"
         _launchProgress.value = 0
-    }
-
-    private fun isProcessWindowVisible(pid: Long): Boolean {
-        return try {
-            val command = """
-                ${'$'}p = Get-Process -Id $pid -ErrorAction SilentlyContinue
-                if (${'$'}p -and ${'$'}p.MainWindowHandle -ne 0) { Write-Output ${'$'}p.MainWindowHandle; exit }
-                ${'$'}mc = Get-Process -Name 'Minecraft.Windows' -ErrorAction SilentlyContinue | Where-Object { ${'$'}_.MainWindowHandle -ne 0 } | Select-Object -First 1
-                if (${'$'}mc) { Write-Output ${'$'}mc.MainWindowHandle }
-            """.trimIndent()
-            val proc = ProcessBuilder("powershell", "-NoProfile", "-Command", command)
-                .redirectErrorStream(true)
-                .start()
-            val output = proc.inputStream.bufferedReader().readText().trim()
-            proc.waitFor()
-            output.toLongOrNull()?.let { it != 0L } == true
-        } catch (_: Exception) {
-            false
-        }
     }
 
     data class ProcessInfo(

@@ -46,11 +46,11 @@ object LaunchState {
      * 注册游戏进程 —— 委托至 [GameProcessManager]。
      * 同时结束预启动阶段。
      */
-    fun attachProcess(process: Process, versionId: String = "", logFile: File? = null, edition: GameEdition = GameEdition.Java) {
+    fun attachProcess(process: Process, versionId: String = "", logFile: File? = null, edition: GameEdition = GameEdition.Java, onExit: (() -> Unit)? = null) {
         _isLaunching.value = false
         _statusMessage.value = ""
         _progress.value = 0
-        GameProcessManager.attachProcess(process, versionId, logFile, edition)
+        GameProcessManager.attachProcess(process, versionId, logFile, edition, onExit)
     }
 
     /**
