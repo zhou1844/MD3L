@@ -50,6 +50,9 @@ private object ModScreenState {
     val selectedType = mutableStateOf("mod")
     val bedrockType = mutableStateOf("addon")
     val mcVersionFilter = mutableStateOf("")
+    val bedrockVersionFilter = mutableStateOf("")
+    val javaVersions = mutableStateOf<List<String>>(emptyList())
+    val bedrockVersions = mutableStateOf<List<String>>(emptyList())
     val loaderFilter = mutableStateOf("")
     val isInitialLoad = mutableStateOf(true)
     val loadError = mutableStateOf("")
@@ -84,6 +87,8 @@ fun ModScreen() {
     var bedrockType by ModScreenState.bedrockType
     var mcVersionFilter by ModScreenState.mcVersionFilter
     var mcVersionExpanded by remember { mutableStateOf(false) }
+    var bedrockVersionFilter by ModScreenState.bedrockVersionFilter
+    var bedrockVersionExpanded by remember { mutableStateOf(false) }
     var loaderFilter by ModScreenState.loaderFilter
     var isInitialLoad by ModScreenState.isInitialLoad
     var loadError by ModScreenState.loadError
@@ -109,7 +114,25 @@ fun ModScreen() {
             }
         }
     }
-    val mcVersions = remember { buildMcVersionFilters() }
+    var javaVersionsState by ModScreenState.javaVersions
+    var bedrockVersionsState by ModScreenState.bedrockVersions
+    // Java 版本筛选下拉：动态版本（含最新 26.x）+ 内置静态回退；始终保留“全部”空项在最前
+    val mcVersions = remember(javaVersionsState) {
+        val dynamic = javaVersionsState
+        if (dynamic.isNotEmpty()) listOf("") + dynamic else buildMcVersionFilters()
+    }
+    val bedrockVersions = remember(bedrockVersionsState) { listOf("") + bedrockVersionsState }
+
+    LaunchedEffect(Unit) {
+        if (javaVersionsState.isEmpty()) {
+            val fetched = withContext(Dispatchers.IO) { ModrinthApi.getMinecraftReleaseVersions() }
+            if (fetched.isNotEmpty()) javaVersionsState = fetched
+        }
+        if (bedrockVersionsState.isEmpty()) {
+            val fetched = withContext(Dispatchers.IO) { BedrockResourceApi.getBedrockGameVersions() }
+            if (fetched.isNotEmpty()) bedrockVersionsState = fetched
+        }
+    }
 
     LaunchedEffect(Unit) {
         if (!isInitialLoad) return@LaunchedEffect
@@ -146,7 +169,7 @@ fun ModScreen() {
         scope.launch {
             try {
                 if (selectedEdition == "bedrock") {
-                    val result = BedrockResourceApi.search(query = searchQuery, contentType = bedrockType)
+                    val result = BedrockResourceApi.search(query = searchQuery, contentType = bedrockType, gameVersion = bedrockVersionFilter)
                     cfProjects = result
                     if (result.isEmpty() && searchQuery.isBlank()) loadError = "暂无结果，请检查网络或稍后重试"
                 } else {
@@ -207,7 +230,7 @@ fun ModScreen() {
                                     selectedEdition = edition; searchQuery = ""; isLoading = true
                                     scope.launch {
                                         if (edition == "bedrock") {
-                                            cfProjects = BedrockResourceApi.search("", bedrockType)
+                                            cfProjects = BedrockResourceApi.search("", bedrockType, gameVersion = bedrockVersionFilter)
                                         } else {
                                             val mr = ModrinthApi.search("", selectedType)
                                             val cf = if (selectedType == "mod") ModrinthApi.searchCurseForge("", selectedType) else emptyList()
@@ -297,6 +320,31 @@ fun ModScreen() {
                         }
                     }
                 }
+                if (selectedEdition == "bedrock") {
+                    Spacer(Modifier.width(6.dp))
+                    ExposedDropdownMenuBox(expanded = bedrockVersionExpanded, onExpandedChange = { bedrockVersionExpanded = it }) {
+                        OutlinedTextField(
+                            value = bedrockVersionFilter.ifBlank { if (isEn) "All" else "全部" },
+                            onValueChange = {}, readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(bedrockVersionExpanded) },
+                            singleLine = true, shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.width(96.dp).menuAnchor(),
+                            textStyle = MaterialTheme.typography.bodySmall,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                            ),
+                        )
+                        ExposedDropdownMenu(expanded = bedrockVersionExpanded, onDismissRequest = { bedrockVersionExpanded = false }) {
+                            bedrockVersions.forEach { ver ->
+                                DropdownMenuItem(text = { Text(ver.ifBlank { if (isEn) "All" else "全部" }, style = MaterialTheme.typography.bodySmall) },
+                                    onClick = { bedrockVersionFilter = ver; bedrockVersionExpanded = false; doSearch() })
+                            }
+                        }
+                    }
+                }
                 Spacer(Modifier.width(6.dp))
                 FilledTonalButton(
                     onClick = { doSearch() },
@@ -337,7 +385,7 @@ fun ModScreen() {
                     ModPill(label = label, selected = bedrockType == type, primary = true) {
                         if (bedrockType != type) {
                             bedrockType = type; isLoading = true
-                            scope.launch { cfProjects = BedrockResourceApi.search(searchQuery, type); isLoading = false }
+                            scope.launch { cfProjects = BedrockResourceApi.search(searchQuery, type, gameVersion = bedrockVersionFilter); isLoading = false }
                         }
                     }
                 }

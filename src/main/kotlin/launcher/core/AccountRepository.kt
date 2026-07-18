@@ -28,6 +28,8 @@ object AccountRepository {
     private const val XSTS_URL = "https://xsts.auth.xboxlive.com/xsts/authorize"
     private const val MC_AUTH_URL = "https://api.minecraftservices.com/authentication/login_with_xbox"
     private const val MC_PROFILE_URL = "https://api.minecraftservices.com/minecraft/profile"
+    private const val XBOX_PROFILE_URL =
+        "https://profile.xboxlive.com/users/me/profile/settings?settings=GameDisplayPicRaw"
 
     private val json = Json {
         prettyPrint = true
@@ -109,8 +111,9 @@ object AccountRepository {
         val mcToken = authenticateMinecraft(xstsToken, uhs)
         val profile = fetchMinecraftProfile(mcToken)
 
-        // 使用 crafatar 作为头像来源，不再调用 Xbox Profile API
-        val avatarUrl = "https://crafatar.com/avatars/${profile.uuid}?overlay&size=128"
+        // 优先使用 Xbox 玩家头像（gamerpic），获取失败时回退到 crafatar 皮肤头像
+        val xboxAvatar = fetchXboxGamerPic(xblToken, uhs)
+        val avatarUrl = xboxAvatar.ifBlank { "https://crafatar.com/avatars/${profile.uuid}?overlay&size=128" }
 
         val session = AccountSession(
             uuid = profile.uuid,
@@ -336,8 +339,11 @@ object AccountRepository {
             val xstsToken = authenticateXSTS(xblToken)
             val mcToken = authenticateMinecraft(xstsToken, uhs)
             val profile = fetchMinecraftProfile(mcToken)
-            // 使用 crafatar 作为头像来源，不再调用 Xbox Profile API
-            val avatarUrl = session.avatarUri.ifBlank { "https://crafatar.com/avatars/${profile.uuid}?overlay&size=128" }
+            // 优先刷新 Xbox 玩家头像，失败则沿用旧头像，仍为空时回退 crafatar
+            val xboxAvatar = fetchXboxGamerPic(xblToken, uhs)
+            val avatarUrl = xboxAvatar
+                .ifBlank { session.avatarUri }
+                .ifBlank { "https://crafatar.com/avatars/${profile.uuid}?overlay&size=128" }
 
             val refreshed = session.copy(
                 username = profile.name,
@@ -548,6 +554,54 @@ object AccountRepository {
         }
         val body = json.parseToJsonElement(resp.bodyAsText()).jsonObject
         return body["Token"]!!.jsonPrimitive.content
+    }
+
+    /** 用 XBL 用户令牌换取面向 Xbox Live（http://xboxlive.com）的 XSTS 令牌，用于访问 profile 服务。 */
+    private suspend fun authenticateXSTSForXbox(xblToken: String): String {
+        val resp = client.post(XSTS_URL) {
+            contentType(ContentType.Application.Json)
+            setBody("""
+                {
+                    "Properties": {
+                        "SandboxId": "RETAIL",
+                        "UserTokens": ["$xblToken"]
+                    },
+                    "RelyingParty": "http://xboxlive.com",
+                    "TokenType": "JWT"
+                }
+            """.trimIndent())
+        }
+        val body = json.parseToJsonElement(resp.bodyAsText()).jsonObject
+        return body["Token"]?.jsonPrimitive?.contentOrNull ?: ""
+    }
+
+    /**
+     * 获取 Xbox 玩家头像（gamerpic）。通过 Xbox profile REST API 读取 GameDisplayPicRaw。
+     * 失败时返回空串，由调用方回退到 crafatar 皮肤头像。
+     */
+    private suspend fun fetchXboxGamerPic(xblToken: String, uhs: String): String {
+        return try {
+            val xsts = authenticateXSTSForXbox(xblToken)
+            if (xsts.isBlank()) return ""
+            val resp = client.get(XBOX_PROFILE_URL) {
+                header("Authorization", "XBL3.0 x=$uhs;$xsts")
+                header("x-xbl-contract-version", "3")
+                header("Accept", "application/json")
+            }
+            if (!resp.status.isSuccess()) {
+                println("[Auth] Xbox profile 返回 ${resp.status.value}")
+                return ""
+            }
+            val body = json.parseToJsonElement(resp.bodyAsText()).jsonObject
+            val settings = body["profileUsers"]?.jsonArray?.firstOrNull()?.jsonObject
+                ?.get("settings")?.jsonArray ?: return ""
+            settings.firstOrNull {
+                it.jsonObject["id"]?.jsonPrimitive?.contentOrNull == "GameDisplayPicRaw"
+            }?.jsonObject?.get("value")?.jsonPrimitive?.contentOrNull.orEmpty()
+        } catch (e: Exception) {
+            println("[Auth] 获取 Xbox 头像失败: ${e.message}")
+            ""
+        }
     }
 
     private suspend fun authenticateMinecraft(xstsToken: String, uhs: String): String {

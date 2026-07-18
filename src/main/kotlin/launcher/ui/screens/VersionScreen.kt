@@ -87,6 +87,17 @@ fun VersionScreen() {
         if (bedrockDownloading.isNotEmpty() || bedrockDownloadResults.isEmpty()) return@LaunchedEffect
         refresh()
     }
+    // 监听所有下载任务完成，当 Java 版本安装完成时自动刷新版本列表
+    val downloadTasks by DownloadHub.tasks.collectAsState()
+    LaunchedEffect(downloadTasks) {
+        val hasJustCompletedJava = downloadTasks.any { t ->
+            t.type == DownloadHub.TaskType.JavaVersion &&
+            (t.status == DownloadHub.TaskStatus.Done || t.status == DownloadHub.TaskStatus.Error)
+        }
+        if (hasJustCompletedJava) {
+            refresh()
+        }
+    }
 
     // 使用 derivedStateOf 缓存过滤结果，避免每次重组都重新计算
     val filteredVersions by remember {
@@ -157,7 +168,7 @@ fun VersionScreen() {
                 onClick = {
                     scope.launch {
                         val file = withContext(Dispatchers.IO) {
-                            chooseFileDialog("导入整合包 / 基岩版包", "*.zip;*.mrpack;*.md3l;*.md3lbackup", load = true)
+                            chooseFileDialog("导入整合包 / 基岩版包", "*.zip;*.mrpack;*.md3l;*.md3lbackup;*.appx;*.msixvc;*.msixbundle;*.appxbundle;*.msix", load = true)
                         }
                         if (file != null) {
                             val settings = withContext(Dispatchers.IO) { AppSettings.load() }
@@ -176,6 +187,17 @@ fun VersionScreen() {
                             } else if (ext == "md3l") {
                                 // .md3l 需要目标版本：弹出提示让用户先选中版本后从版本管理面板导入
                                 sheetMessage = "请在版本管理面板中选择目标基岩版版本后使用导入功能，或将 .md3l 文件拖入版本列表"
+                            } else if (ext in setOf("appx", "msixvc", "msixbundle", "appxbundle", "msix")) {
+                                // 直接导入基岩版包文件 — 解压至 bedrock_versions/<version>
+                                val versionName = file.nameWithoutExtension
+                                    .replace(Regex("^Minecraft[-.]"), "")
+                                    .replace(Regex("^Microsoft\\.MinecraftUWP[-_]"), "")
+                                    .replace(Regex("_(?:x64|x86|arm64|neutral)__[0-9a-fA-F]+\$"), "")
+                                sheetMessage = "正在导入基岩版包 $versionName ..."
+                                // installFromFile 内部通过 emit() 自动更新 DownloadHub 进度（含逐文件百分比提示）
+                                val result = BedrockDownloadManager.installFromFile(file, versionName)
+                                sheetMessage = result
+                                runCatching { refresh() }
                             } else {
                                 val importTaskId = "manual_modpack_import_${file.absolutePath.hashCode()}_${System.currentTimeMillis()}"
                                 DownloadHub.upsert(DownloadHub.HubTask(id = importTaskId, name = "导入整合包 ${file.name}", type = DownloadHub.TaskType.ResourceDownload, step = "准备导入整合包", fraction = 0f))
@@ -442,6 +464,25 @@ fun VersionScreen() {
                         Icon(Icons.Filled.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text(if (isEn) "Delete" else "彻底删除")
+                    }
+                }
+
+                // ── Java 模组管理 ───────────────────────────────────
+                if (ver.type != "bedrock") {
+                    Spacer(Modifier.height(16.dp))
+                    FilledTonalButton(
+                        onClick = {
+                            showSheet = false
+                            launcher.ui.layout.Navigator.navigate(
+                                launcher.ui.nav.Route.JavaModManager(ver.id, ver.versionDir)
+                            )
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Filled.Extension, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (isEn) "Mod Management" else "模组管理")
                     }
                 }
 
@@ -740,5 +781,98 @@ private fun chooseFileDialog(title: String, pattern: String, load: Boolean, defa
         File(dir, file)
     } catch (_: Exception) {
         null
+    }
+}
+
+// ── 模组管理面板（Java 版 + 基岩版通用）────────────────────────────────
+@Composable
+private fun ModToggleSection(ver: LocalVersion, isEn: Boolean, scope: kotlinx.coroutines.CoroutineScope, sheetMessage: (String) -> Unit) {
+    var mods by remember { mutableStateOf<List<ModToggleManager.ModItem>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var message by remember { mutableStateOf("") }
+
+    LaunchedEffect(ver.versionDir) {
+        loading = true
+        mods = if (ver.type == "bedrock") {
+            ModToggleManager.scanBedrockPacks(ver.versionDir)
+        } else {
+            ModToggleManager.scanJavaMods(ver.versionDir)
+        }
+        loading = false
+    }
+
+    val label = if (isEn) "Mod Management" else "模组管理"
+    val emptyText = if (isEn) "No mods found" else "未找到模组"
+
+    Text(label, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+    Spacer(Modifier.height(8.dp))
+
+    if (loading) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(if (isEn) "Scanning…" else "扫描中…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    } else if (mods.isEmpty()) {
+        Text(emptyText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            mods.forEach { mod ->
+                val isChecked = remember(mod.filePath, mod.isEnabled) { mutableStateOf(mod.isEnabled) }
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        Checkbox(
+                            checked = isChecked.value,
+                            onCheckedChange = { checked ->
+                                isChecked.value = checked
+                                scope.launch {
+                                    val ok = if (ver.type == "bedrock") {
+                                        ModToggleManager.toggleBedrockPack(ver.versionDir, mod.filePath, checked)
+                                    } else {
+                                        ModToggleManager.toggleJavaMod(ver.versionDir, mod.filePath, checked)
+                                    }
+                                    if (ok) {
+                                        // 重新扫描
+                                        mods = if (ver.type == "bedrock") {
+                                            ModToggleManager.scanBedrockPacks(ver.versionDir)
+                                        } else {
+                                            ModToggleManager.scanJavaMods(ver.versionDir)
+                                        }
+                                    }
+                                }
+                            },
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            mod.name,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isChecked.value) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (!isChecked.value) {
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                if (isEn) "Disabled" else "已禁用",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (message.isNotBlank()) {
+        Spacer(Modifier.height(6.dp))
+        Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 1)
     }
 }

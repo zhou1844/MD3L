@@ -22,16 +22,15 @@ dependencies {
     // Kotlin Serialization (JSON)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 
-    // Ktor Client/Server for HTTP, WebSocket, relay service
+    // Ktor Client for HTTP (Auth, API, Downloads)
     implementation("io.ktor:ktor-client-core:2.3.8")
     implementation("io.ktor:ktor-client-cio:2.3.8")
     implementation("io.ktor:ktor-client-content-negotiation:2.3.8")
     implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.8")
-    implementation("io.ktor:ktor-client-websockets:2.3.8")
+
+    // Ktor Server (本地 Yggdrasil 皮肤服务器)
     implementation("io.ktor:ktor-server-core:2.3.8")
     implementation("io.ktor:ktor-server-netty:2.3.8")
-    implementation("io.ktor:ktor-server-websockets:2.3.8")
-    implementation("io.ktor:ktor-server-content-negotiation:2.3.8")
 
     // Image loading
     implementation("media.kamel:kamel-image:0.9.3")

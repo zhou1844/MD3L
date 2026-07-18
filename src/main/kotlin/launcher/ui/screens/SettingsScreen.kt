@@ -23,9 +23,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import launcher.core.*
 import launcher.ui.theme.*
 import java.awt.Desktop
@@ -72,6 +74,7 @@ fun SettingsScreen() {
         ThemeState.navFloatingCornerRadius = settings.navFloatingCornerRadius
         ThemeState.navFloatingHeight = settings.navFloatingHeight
         ThemeState.navFloatingShowLabels = settings.navFloatingShowLabels
+        ThemeState.customFontPath = settings.customFontPath
         javaInstallations = JavaScanner.findAll()
         isScanning = false
     }
@@ -421,6 +424,52 @@ fun SettingsScreen() {
                                 Slider(value = settings.uiFontScale, onValueChange = { v ->
                                     ThemeState.uiFontScale = v; autoSave(settings.copy(uiFontScale = v))
                                 }, valueRange = 0.8f..1.4f, steps = 11, modifier = Modifier.fillMaxWidth())
+
+                                // ── 自定义字体导入 ──────────────────────────
+                                Spacer(Modifier.height(12.dp))
+                                Text(if (isEn) "Custom Font" else "自定义字体", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
+                                Spacer(Modifier.height(8.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                    OutlinedTextField(
+                                        value = settings.customFontPath,
+                                        onValueChange = {},
+                                        readOnly = true,
+                                        placeholder = { Text(if (isEn) "None (click Browse to import .ttf/.otf)" else "未设置（点击选择字体文件）", style = MaterialTheme.typography.bodySmall) },
+                                        singleLine = true,
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    FilledTonalButton(
+                                        onClick = {
+                                            scope.launch {
+                                                val chosen = withContext(Dispatchers.IO) {
+                                                    val chooser = javax.swing.JFileChooser()
+                                                    chooser.dialogTitle = if (isEn) "Select Font File" else "选择字体文件"
+                                                    chooser.fileSelectionMode = javax.swing.JFileChooser.FILES_ONLY
+                                                    chooser.fileFilter = javax.swing.filechooser.FileNameExtensionFilter("TrueType / OpenType 字体", "ttf", "otf")
+                                                    if (chooser.showOpenDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) chooser.selectedFile.absolutePath else null
+                                                }
+                                                if (chosen != null) {
+                                                    ThemeState.customFontPath = chosen
+                                                    autoSave(settings.copy(customFontPath = chosen), immediate = true)
+                                                }
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(12.dp),
+                                    ) { Icon(Icons.Filled.FontDownload, contentDescription = null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(if (isEn) "Browse" else "选择") }
+                                    if (settings.customFontPath.isNotBlank()) {
+                                        Spacer(Modifier.width(6.dp))
+                                        FilledTonalButton(
+                                            onClick = {
+                                                ThemeState.customFontPath = ""
+                                                autoSave(settings.copy(customFontPath = ""), immediate = true)
+                                            },
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = ButtonDefaults.filledTonalButtonColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                                        ) { Icon(Icons.Filled.Clear, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                    }
+                                }
                             }
                             Spacer(Modifier.height(12.dp))
 
@@ -452,10 +501,11 @@ fun SettingsScreen() {
 
                             // ── 下载设置 ─────────────────────────────────
                             var mirrorExpanded by remember { mutableStateOf(false) }
+                            // 彻底只允许镜像源：已移除 Mojang 官方源选项。
                             val mirrorOptions = if (isEn)
-                                listOf("bmclapi" to "BMCLAPI Mirror (China)", "official" to "Mojang Official (Global)")
+                                listOf("bmclapi" to "BMCLAPI Mirror (China)")
                             else
-                                listOf("bmclapi" to "BMCLAPI 镜像 (推荐国内)", "official" to "Mojang 官方源 (海外/VPN)")
+                                listOf("bmclapi" to "BMCLAPI 镜像 (推荐国内)")
                             SettingsSection(if (isEn) "Download" else "下载设置", Icons.Filled.CloudDownload) {
                                 Text(if (isEn) "Concurrent threads: ${settings.maxDownloadThreads}" else "并发线程: ${settings.maxDownloadThreads}", style = MaterialTheme.typography.bodyMedium)
                                 Spacer(Modifier.height(8.dp))
@@ -484,7 +534,7 @@ fun SettingsScreen() {
                                     }
                                 }
                                 Spacer(Modifier.height(4.dp))
-                                Text(if (isEn) "BMCLAPI recommended for China · Official requires VPN" else "BMCLAPI 适合国内网络，官方源需要梯子或海外网络。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(if (isEn) "All downloads go through BMCLAPI mirror only" else "所有下载均只走 BMCLAPI 镜像源，已禁用官方源。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Spacer(Modifier.height(12.dp))
 
@@ -557,6 +607,7 @@ fun SettingsScreen() {
                                         ThemeState.navFloatingCornerRadius = 24
                                         ThemeState.navFloatingHeight = 64
                                         ThemeState.navFloatingShowLabels = true
+                                        ThemeState.customFontPath = ""
                                         AppSettings.save(d)
                                     }
                                 },

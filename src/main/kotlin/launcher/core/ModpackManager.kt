@@ -32,6 +32,7 @@ object ModpackManager {
         val loaderVersion: String? = null,
         val overridesRoots: List<String> = emptyList(),
         val modrinthIndex: JsonObject? = null,
+        val curseFiles: List<Triple<Int, Int, Boolean>> = emptyList(),
     )
 
     private data class LoaderInstallOutcome(
@@ -159,9 +160,17 @@ object ModpackManager {
                 extractPackFilesWithRetry(effectivePackFile, definition, instanceDir, logger)
 
                 println("[ModpackImport] 步骤4完成: 文件释放完毕")
+                var cfWarning: String? = null
                 if (definition.kind == PackKind.Modrinth && definition.modrinthIndex != null) {
                     println("[ModpackImport] 步骤5: 下载 Modrinth 资源文件...")
                     downloadModrinthFiles(definition.modrinthIndex, instanceDir, logger) { step, frac ->
+                        val mapped = (0.70f + 0.24f * frac).coerceIn(0.70f, 0.94f)
+                        report(step, mapped)
+                    }
+                }
+                if (definition.kind == PackKind.CurseForge) {
+                    println("[ModpackImport] 步骤5: 下载 CurseForge 模组文件...")
+                    cfWarning = downloadCurseForgeFiles(definition, instanceDir, logger) { step, frac ->
                         val mapped = (0.70f + 0.24f * frac).coerceIn(0.70f, 0.94f)
                         report(step, mapped)
                     }
@@ -174,9 +183,7 @@ object ModpackManager {
                 report("整合包导入完成: $versionId", 1f)
 
                 var warning = loaderOutcome.warning?.let { "\n$it" } ?: ""
-                if (definition.kind == PackKind.CurseForge) {
-                    warning += "\n提示：检测到 CurseForge 整合包，暂不支持自动下载 CF 模组。已导入基础环境及配置，请自行将模组文件放入 mods 文件夹。"
-                }
+                cfWarning?.let { warning += "\n$it" }
 
                 logger.info("导入成功: $versionId")
                 println("[ModpackImport] ====== 导入成功: $versionId ======")
@@ -237,6 +244,14 @@ object ModpackManager {
                 val name = manifest["name"]?.jsonPrimitive?.contentOrNull ?: packFile.nameWithoutExtension
                 val overrides = manifest["overrides"]?.jsonPrimitive?.contentOrNull?.normalizeRootPrefix()
                     ?: "overrides/"
+                val cfFiles = manifest["files"]?.jsonArray?.mapNotNull { el ->
+                    val o = el as? JsonObject ?: return@mapNotNull null
+                    val pid = o["projectID"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+                    val fid = o["fileID"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+                    val req = o["required"]?.jsonPrimitive?.booleanOrNull ?: true
+                    Triple(pid, fid, req)
+                } ?: emptyList()
+                logger.info("CurseForge manifest 列出 ${cfFiles.size} 个模组文件")
                 return PackDefinition(
                     kind = PackKind.CurseForge,
                     displayName = name,
@@ -244,6 +259,7 @@ object ModpackManager {
                     loaderType = loaderType,
                     loaderVersion = loaderVersion,
                     overridesRoots = listOf("$baseFolder$overrides"),
+                    curseFiles = cfFiles,
                 )
             }
             logger.warn("检测到 manifest.json 但结构不是 CurseForge，回退通用 ZIP 解析")
@@ -481,9 +497,8 @@ object ModpackManager {
         onProgress: (String, Float) -> Unit,
     ): Boolean {
         val originalMirror = DownloadManager.activeMirror
-        val primaryMirror = preferredMirror.ifBlank { originalMirror.ifBlank { "bmclapi" } }
-        val fallbackMirror = if (primaryMirror == "official") "bmclapi" else "official"
-        val attempts = listOf(primaryMirror, fallbackMirror).distinct()
+        // 彻底只用镜像源：安装原版不再回退官方源，仅使用 BMCLAPI 镜像（一次尝试）。
+        val attempts = listOf("bmclapi")
 
         try {
             attempts.forEachIndexed { index, mirror ->
@@ -999,6 +1014,83 @@ object ModpackManager {
         logger.info("释放通用 ZIP 文件完成: $extracted 个")
     }
 
+    /**
+     * 下载 CurseForge 整合包 manifest 声明的模组/资源文件（HMCL CurseCompletionTask 同款思路）：
+     * 逐个解析 projectID/fileID 得到直链（分发受限时回退 forgecdn edge 地址），
+     * 按 classId 分流到 mods/resourcepacks/shaderpacks，再走统一并发下载引擎。
+     * 返回需要展示给用户的警告文本（无警告时为 null）。
+     */
+    private suspend fun downloadCurseForgeFiles(
+        definition: PackDefinition,
+        instanceDir: File,
+        logger: ImportLogger,
+        onProgress: (String, Float) -> Unit,
+    ): String? = withContext(Dispatchers.IO) {
+        val fileRefs = definition.curseFiles
+        if (fileRefs.isEmpty()) {
+            logger.info("CurseForge manifest 未列出 files，跳过 CF 模组下载")
+            onProgress("整合包资源已就绪", 1f)
+            return@withContext null
+        }
+        onProgress("解析 CurseForge 模组清单 0/${fileRefs.size}", 0f)
+        val resolved = ModrinthApi.resolveCurseForgeManifestFiles(fileRefs) { done ->
+            onProgress("解析 CurseForge 模组清单 $done/${fileRefs.size}", 0.3f * done / fileRefs.size)
+        }
+        val resolvedKeys = resolved.map { it.projectId to it.fileId }.toHashSet()
+        var failedRequired = 0
+        fileRefs.forEach { (pid, fid, req) ->
+            if ((pid to fid) !in resolvedKeys) {
+                if (req) failedRequired++
+                logger.warn("无法解析 CF 文件 projectID=$pid, fileID=$fid${if (req) "（必需）" else "（可选）"}")
+            }
+        }
+
+        val tasks = resolved.mapNotNull { rf ->
+            val subDir = when (rf.classId) {
+                12, 6945 -> "resourcepacks"
+                6552 -> "shaderpacks"
+                else -> "mods"
+            }
+            val relPath = "$subDir/${rf.fileName}"
+            if (!isSafeRelativePath(relPath)) {
+                logger.warn("安全路径跳过: $relPath")
+                return@mapNotNull null
+            }
+            val dest = File(instanceDir, relPath)
+            dest.parentFile?.mkdirs()
+            if (dest.isFile && dest.length() > 0L && (rf.fileSize <= 0L || dest.length() == rf.fileSize)) {
+                return@mapNotNull null
+            }
+            val candidates = DownloadManager.downloadProvider.injectURLsWithCandidates(listOf(rf.url))
+            DownloadTask(
+                url = candidates.firstOrNull() ?: rf.url,
+                dest = dest,
+                size = rf.fileSize,
+                urls = candidates.ifEmpty { listOf(rf.url) },
+            )
+        }
+        if (tasks.isNotEmpty()) {
+            val total = tasks.size
+            logger.info("并发下载 $total 个 CurseForge 资源文件")
+            onProgress("并发下载 CurseForge 模组 0/$total", 0.3f)
+            try {
+                DownloadManager.downloadModpackFiles(tasks) { done, _, currentFile ->
+                    onProgress("并发下载 CurseForge 模组 $done/$total: $currentFile", 0.3f + 0.7f * done / total)
+                }
+            } catch (e: Exception) {
+                logger.error("CurseForge 模组批量下载异常: ${e.message}")
+                throw RuntimeException("CurseForge 模组下载失败: ${e.message}", e)
+            }
+        } else {
+            logger.info("CurseForge 模组均已就绪，无需下载")
+        }
+        if (failedRequired > 0) {
+            "警告：$failedRequired 个必需的 CurseForge 文件无法解析（可能已被作者删除或下架），详见导入日志。"
+        } else {
+            null
+        }
+    }
+
     private suspend fun downloadModrinthFiles(
         index: JsonObject,
         instanceDir: File,
@@ -1027,128 +1119,82 @@ object ModpackManager {
             onProgress("整合包资源已就绪", 0.94f)
             return@withContext
         }
-
-        onProgress("并发下载整合包资源 0/${entries.size}", 0f)
-        val total = entries.size
-        val finished = AtomicInteger(0)
-        val failedEntries = java.util.concurrent.ConcurrentLinkedQueue<ModrinthRemoteFile>()
-        val sem = kotlinx.coroutines.sync.Semaphore(8)
-        coroutineScope {
-            entries.map { entry ->
-                launch {
-                    sem.acquire()
-                    try {
-                        val ok = downloadModrinthFile(entry, instanceDir, logger)
-                        if (!ok) {
-                            failedEntries.add(entry)
-                        }
-                    } finally {
-                        sem.release()
-                        val done = finished.incrementAndGet()
-                        val frac = done.toFloat() / total
-                        onProgress("并发下载整合包资源 $done/$total: ${entry.path.substringAfterLast('/')}", frac.coerceIn(0f, 1f))
-                    }
+        val tasks = entries.mapNotNull { entry ->
+            if (!isSafeRelativePath(entry.path)) {
+                logger.warn("安全路径跳过: ${entry.path}")
+                return@mapNotNull null
+            }
+            val dest = File(instanceDir, entry.path)
+            dest.parentFile?.mkdirs()
+            if (dest.isFile && verifyDownloadedFile(dest, entry)) return@mapNotNull null
+            val sha1 = entry.sha1
+            if (!sha1.isNullOrBlank() && DownloadManager.tryCopyFromCache(sha1, dest)) {
+                if (verifyDownloadedFile(dest, entry)) {
+                    logger.info("缓存恢复: ${entry.path}")
+                    return@mapNotNull null
                 }
-            }.joinAll()
-        }
-
-        // 对失败的文件进行第二轮重试（降低并发，增加超时容忍）
-        if (failedEntries.isNotEmpty()) {
-            logger.warn("第一轮有 ${failedEntries.size} 个资源下载失败，进行重试...")
-            onProgress("第一轮完成，正在重试失败资源 0/${failedEntries.size}", 1f)
-            val retryList = failedEntries.toList()
-            val retryFailed = java.util.concurrent.ConcurrentLinkedQueue<String>()
-            val retryDone = AtomicInteger(0)
-            val retrySem = kotlinx.coroutines.sync.Semaphore(4)
-            coroutineScope {
-                retryList.map { entry ->
-                    launch {
-                        retrySem.acquire()
-                        try {
-                            val ok = downloadModrinthFile(entry, instanceDir, logger, timeoutMs = 120_000L)
-                            if (!ok) retryFailed.add(entry.path)
-                        } finally {
-                            retrySem.release()
-                            val done = retryDone.incrementAndGet()
-                            onProgress("重试失败资源 $done/${retryList.size}: ${entry.path.substringAfterLast('/')}", 1f)
-                        }
-                    }
-                }.joinAll()
-            }
-            if (retryFailed.isNotEmpty()) {
-                throw RuntimeException("资源下载失败 ${retryFailed.size} 个: ${retryFailed.joinToString(", ")}")
-            }
-        }
-    }
-
-    private suspend fun downloadModrinthFile(
-        entry: ModrinthRemoteFile,
-        instanceDir: File,
-        logger: ImportLogger,
-        timeoutMs: Long = 90_000L,
-    ): Boolean {
-        if (!isSafeRelativePath(entry.path)) {
-            logger.warn("检测到不安全路径，跳过: ${entry.path}")
-            return true
-        }
-        val dest = File(instanceDir, entry.path)
-        dest.parentFile?.mkdirs()
-
-        if (dest.isFile && verifyDownloadedFile(dest, entry)) {
-            return true
-        }
-
-        val allUrls = buildModrinthCandidateUrls(entry)
-
-        for (url in allUrls) {
-            for (attempt in 1..2) {
-                logger.info("下载资源(尝试 $attempt/2): ${entry.path} <- $url")
                 dest.delete()
-                val ok = runCatching {
-                    kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
-                        DownloadManager.downloadSingle(DownloadTask(url = url, dest = dest, size = entry.size)) { _, _, _ -> }
-                    } ?: run {
-                        logger.warn("下载超时 (${timeoutMs / 1000}s): ${entry.path} <- $url")
-                        false
-                    }
-                }.getOrElse {
-                    logger.warn("下载异常: ${it.message}")
-                    false
-                }
-                if (ok && verifyDownloadedFile(dest, entry)) {
-                    return true
-                }
-                kotlinx.coroutines.delay(250L * attempt)
             }
+            val allUrls = buildModrinthCandidateUrls(entry, logger)
+            DownloadTask(
+                url = allUrls.firstOrNull() ?: return@mapNotNull null,
+                dest = dest,
+                size = entry.size,
+                sha1 = sha1,
+                urls = allUrls,
+            )
         }
-
-        dest.delete()
-        logger.error("资源下载失败: ${entry.path}")
-        return false
+        if (tasks.isEmpty()) {
+            logger.info("全部已缓存")
+            onProgress("整合包资源已就绪", 0.94f)
+            return@withContext
+        }
+        val total = tasks.size
+        logger.info("并发下载 $total 个资源（PCL 风格：全局池 + 速度自适应扩容 + 多源竞速）")
+        onProgress("并发下载整合包资源 0/$total", 0f)
+        try {
+            // PCL 风格引擎：按实时速度动态扩容线程，直到带宽饱和；慢源快速失败切镜像
+            DownloadManager.downloadModpackFiles(tasks) { done, _, currentFile ->
+                onProgress("并发下载整合包资源 $done/$total: $currentFile", done.toFloat() / total)
+            }
+        } catch (e: Exception) {
+            logger.error("批量下载异常: ${e.message}")
+            throw RuntimeException("资源下载失败: ${e.message}", e)
+        }
     }
 
-    private fun buildModrinthCandidateUrls(entry: ModrinthRemoteFile): List<String> {
-        val candidates = linkedSetOf<String>()
-        entry.urls.forEach { raw ->
-            if (raw.isBlank()) return@forEach
-            candidates.add(raw)
+    /**
+     * 构建候选 URL 列表 — 强制镜像
+     *
+     * 所有 Modrinth/CurseForge 直链都经 BMCLAPIDownloadProvider 注入为
+     * MCIM（mod.mcimirror.top，PCL2 同款）镜像，且不保留任何官方源兜底。
+     * 无对应镜像的非标准第三方直链会记录告警（标准整合包不会出现）。
+     *
+     * SHA-1 精准下载链接作为高优先级候选（镜像化后同样指向 mcimirror）。
+     */
+    private fun buildModrinthCandidateUrls(entry: ModrinthRemoteFile, logger: ImportLogger): List<String> {
+        val rawUrls = linkedSetOf<String>()
 
-            if ("%2B" in raw || "%2b" in raw) {
-                candidates.add(raw.replace("%2B", "+").replace("%2b", "+"))
-            }
-
-            if (raw.contains("cdn.modrinth.com", ignoreCase = true)) {
-                val suffix = raw.substringAfter("https://cdn.modrinth.com")
-                candidates.add("https://bmclapi2.bangbang93.com/modrinth$suffix")
-            }
-        }
-
+        // SHA-1 精准下载 URL — 最高优先级（不依赖 CDN 重定向，更快更稳定）
         entry.sha1?.takeIf { it.isNotBlank() }?.let { sha1 ->
-            candidates.add("https://api.modrinth.com/v2/version_file/$sha1/download?algorithm=sha1")
-            candidates.add("https://bmclapi2.bangbang93.com/modrinth/v2/version_file/$sha1/download?algorithm=sha1")
+            rawUrls.add("https://api.modrinth.com/v2/version_file/$sha1/download?algorithm=sha1")
         }
 
-        return candidates.toList()
+        // mrpack 内 CDN 直链
+        entry.urls.forEach { raw ->
+            if (raw.isNotBlank()) {
+                rawUrls.add(raw)
+            }
+        }
+
+        // 强制镜像化：命中镜像规则 → 只返回 mcimirror 镜像（无官方兜底）
+        val mirrored = DownloadManager.downloadProvider.injectURLsWithCandidates(rawUrls.toList())
+        mirrored.forEach { url ->
+            if (!url.contains("mcimirror.top")) {
+                logger.warn("整合包资源无对应镜像，保留原始直链（非标准域名）: $url")
+            }
+        }
+        return mirrored
     }
 
     private fun verifyDownloadedFile(file: File, entry: ModrinthRemoteFile): Boolean {

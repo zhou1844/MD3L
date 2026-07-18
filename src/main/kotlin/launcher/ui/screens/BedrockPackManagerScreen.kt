@@ -52,7 +52,15 @@ fun BedrockPackManagerScreen(versionId: String, versionDir: String, packType: St
         return try {
             val minecraftDir = File(versionDir).parentFile?.parentFile?.absolutePath ?: return null
             val engine = BedrockLaunchEngine()
-            engine.resolveBedrockVersionComMojang(minecraftDir, versionId)
+            val profile = engine.resolveBedrockVersionComMojang(minecraftDir, versionId)
+            // 如果版本隔离目录为空，回退到当前 junction 实际指向的路径
+            if (!profile.isDirectory || profile.listFiles().isNullOrEmpty()) {
+                val junctionTarget = engine.resolveActiveJunctionTarget()
+                if (junctionTarget != null) {
+                    return junctionTarget
+                }
+            }
+            profile
         } catch (_: Exception) { null }
     }
 

@@ -24,6 +24,7 @@ sealed class Route {
     data object Log : Route()
     data class BedrockPackManager(val versionId: String, val versionDir: String, val packType: String) : Route() // packType: behavior_packs | resource_packs
     data class BedrockWorldManager(val versionId: String, val versionDir: String) : Route()
+    data class JavaModManager(val versionId: String, val versionDir: String) : Route()
 }
 
 fun Route.primaryTab(): Screen = when (this) {
@@ -36,4 +37,6 @@ fun Route.primaryTab(): Screen = when (this) {
     is Route.Log -> Screen.Log
     is Route.BedrockPackManager -> Screen.Versions
     is Route.BedrockWorldManager -> Screen.Versions
+    is Route.JavaModManager -> Screen.Versions
 }
+
