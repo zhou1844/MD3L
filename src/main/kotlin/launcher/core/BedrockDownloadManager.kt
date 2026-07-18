@@ -14,6 +14,10 @@ import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipFile
 
+// Minecraft Bedrock GDK CIK 密钥（从 Minecraft_MCWIN_GamePass_XboxLive 的 CIK 文件提取）
+const val GDK_CIK_GUID = "91e7b9bd7cc93437e1a8bc602552df06"
+const val GDK_CIK_KEY = "C9A969FBFCBBF5F46D71250AF226CF6AC7D15C25F9546344549391D16857391F"
+
 object BedrockDownloadManager {
 
     enum class WUDownloadSource(val label: String) {
@@ -95,6 +99,7 @@ object BedrockDownloadManager {
         activeJobs.remove(key)
         lastEmitTimeMs.remove(key)
         lastEmitProgress.remove(key)
+        VersionRepository.notifyChanged()
     }
 
     /**
@@ -544,95 +549,62 @@ object BedrockDownloadManager {
         file: File, version: String, versionKey: String, settings: AppSettings,
     ): String {
         val versionDir = File(settings.minecraftDir, "bedrock_versions/$version")
+        if (versionDir.exists()) versionDir.deleteRecursively()
+        versionDir.mkdirs()
 
-        emit(versionKey, "installing", "正在查找解压组件...", 0.52f)
-        val gdkExe = findGdkExtractorExe()
-        if (gdkExe != null) {
-            println("[BDM-GDK] 找到 GdkExtractor.exe: ${gdkExe.absolutePath}")
-            emit(versionKey, "installing", "正在解密解压 GDK 包（直接模式）...", 0.55f)
-
-            if (versionDir.exists()) versionDir.deleteRecursively()
-            versionDir.mkdirs()
-
-            val (rc, errOut) = callGdkExtractor(gdkExe, file.absolutePath, versionDir.absolutePath, version, versionKey)
-            if (rc == 0) {
-                File(versionDir, "AppxSignature.p7x").takeIf { it.exists() }?.delete()
-                val manifest = File(versionDir, "AppxManifest.xml")
-                val exe = File(versionDir, "Minecraft.Windows.exe")
-                if (manifest.exists() && exe.exists()) {
-                    emit(versionKey, "installing", "正在安装基岩运行依赖...", 0.95f)
-                    ensureFrameworkDeps(versionKey)
-                    markInstalledVersion(settings, version, file)
-                    emit(versionKey, "done", "GDK 安装完成: $version", 1f)
-                    return "安装完成: $version"
-                }
-                val msg = "GDK 解压完成但目录不完整，请重试"
-                emit(versionKey, "error", msg, 0f)
-                return "安装失败: $msg"
-            } else {
-                versionDir.deleteRecursively()
-                val msg = "GDK 解压失败 (exit=$rc): ${errOut.trim().lines().lastOrNull { it.isNotBlank() } ?: errOut.take(200)}"
+        // 纯 Kotlin XVD 解码器（针对 .msixvc GDK 格式）
+        if (file.extension.lowercase() == "msixvc") {
+            println("[BDM-GDK] 使用纯 Kotlin XVD 解码器...")
+            emit(versionKey, "installing", "正在 XVD 解码解压...", 0.55f)
+            val xvdProgress = GdkXvdExtractor.ExtractProgress { cur, total, name ->
+                val fraction = 0.30f + (cur.toFloat() / total.coerceAtLeast(1)) * 0.25f
+                emit(versionKey, "installing",
+                    "正在解压 ($cur/$total) $name", fraction)
+            }
+            val xvdOk = GdkXvdExtractor.extract(file, versionDir, GDK_CIK_GUID, GDK_CIK_KEY, xvdProgress)
+            if (!xvdOk) {
+                val msg = "XVD 解码器解压失败"
+                runCatching { versionDir.deleteRecursively() }
                 emit(versionKey, "error", msg, 0f)
                 return "安装失败: $msg"
             }
+            println("[BDM-GDK] XVD 解码器解压成功")
+        } else {
+            // 非 msixvc 走标准 Bundle 解压
+            emit(versionKey, "installing", "正在解压...", 0.55f)
+            try {
+                BedrockLaunchEngine().extractAppxBundle(file.absolutePath, versionDir, "x64") { cur, total, name ->
+                    val fraction = 0.30f + (cur.toFloat() / total.coerceAtLeast(1)) * 0.25f
+                    emit(versionKey, "installing",
+                        "正在解压 ($cur/$total) $name", fraction)
+                }
+                println("[BDM-GDK] extractAppxBundle 解压成功")
+            } catch (e2: Exception) {
+                println("[BDM-GDK] extractAppxBundle 解压失败: ${e2.message}, 尝试通用解压")
+                safeExtract(file, versionDir, versionKey)
+            }
         }
 
-        val msg = "未找到 GdkExtractor 解压组件，无法安装 GDK 版本"
+        val manifest = File(versionDir, "AppxManifest.xml")
+        val exe = File(versionDir, "Minecraft.Windows.exe")
+        if (manifest.exists() && exe.exists()) {
+            emit(versionKey, "installing", "正在安装基岩运行依赖...", 0.95f)
+            ensureFrameworkDeps(versionKey)
+            markInstalledVersion(settings, version, file)
+            emit(versionKey, "done", "GDK 安装完成: $version", 1f)
+            return "安装完成: $version"
+        }
+
+        val msg = "GDK 解压完成但目录不完整，缺少 Minecraft.Windows.exe 或 AppxManifest.xml\n\n" +
+            "可能的原因：\n" +
+            "• XVD 解码失败，MSIXVC 包体可能使用了不同的 CIK 密钥，或包体已损坏。\n" +
+            "• 也可尝试通过「设置 → 基岩版设置」切换下载源后重新下载。\n" +
+            "• 若持续失败，可暂时使用旧版 UWP 版本（1.20.x 及以下）。"
+        runCatching { versionDir.deleteRecursively() }
         emit(versionKey, "error", msg, 0f)
         return "安装失败: $msg"
     }
 
-    private fun findGdkExtractorExe(): File? {
-        val cacheDir = File(System.getProperty("java.io.tmpdir"), "md3l1_runtime")
-        val cached = File(cacheDir, "GdkExtractor.exe")
-
-        val stream = javaClass.classLoader.getResourceAsStream("runtime/GdkExtractor.exe") ?: run {
-            return if (cached.isFile && cached.length() > 1_000_000) cached else null
-        }
-        cacheDir.mkdirs()
-        try {
-            stream.use { s -> cached.outputStream().use { s.copyTo(it) } }
-        } catch (e: Exception) {
-            println("[BDM-GDK] 解压 GdkExtractor.exe 失败: ${e.message}")
-            return null
-        }
-        return if (cached.isFile && cached.length() > 1_000_000) cached else null
-    }
-
-    private fun callGdkExtractor(
-        exe: File, msixvcPath: String, outDir: String, version: String, versionKey: String,
-    ): Pair<Int, String> {
-        val gameType = if (version.contains("preview", ignoreCase = true) ||
-            version.contains("beta", ignoreCase = true)) "preview" else "release"
-        return try {
-            val proc = ProcessBuilder(exe.absolutePath, msixvcPath, outDir, gameType)
-                .redirectErrorStream(true).start()
-
-            val reader = proc.inputStream.bufferedReader()
-            var lastLine = ""
-            val allOutput = StringBuilder()
-            reader.forEachLine { line ->
-                lastLine = line
-                allOutput.appendLine(line)
-                println("[GdkExtractor] $line")
-                if (line.startsWith("PROGRESS:")) {
-                    val pct = line.removePrefix("PROGRESS:").trim().toFloatOrNull()
-                    if (pct != null) emit(versionKey, "installing", "解压中 ${pct.toInt()}%...", 0.55f + pct / 100f * 0.35f)
-                } else if (line.startsWith("STATE:")) {
-                    emit(versionKey, "installing", line.removePrefix("STATE:").trim(), 0.8f)
-                } else if (line.startsWith("ERROR:")) {
-                    emit(versionKey, "installing", line.removePrefix("ERROR:").trim(), 0.6f)
-                }
-            }
-            proc.waitFor(15 * 60, java.util.concurrent.TimeUnit.SECONDS)
-            val exit = proc.exitValue()
-            println("[BDM-GDK] GdkExtractor exit=$exit, last=$lastLine")
-            Pair(exit, allOutput.takeLast(300).toString())
-        } catch (e: Exception) {
-            println("[BDM-GDK] GdkExtractor 调用异常: ${e.message}")
-            Pair(1, e.message ?: "未知异常")
-        }
-    }
 
     private fun installAppx(
         file: File, version: String, versionKey: String, settings: AppSettings,
@@ -642,16 +614,31 @@ object BedrockDownloadManager {
         if (extractDir.exists()) extractDir.deleteRecursively()
         extractDir.mkdirs()
 
-        val extracted = try {
-            BedrockLaunchEngine().extractAppxBundle(file.absolutePath, extractDir, "x64")
-            true
-        } catch (e: Exception) {
-            if (file.extension.lowercase() == "appxbundle" || file.extension.lowercase() == "msixbundle") {
-                println("[BDM] Bundle 严格 x64 解包失败: ${e.message}")
-                false
-            } else {
-                println("[BDM] 标准 Appx 解包失败: ${e.message}, 尝试通用解压")
-                safeExtract(file, extractDir, versionKey)
+        // msixvc → 优先使用纯 Kotlin XVD 解码器
+        val extracted = if (file.extension.lowercase() == "msixvc") {
+            println("[BDM] MSIXVC 使用纯 Kotlin XVD 解码器...")
+            val xvdProgress = GdkXvdExtractor.ExtractProgress { cur, total, name ->
+                val fraction = 0.30f + (cur.toFloat() / total.coerceAtLeast(1)) * 0.30f
+                emit(versionKey, "installing",
+                    "正在解压 ($cur/$total) $name", fraction)
+            }
+            GdkXvdExtractor.extract(file, extractDir, GDK_CIK_GUID, GDK_CIK_KEY, xvdProgress)
+        } else {
+            try {
+                BedrockLaunchEngine().extractAppxBundle(file.absolutePath, extractDir, "x64") { cur, total, name ->
+                    val fraction = 0.30f + (cur.toFloat() / total.coerceAtLeast(1)) * 0.30f
+                    emit(versionKey, "installing",
+                        "正在解压 ($cur/$total) $name", fraction)
+                }
+                true
+            } catch (e: Exception) {
+                if (file.extension.lowercase() == "appxbundle" || file.extension.lowercase() == "msixbundle") {
+                    println("[BDM] Bundle 严格 x64 解包失败: ${e.message}")
+                    false
+                } else {
+                    println("[BDM] 标准 Appx 解包失败: ${e.message}, 尝试通用解压")
+                    safeExtract(file, extractDir, versionKey)
+                }
             }
         }
         if (!extracted) {
@@ -670,8 +657,13 @@ object BedrockDownloadManager {
             "Minecraft.Windows.exe" to exe,
         ).firstOrNull { !it.second.exists() }?.first
         if (missing != null) {
-            emit(versionKey, "error", "安装包不是完整基岩版 Appx，缺少 $missing", 0f)
-            return "安装失败: 安装包不完整，无法启动"
+            emit(versionKey, "error", "安装包不是完整基岩版 Appx，缺少 $missing。可能是下载不完整或包体已损坏。", 0f)
+            return "安装失败: 安装包不完整（缺少 $missing）\n\n" +
+                "可能的原因与解决方案：\n" +
+                "• GDK 版本的 MSIXVC 包体已通过 XVD 解码器解压但仍缺失文件，可能使用了不同的 CIK 密钥。\n" +
+                "• 下载的安装包可能不完整，请删除版本后重新下载。\n" +
+                "• 或通过「设置 → 基岩版设置」切换下载源后重试。\n" +
+                "• 也可尝试下载旧版 UWP（1.20.x 及以下）作为临时替代。"
         }
 
         emit(versionKey, "installing", "正在安装基岩运行依赖...", 0.9f)
@@ -788,7 +780,11 @@ object BedrockDownloadManager {
     ): String {
         val ext = file.extension.lowercase()
         when (ext) {
-            "appx", "msixbundle", "appxbundle", "msix", "msixvc" -> {
+            "msixvc" -> {
+                // .msixvc 是 GDK/XVD 容器，必须走纯 Kotlin XVD 解码器，不能当普通 Appx 解压
+                return installGdk(file, version, versionKey, settings)
+            }
+            "appx", "msixbundle", "appxbundle", "msix" -> {
                 return installAppx(file, version, versionKey, settings)
             }
             "exe" -> {
@@ -916,7 +912,9 @@ object BedrockDownloadManager {
         val versionKey = "${version}_import"
         try {
             val settings = AppSettings.load()
-            installLocalFile(file, version, versionKey, settings)
+            val result = installLocalFile(file, version, versionKey, settings)
+            VersionRepository.notifyChanged()
+            result
         } catch (e: Exception) {
             emit(versionKey, "error", "安装失败: ${e.message}", 0f)
             "安装失败: ${e.message}"
@@ -1060,7 +1058,7 @@ object BedrockDownloadManager {
 
     private val APPX_EXTS = setOf("appx", "msixbundle", "appxbundle", "msix")
 
-    private fun extractAppxFromExe(exeFile: File, extractDir: File, versionKey: String): File? {
+    private fun extractAppxFromExe(exeFile: File, extractDir: File, @Suppress("UNUSED_PARAMETER") versionKey: String): File? {
         // 策略1: 当作 ZIP 打开（自解压 ZIP）
         try {
             ZipFile(exeFile).use { zip ->

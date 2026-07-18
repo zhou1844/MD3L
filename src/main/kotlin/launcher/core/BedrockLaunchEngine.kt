@@ -106,7 +106,10 @@ class BedrockLaunchEngine : ILaunchEngine {
         val packagesDir = File(localAppData, "Packages")
         if (!packagesDir.isDirectory) return emptyArray()
         return packagesDir.listFiles { file ->
-            file.isDirectory && file.name.startsWith("Microsoft.MinecraftUWP", ignoreCase = true)
+            file.isDirectory && (
+                file.name.startsWith("Microsoft.MinecraftUWP", ignoreCase = true) ||
+                file.name.startsWith("Microsoft.MinecraftWindows", ignoreCase = true)
+            )
         }.orEmpty()
     }
 
@@ -122,12 +125,45 @@ class BedrockLaunchEngine : ILaunchEngine {
         }.orEmpty()
     }
 
+    /**
+     * 返回当前 UWP junction 实际指向的 com.mojang 目录。
+     * 如果 junction 不存在，回退到 UWP 包根目录下的原始路径。
+     * 用于世界/包管理器在版本隔离目录为空时的后备读取。
+     */
+    fun resolveActiveJunctionTarget(): File? {
+        val packageRoots = findInstalledMinecraftPackageRoots()
+        if (packageRoots.isEmpty()) return null
+        val firstRoot = packageRoots.first()
+        val comMojang = File(firstRoot, "LocalState/games/com.mojang")
+        if (!comMojang.exists()) return null
+        val target = readJunctionTarget(comMojang)
+        return target ?: comMojang
+    }
+
+    /**
+     * 解析 GDK 版 Minecraft 的 com.mojang 数据目录。
+     * 优先扫描 users/ 下已登录的 Xbox 用户（XUID 目录），
+     * 回退到 users/shared。
+     */
     private fun resolveGdkComMojang(versionId: String): File {
         val appData = System.getenv("APPDATA") ?: System.getProperty("user.home")
         val folderName = if (versionId.contains("preview", ignoreCase = true) ||
             versionId.contains("beta", ignoreCase = true)
         ) "Minecraft Bedrock Preview" else "Minecraft Bedrock"
-        return File(appData, "$folderName/users/shared/games/com.mojang").apply { mkdirs() }
+        val baseDir = File(appData, folderName)
+        val usersDir = File(baseDir, "users")
+        // 动态扫描已登录的 Xbox 用户目录（XUID 是唯一的数字 ID）
+        if (usersDir.isDirectory) {
+            val activeXuid = usersDir.listFiles()?.firstOrNull { dir ->
+                dir.isDirectory && File(dir, "games/com.mojang").exists()
+            }
+            if (activeXuid != null) {
+                println("[MD3L] 发现 GDK Xbox 用户目录: ${activeXuid.name}")
+                return File(activeXuid, "games/com.mojang")
+            }
+        }
+        // 回退到 users/shared
+        return File(usersDir, "shared/games/com.mojang").apply { mkdirs() }
     }
 
     fun resolveVersionProfilePublic(minecraftDir: String, versionId: String): File =
@@ -143,7 +179,17 @@ class BedrockLaunchEngine : ILaunchEngine {
         if (isGdkVersion(versionId.removePrefix("Bedrock ").trim())) {
             return resolveGdkComMojang(versionId)
         }
-        return resolveVersionProfile(minecraftDir, versionId)
+        val profile = resolveVersionProfile(minecraftDir, versionId)
+        // 如果隔离目录为空（版本号低于 GDK 阈值但实际是 GDK 安装），
+        // 尝试 GDK 路径作为后备
+        if (!profile.isDirectory || profile.listFiles().isNullOrEmpty()) {
+            val gdkPath = resolveGdkComMojang(versionId)
+            if (gdkPath.isDirectory && gdkPath.listFiles()?.isNotEmpty() == true) {
+                println("[MD3L] 非 GDK 版本 ${versionId} 使用 GDK 数据路径后备: ${gdkPath.absolutePath}")
+                return gdkPath
+            }
+        }
+        return profile
     }
 
     /**
@@ -153,7 +199,15 @@ class BedrockLaunchEngine : ILaunchEngine {
         if (isGdkVersion(versionId.removePrefix("Bedrock ").trim())) {
             return resolveGdkComMojang(versionId)
         }
-        return resolveVersionProfile(minecraftDir, versionId)
+        val profile = resolveVersionProfile(minecraftDir, versionId)
+        // 相同后备逻辑（Mod 下载安装等场景）
+        if (!profile.isDirectory || profile.listFiles().isNullOrEmpty()) {
+            val gdkPath = resolveGdkComMojang(versionId)
+            if (gdkPath.isDirectory && gdkPath.listFiles()?.isNotEmpty() == true) {
+                return gdkPath
+            }
+        }
+        return profile
     }
 
     private fun resolveVersionProfile(minecraftDir: String, versionId: String): File {
@@ -460,7 +514,7 @@ class BedrockLaunchEngine : ILaunchEngine {
     }
 
     private fun isGdkVersion(versionId: String): Boolean {
-        val GDK_THRESHOLD = listOf(1, 21, 120, 21)
+        val GDK_THRESHOLD = listOf(1, 20, 120, 4)
         val parts = versionId.trim().split(".").mapNotNull { it.toIntOrNull() }
         if (parts.size < 4) return false
         for (i in 0 until 4) {
@@ -483,10 +537,11 @@ class BedrockLaunchEngine : ILaunchEngine {
             val versionDir = File(context.version.versionDir)
             val versionId = versionDir.name
 
-            // GDK + MSA 正版：直接启动 EXE（最快路径，无需 COM 激活）
-            if (isGdkVersion(versionId) && context.accountType == AccountType.MSA) {
-                return launchGdkMsaDirect(versionDir, versionId)
-            }
+            // 注意：GDK 版本不能裸跑 Minecraft.Windows.exe。
+            // 裸进程没有 UWP 包标识（package identity），Xbox 许可证/授权查询会失败，
+            // 正版账号也会被判定为「试玩版」。必须先 Add-AppxPackage -Register 注册，
+            // 再通过 COM 激活（ActivateApplication），使进程带包标识，正版授权才生效。
+            // 因此 GDK + MSA 也统一走下方的 launchViaComActivation 路径（对齐 BedrockBoot）。
 
             // ── 版本隔离：切换 com.mojang Junction ──
             onProgress?.invoke(30, "正在切换版本存档…")
@@ -522,7 +577,11 @@ class BedrockLaunchEngine : ILaunchEngine {
         onProgress?.invoke(30, "正版账户，GDK 快速启动…")
         val exeFile = File(versionDir, "Minecraft.Windows.exe")
         if (!exeFile.isFile) throw RuntimeException(
-            "GDK 版本 $versionId 目录中未找到 Minecraft.Windows.exe。\n目录: ${versionDir.absolutePath}"
+            "GDK 版本 $versionId 目录中未找到 Minecraft.Windows.exe。\n目录: ${versionDir.absolutePath}\n\n" +
+            "可能的原因与解决方案：\n" +
+            "1. XVD 解码器解压失败，MSIXVC 包体可能使用了不同的 CIK 密钥或包体已损坏。\n" +
+            "2. 下载的安装包可能不完整，请删除该版本后重新下载安装。\n" +
+            "3. 如果问题持续，尝试先通过启动器「设置 → 基岩版设置」切换下载源（自动/MCAPPX）。"
         )
         onProgress?.invoke(80, "正在启动 Minecraft.Windows.exe…")
         println("[MD3L] GDK 正版快速启动: ${exeFile.absolutePath}")
@@ -543,7 +602,11 @@ class BedrockLaunchEngine : ILaunchEngine {
     private fun launchViaComActivation(versionDir: File, versionId: String): Process {
         val manifestFile = File(versionDir, "AppxManifest.xml")
         if (!manifestFile.isFile) throw RuntimeException(
-            "版本 $versionId 目录中未找到 AppxManifest.xml。\n目录: ${versionDir.absolutePath}"
+            "版本 $versionId 目录中未找到 AppxManifest.xml。\n目录: ${versionDir.absolutePath}\n\n" +
+            "可能的原因与解决方案：\n" +
+            "1. GDK/MSIXVC 包体需要专用 Extractor 解压，请确认工具链完整。\n" +
+            "2. 尝试删除该版本目录后重新下载安装。\n" +
+            "3. UWP 版本建议通过启动器内嵌的下载页面重新获取。"
         )
         val packageFile = resolveSelectedVersionPackage(versionDir) ?: manifestFile
         val prewarmed = getPrewarmedSlot(versionDir)
@@ -556,9 +619,11 @@ class BedrockLaunchEngine : ILaunchEngine {
             installSelectedVersionPackageSlot(versionDir, packageFile, onProgress)
         }
         onProgress?.invoke(90, "正在激活游戏进程…")
+        var comActivated = false
         try {
             val pid = activateUwpApplication(slot.aumid)
             println("[MD3L] COM 激活成功: PID=$pid, AUMID=${slot.aumid}")
+            comActivated = true
         } catch (e: Exception) {
             println("[MD3L] COM 激活失败，清除 marker 重注册: ${e.message}")
             File(versionDir, ".installed").delete()
@@ -567,11 +632,59 @@ class BedrockLaunchEngine : ILaunchEngine {
             onProgress?.invoke(50, "槽位失效，重新注册…")
             val newSlot = installSelectedVersionPackageSlot(versionDir, packageFile, onProgress)
             onProgress?.invoke(90, "重注册完成，激活中…")
-            val pid2 = activateUwpApplication(newSlot.aumid)
-            println("[MD3L] 重注册激活成功: PID=$pid2")
+            try {
+                val pid2 = activateUwpApplication(newSlot.aumid)
+                println("[MD3L] 重注册激活成功: PID=$pid2")
+                comActivated = true
+            } catch (e2: Exception) {
+                println("[MD3L] 重注册激活仍然失败: ${e2.message}")
+            }
         }
-        onProgress?.invoke(95, "已激活，等待游戏进程…")
-        return uwpMonitorProcess()
+
+        // ── 验证 COM 激活是否真的产生了 Minecraft.Windows.exe 进程 ──
+        if (comActivated) {
+            val deadline = System.currentTimeMillis() + 5000
+            while (System.currentTimeMillis() < deadline) {
+                val existing = ProcessHandle.allProcesses()
+                    .filter { it.info().command().orElse("").endsWith("Minecraft.Windows.exe") }
+                    .findFirst().orElse(null)
+                if (existing != null) {
+                    println("[MD3L] COM 激活后检测到游戏进程: PID=${existing.pid()}")
+                    onProgress?.invoke(95, "已激活，等待游戏进程…")
+                    return uwpMonitorProcess()
+                }
+                Thread.sleep(200)
+            }
+            println("[MD3L] COM 激活返回成功但 5 秒内未出现游戏进程，尝试直接启动 EXE 回退")
+        } else {
+            println("[MD3L] COM 激活完全失败，尝试直接启动 EXE 回退")
+        }
+
+        // ── 回退：直接启动 Minecraft.Windows.exe ──
+        onProgress?.invoke(85, "COM 激活未生效，尝试直接启动 EXE…")
+        return launchDirectExe(versionDir, versionId)
+    }
+
+    /**
+     * 直接启动 Minecraft.Windows.exe 作为 COM 激活失败的回退方案。
+     * FullTrust 应用（非纯沙箱 UWP）允许裸 exe 运行。
+     */
+    private fun launchDirectExe(versionDir: File, versionId: String): Process {
+        val exeFile = File(versionDir, "Minecraft.Windows.exe")
+        if (!exeFile.isFile) throw RuntimeException(
+            "基岩版 $versionId 无法启动：未找到 Minecraft.Windows.exe。\n" +
+            "COM 激活失败且无 EXE 可回退。\n目录: ${versionDir.absolutePath}"
+        )
+        onProgress?.invoke(88, "正在直接启动 Minecraft.Windows.exe…")
+        val beforePids = ProcessHandle.allProcesses()
+            .filter { it.info().command().orElse("").endsWith("Minecraft.Windows.exe") }
+            .map { it.pid() }.toList()
+        val pb = ProcessBuilder(exeFile.absolutePath).directory(versionDir)
+        configureVcLibsEnvironment(pb)
+        pb.start()
+        println("[MD3L] 直接启动 EXE 回退完成: ${exeFile.absolutePath}")
+        onProgress?.invoke(95, "已启动，等待游戏进程…")
+        return waitForMinecraftProcess(beforePids, timeoutMs = 30_000)
     }
 
     private fun uwpMonitorProcess(): Process {
@@ -783,8 +896,12 @@ class BedrockLaunchEngine : ILaunchEngine {
         if (!manifestFile.isFile) {
             throw RuntimeException(
                 "基岩版 ${versionDir.name} 目录中未找到 AppxManifest.xml。\n" +
-                "目录: ${versionDir.absolutePath}\n" +
-                "请重新下载并安装该版本。"
+                "目录: ${versionDir.absolutePath}\n\n" +
+                "可能的原因与解决方案：\n" +
+                "1. 下载的安装包不完整或 XVD 解码器解压失败。\n" +
+                "2. 请删除该版本目录，重新下载安装。\n" +
+                "3. 通过启动器「设置 → 基岩版设置」尝试切换下载源。\n" +
+                "4. 若问题持续，请尝试下载 UWP 旧版本（1.20.x 以下）。"
             )
         }
 
@@ -799,13 +916,36 @@ class BedrockLaunchEngine : ILaunchEngine {
             try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
             ${s}log = New-Object System.Collections.Generic.List[string]
             try { Get-Process -Name 'Minecraft.Windows' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; ${s}log.Add('STOP_PROCESS_OK') } catch { ${s}log.Add(('STOP_PROCESS_SKIP {0}' -f ${s}_.Exception.Message)) }
+            ${s}targetDir = '$versionDirPath'
+            function Register-Slot { Add-AppxPackage -Register '$manifestPath' -ForceApplicationShutdown -ForceUpdateFromAnyVersion -ErrorAction Stop }
+            function Remove-Conflicts {
+                # 移除安装位置不等于本版本目录的 Minecraft 包（含商店打包版）。仅注销当前用户注册，
+                # 不影响微软账号上的购买/许可，用户随时可从商店重新安装。
+                Get-AppxPackage -Name 'Microsoft.Minecraft*' -ErrorAction SilentlyContinue | Where-Object { ${s}_.InstallLocation -and (${s}_.InstallLocation.TrimEnd('\','/') -ine ${s}targetDir) } | ForEach-Object {
+                    try { Remove-AppxPackage -Package ${s}_.PackageFullName -ErrorAction Stop; ${s}log.Add(('REMOVE_CONFLICT_OK {0}' -f ${s}_.PackageFullName)) }
+                    catch { ${s}log.Add(('REMOVE_CONFLICT_FAIL {0} {1}' -f ${s}_.PackageFullName, ${s}_.Exception.Message)) }
+                }
+            }
             try {
-                Add-AppxPackage -Register '$manifestPath' -ForceApplicationShutdown -ForceUpdateFromAnyVersion -ErrorAction Stop
+                Register-Slot
                 ${s}log.Add('REGISTER_OK')
             } catch {
-                ${s}log.Add(('REGISTER_FAIL {0}' -f ${s}_.Exception.Message))
-                ${s}log | ForEach-Object { Write-Output ${s}_ }
-                exit 31
+                ${s}regErr = ${s}_.Exception.Message
+                ${s}log.Add(('REGISTER_RETRY {0}' -f ${s}regErr))
+                # 0x80073CFB：已安装打包版（商店版），未打包版无法替换 → 先移除冲突包再重试
+                if (${s}regErr -match '80073CFB' -or ${s}regErr -match '已安装' -or ${s}regErr -match 'already installed' -or ${s}regErr -match 'packaged version' -or ${s}regErr -match '打包版本') {
+                    Remove-Conflicts
+                    try { Register-Slot; ${s}log.Add('REGISTER_OK_AFTER_REMOVE') }
+                    catch {
+                        ${s}log.Add(('REGISTER_FAIL {0}' -f ${s}_.Exception.Message))
+                        ${s}log | ForEach-Object { Write-Output ${s}_ }
+                        exit 31
+                    }
+                } else {
+                    ${s}log.Add(('REGISTER_FAIL {0}' -f ${s}regErr))
+                    ${s}log | ForEach-Object { Write-Output ${s}_ }
+                    exit 31
+                }
             }
             ${s}pkg = Get-AppxPackage | Where-Object { ${s}_.InstallLocation -ieq '$versionDirPath' } | Select-Object -First 1
             if (-not ${s}pkg) {
@@ -822,7 +962,9 @@ class BedrockLaunchEngine : ILaunchEngine {
         """.trimIndent()
 
         val scriptFile = File.createTempFile("md3l-bedrock-register-", ".ps1")
-        scriptFile.writeText(script, Charsets.UTF_8)
+        // PowerShell 5.1 对无 BOM 的 UTF-8 文件会按系统 ANSI 解码（中文 Windows = GBK），
+        // 导致中文注释乱码破坏语法。必须加 BOM。
+        scriptFile.writeText("\uFEFF$script", Charsets.UTF_8)
         try {
             onProgress?.invoke(60, "正在注册应用包…")
             val proc = ProcessBuilder("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptFile.absolutePath)
@@ -831,7 +973,25 @@ class BedrockLaunchEngine : ILaunchEngine {
             proc.waitFor()
             onProgress?.invoke(80, "注册完成，正在验证…")
             println("[Bedrock] -Register 注册日志:\n$output")
-            if (proc.exitValue() != 0) throw RuntimeException("基岩版 -Register 注册失败 (exit ${proc.exitValue()}):\n$output")
+            if (proc.exitValue() != 0) {
+                // ── 检测是否因系统未开启开发人员模式/侧载导致 ──
+                if (output.contains("0x80073CFF") || output.contains("开发者许可证") || output.contains("旁加载")) {
+                    throw RuntimeException(
+                        "基岩版注册失败：系统未开启开发人员模式（侧载）。\n\n" +
+                        "请按以下步骤操作：\n" +
+                        "1. 按 Win+I 打开 Windows 设置\n" +
+                        "2. 进入「更新和安全」→「开发者选项」\n" +
+                        "3. 开启「开发人员模式」\n" +
+                        "4. 等待系统安装开发人员模式包\n" +
+                        "5. 重启启动器后重试\n\n" +
+                        "如果问题依旧，尝试同时开启：\n" +
+                        "  - 「设备门户」(Device Portal)\n" +
+                        "  - 「Device Discovery」\n\n" +
+                        "详细错误原文：\n$output"
+                    )
+                }
+                throw RuntimeException("基岩版 -Register 注册失败 (exit ${proc.exitValue()}):\n$output")
+            }
             val packageFullName = output.lineSequence().firstOrNull { it.startsWith("INSTALLED ") }
                 ?.substringAfter("INSTALLED ")?.substringBefore(" @ ")?.trim()?.takeIf { it.isNotBlank() }
                 ?: throw RuntimeException("基岩版注册成功但未解析到 PackageFullName:\n$output")
@@ -1112,6 +1272,7 @@ class BedrockLaunchEngine : ILaunchEngine {
         bundlePath: String,
         targetDir: File,
         targetArch: String = "x64",
+        onProgress: ((current: Int, total: Int, fileName: String) -> Unit)? = null,
     ) {
         targetDir.mkdirs()
         val bundleFile = File(bundlePath)
@@ -1119,9 +1280,20 @@ class BedrockLaunchEngine : ILaunchEngine {
 
         when (ext) {
             "appx", "msix" -> {
-                extractZipToDir(bundleFile, targetDir)
+                extractZipToDir(bundleFile, targetDir, onProgress)
             }
-            "msixvc", "msixbundle", "appxbundle" -> {
+            "msixvc" -> {
+                // .msixvc = XVD (Xbox Virtual Disk) 容器，必须用专用解码器
+                println("[Bedrock] 检测到 MSIXVC 格式，尝试纯 Kotlin XVD 解码器...")
+                val xvdProgress = if (onProgress != null) GdkXvdExtractor.ExtractProgress { cur, total, name ->
+                    onProgress(cur, total, name)
+                } else null
+                val ok = GdkXvdExtractor.extract(bundleFile, targetDir, GDK_CIK_GUID, GDK_CIK_KEY, xvdProgress)
+                if (!ok) {
+                    throw RuntimeException("XVD 解码器解压 .msixvc 失败")
+                }
+            }
+            "msixbundle", "appxbundle" -> {
                 ZipFile(bundleFile).use { bundle ->
                     val allEntries = bundle.entries().asSequence().toList()
                     println("[Bedrock] bundle 内容: ${allEntries.map { it.name }}")
@@ -1140,7 +1312,7 @@ class BedrockLaunchEngine : ILaunchEngine {
                                 }
                             }
                         }
-                        extractZipToDir(tempAppx, targetDir)
+                        extractZipToDir(tempAppx, targetDir, onProgress)
                     } finally {
                         tempAppx.delete()
                     }
@@ -1151,14 +1323,19 @@ class BedrockLaunchEngine : ILaunchEngine {
         File(targetDir, "AppxSignature.p7x").takeIf { it.exists() }?.delete()
     }
 
-    private fun extractZipToDir(zipFile: File, targetDir: File) {
+    private fun extractZipToDir(zipFile: File, targetDir: File, onProgress: ((current: Int, total: Int, fileName: String) -> Unit)? = null) {
         ZipFile(zipFile).use { zip ->
-            zip.entries().asSequence().forEach { entry ->
-                if (entry.isDirectory) return@forEach
+            val entries = zip.entries().asSequence()
+                .filter { !it.isDirectory }
+                .toList()
+            val total = entries.size
+            entries.forEachIndexed { idx, entry ->
+                if (entry.isDirectory) return@forEachIndexed
                 val outFile = File(targetDir, entry.name)
-                        if (!outFile.canonicalPath.startsWith(targetDir.canonicalPath)) {
-                    return@forEach
+                if (!outFile.canonicalPath.startsWith(targetDir.canonicalPath)) {
+                    return@forEachIndexed
                 }
+                onProgress?.invoke(idx + 1, total, entry.name)
                 outFile.parentFile?.mkdirs()
                 zip.getInputStream(entry).use { input ->
                     BufferedInputStream(input).use { bufferedInput ->

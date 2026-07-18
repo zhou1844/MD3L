@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
 enum class LoaderType { Vanilla, Forge, Fabric, NeoForge, Quilt, Unknown }
 
@@ -29,18 +30,50 @@ object VersionScanner {
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    // ── 扫描缓存 ──────────────────────────────────────────────────────
+    private data class VersionCacheEntry(
+        val version: LocalVersion,
+        val jsonLastModified: Long,
+    )
+    private val versionCache = ConcurrentHashMap<String, VersionCacheEntry>()
+
+    /**
+     * 清除扫描缓存，下次 [scan] 将强制重新解析所有版本 JSON。
+     */
+    fun clearCache() {
+        versionCache.clear()
+    }
+
     suspend fun scan(minecraftDir: String): List<LocalVersion> = withContext(Dispatchers.IO) {
         val versionsDir = File(minecraftDir, "versions")
-        if (!versionsDir.isDirectory) return@withContext emptyList()
+        if (!versionsDir.isDirectory) {
+            versionCache.clear()
+            return@withContext emptyList()
+        }
 
-        versionsDir.listFiles()
-            ?.filter { it.isDirectory }
-            ?.mapNotNull { dir ->
-                val jsonFile = findVersionJsonFile(dir) ?: return@mapNotNull null
-                parseVersionJson(jsonFile, dir.absolutePath)
+        val dirs = versionsDir.listFiles()?.filter { it.isDirectory } ?: emptyList()
+        val currentPaths = dirs.map { it.absolutePath }.toSet()
+
+        // 清除已不存在版本的缓存条目（如已删除的版本）
+        versionCache.keys.removeAll { it !in currentPaths }
+
+        dirs.mapNotNull { dir ->
+            val jsonFile = findVersionJsonFile(dir) ?: return@mapNotNull null
+
+            // 缓存命中：JSON 文件未修改则复用缓存结果，避免重复 I/O
+            val mtime = jsonFile.lastModified()
+            val cached = versionCache[dir.absolutePath]
+            if (cached != null && cached.jsonLastModified == mtime) {
+                return@mapNotNull cached.version
             }
-            ?.sortedByDescending { it.id }
-            ?: emptyList()
+
+            // 缓存未命中，从磁盘解析
+            val parsed = parseVersionJson(jsonFile, dir.absolutePath)
+            if (parsed != null) {
+                versionCache[dir.absolutePath] = VersionCacheEntry(parsed, mtime)
+            }
+            parsed
+        }.sortedByDescending { it.id }
     }
 
     private fun findVersionJsonFile(dir: File): File? {

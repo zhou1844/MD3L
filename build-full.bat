@@ -41,6 +41,10 @@ if not exist "dist\runtime\bin\java.exe" (
 
 echo [MD3L] =======================================
 echo [MD3L] Full Build Completed!
-echo [MD3L] Zip dist\MD3L.exe and dist\runtime for initial release.
+echo [MD3L] Dist contents:
+echo [MD3L]   dist\MD3L.exe          - 启动器主程序（不含 Java 运行时）
+echo [MD3L]   dist\runtime\          - jlink 裁剪的 Java 运行时
+echo [MD3L] =======================================
+echo [MD3L] Zip entire dist\ folder for initial release.
 echo [MD3L] For updates, just run build-update.bat and upload MD3L.exe.
 echo [MD3L] =======================================

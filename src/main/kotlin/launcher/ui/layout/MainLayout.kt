@@ -637,6 +637,7 @@ private fun ScreenContent(route: Route) {
         is Route.DownloadManager -> DownloadManagerScreen()
         is Route.BedrockPackManager -> BedrockPackManagerScreen(route.versionId, route.versionDir, route.packType)
         is Route.BedrockWorldManager -> BedrockWorldManagerScreen(route.versionId, route.versionDir)
+        is Route.JavaModManager -> JavaModManagerScreen(route.versionId, route.versionDir)
         is Route.Log -> LogScreen()
     }
 }

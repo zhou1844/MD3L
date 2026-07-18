@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 // ── Neutral dark tones (shared across all palettes) ─────────────────────────
 private val darkBackground = Color(0xFF111113)
@@ -305,6 +306,7 @@ object ThemeState {
     var uiCornerRadius by mutableStateOf(16)          // 全局圆角 dp
     var showLogSidebar by mutableStateOf(false)       // 侧边栏显示日志入口
     var uiSidebarWidth by mutableStateOf(80)          // 侧边栏宽度 dp
+    var customFontPath by mutableStateOf("")          // 自定义字体路径（ttf/otf）
     // 导航方式
     var navigationMode by mutableStateOf("sidebar")   // sidebar / floating
     // 浮动导航专属设置
@@ -415,15 +417,41 @@ fun animateColorScheme(target: ColorScheme): ColorScheme {
     )
 }
 
+// ── Apply font scaling to all typography text styles ────────────────────────
+private fun scaleTypography(base: Typography, scale: Float): Typography {
+    if (scale == 1f) return base
+    return base.copy(
+        displayLarge = base.displayLarge.copy(fontSize = (base.displayLarge.fontSize.value * scale).sp),
+        displayMedium = base.displayMedium.copy(fontSize = (base.displayMedium.fontSize.value * scale).sp),
+        displaySmall = base.displaySmall.copy(fontSize = (base.displaySmall.fontSize.value * scale).sp),
+        headlineLarge = base.headlineLarge.copy(fontSize = (base.headlineLarge.fontSize.value * scale).sp),
+        headlineMedium = base.headlineMedium.copy(fontSize = (base.headlineMedium.fontSize.value * scale).sp),
+        headlineSmall = base.headlineSmall.copy(fontSize = (base.headlineSmall.fontSize.value * scale).sp),
+        titleLarge = base.titleLarge.copy(fontSize = (base.titleLarge.fontSize.value * scale).sp),
+        titleMedium = base.titleMedium.copy(fontSize = (base.titleMedium.fontSize.value * scale).sp),
+        titleSmall = base.titleSmall.copy(fontSize = (base.titleSmall.fontSize.value * scale).sp),
+        bodyLarge = base.bodyLarge.copy(fontSize = (base.bodyLarge.fontSize.value * scale).sp),
+        bodyMedium = base.bodyMedium.copy(fontSize = (base.bodyMedium.fontSize.value * scale).sp),
+        bodySmall = base.bodySmall.copy(fontSize = (base.bodySmall.fontSize.value * scale).sp),
+        labelLarge = base.labelLarge.copy(fontSize = (base.labelLarge.fontSize.value * scale).sp),
+        labelMedium = base.labelMedium.copy(fontSize = (base.labelMedium.fontSize.value * scale).sp),
+        labelSmall = base.labelSmall.copy(fontSize = (base.labelSmall.fontSize.value * scale).sp),
+    )
+}
+
 // ── Main theme composable ───────────────────────────────────────────────────
 @Composable
 fun MD3LTheme(content: @Composable () -> Unit) {
     val baseScheme = if (ThemeState.isDark) buildDarkScheme(ThemeState.accent) else buildLightScheme(ThemeState.accent)
     val animatedScheme = animateColorScheme(baseScheme)
+    val scale = ThemeState.uiFontScale
+
+    val baseTypography = remember { Typography() }
+    val finalTypography = remember(scale) { scaleTypography(baseTypography, scale) }
 
     MaterialTheme(
         colorScheme = animatedScheme,
-        typography = Typography(),
+        typography = finalTypography,
         shapes = Shapes(
             extraSmall = RoundedCornerShape(8.dp),
             small = RoundedCornerShape(12.dp),

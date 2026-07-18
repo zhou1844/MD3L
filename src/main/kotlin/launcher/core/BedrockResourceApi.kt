@@ -54,6 +54,7 @@ object BedrockResourceApi {
         contentType: String,
         limit: Int = 30,
         index: Int = 0,
+        gameVersion: String = "",
     ): List<CfBedrockProject> = withContext(Dispatchers.IO) {
         val classId = contentTypeToClassId(contentType)
         val actualQuery = if (query.isNotBlank() && containsChinese(query)) {
@@ -68,11 +69,45 @@ object BedrockResourceApi {
                 parameter("sortField", 2) // 2=Popularity
                 parameter("sortOrder", "desc")
                 if (actualQuery.isNotBlank()) parameter("searchFilter", actualQuery)
+                if (gameVersion.isNotBlank()) parameter("gameVersion", gameVersion)
                 header("Accept", "application/json")
                 header("User-Agent", "MD3L-Launcher/1.3")
             }
             parseCfMods(resp.bodyAsText(), contentType)
         }.getOrDefault(emptyList())
+    }
+
+    /**
+     * 获取 Minecraft 基岩版可用游戏版本列表（新→旧），来源 CurseForge games/versions。
+     * 用于资源中心基岩版的版本筛选下拉框。失败时返回空列表。
+     */
+    suspend fun getBedrockGameVersions(): List<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val resp = client.get("$CF_PROXY/games/$GAME_ID/versions") {
+                header("Accept", "application/json")
+                header("User-Agent", "MD3L-Launcher/1.3")
+            }
+            val data = json.parseToJsonElement(resp.bodyAsText()).jsonObject["data"]?.jsonArray
+                ?: return@runCatching emptyList()
+            data.flatMap { typeEl ->
+                typeEl.jsonObject["versions"]?.jsonArray
+                    ?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+            }.filter { it.isNotBlank() && it.first().isDigit() }
+                .distinct()
+                .sortedWith(compareByDescending(VersionComparator) { it })
+        }.getOrDefault(emptyList())
+    }
+
+    /** 按点分数字段从高到低排序版本字符串（如 1.21.101 > 1.21.94）。 */
+    private val VersionComparator = Comparator<String> { a, b ->
+        val pa = a.split('.').map { it.toIntOrNull() ?: 0 }
+        val pb = b.split('.').map { it.toIntOrNull() ?: 0 }
+        val n = maxOf(pa.size, pb.size)
+        for (i in 0 until n) {
+            val d = (pa.getOrElse(i) { 0 }).compareTo(pb.getOrElse(i) { 0 })
+            if (d != 0) return@Comparator d
+        }
+        0
     }
 
     private val chineseRegex = Regex("[\u4e00-\u9fff]")

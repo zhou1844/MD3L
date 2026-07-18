@@ -21,7 +21,19 @@ object VersionRepository {
     private val _versions = MutableStateFlow<List<LocalVersion>>(emptyList())
     val versions: StateFlow<List<LocalVersion>> = _versions.asStateFlow()
 
+    private val _revision = MutableStateFlow(0L)
+    val revision: StateFlow<Long> = _revision.asStateFlow()
+
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
+
+    /**
+     * 通知本地版本列表发生变化（安装/导入/删除等），驱动所有观察方刷新。
+     * 与 [invalidateCache] 不同，此方法不做磁盘扫描，仅递增修订号，
+     * 供不经由 StateFlow 缓存的安装路径（基岩版下载/导入）调用。
+     */
+    fun notifyChanged() {
+        _revision.value = _revision.value + 1
+    }
 
     /**
      * 扫描本地版本目录并更新 StateFlow。
@@ -35,6 +47,7 @@ object VersionRepository {
      */
     suspend fun invalidateCache(minecraftDir: String) {
         _versions.value = VersionScanner.scan(minecraftDir)
+        _revision.value = _revision.value + 1
     }
 
     /**

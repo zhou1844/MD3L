@@ -55,3 +55,14 @@ scripts/warp-packer.exe
 # OS
 .DS_Store
 Thumbs.db
+
+# Large local artifacts (game packages / extracted versions / linux build outputs)
+*.msixvc
+ys/
+linux/
+msixvc_out/
+*.deb
+*.AppImage
+*.pkg.tar.zst
+squashfs-root/
+appimagetool-*.AppImage

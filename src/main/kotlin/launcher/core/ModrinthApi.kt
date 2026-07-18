@@ -6,6 +6,11 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
@@ -41,6 +46,18 @@ data class CurseForgeFile(
     val fileSize: Long = 0,
     val gameVersions: List<String> = emptyList(),
     val releaseDate: String = "",
+)
+
+/** CurseForge 整合包 manifest 中一个 file 条目解析后的可下载信息。 */
+@Serializable
+data class CurseResolvedFile(
+    val projectId: Int = 0,
+    val fileId: Int = 0,
+    val fileName: String = "",
+    val url: String = "",
+    val fileSize: Long = 0,
+    val classId: Int = 6,
+    val required: Boolean = true,
 )
 
 @Serializable
@@ -643,6 +660,95 @@ object ModrinthApi {
         } catch (_: Exception) {
             null
         }
+    }
+
+    /**
+     * 获取 Minecraft Java 版正式发布版本列表（新→旧），来源 Modrinth tag/game_version。
+     * 用于资源中心版本筛选下拉框，随官方发布自动覆盖最新版本（如 26.x）。
+     * 失败时返回空列表，由调用方回退到内置静态列表。
+     */
+    suspend fun getMinecraftReleaseVersions(): List<String> = withContext(Dispatchers.IO) {
+        try {
+            val resp = client.get("$BASE/tag/game_version") {
+                header("Accept", "application/json")
+                header("User-Agent", "MD3L/1.1")
+            }
+            json.parseToJsonElement(resp.bodyAsText()).jsonArray.mapNotNull { el ->
+                val o = el.jsonObject
+                if (o["version_type"]?.jsonPrimitive?.contentOrNull != "release") return@mapNotNull null
+                o["version"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private val cfClassIdCache = java.util.concurrent.ConcurrentHashMap<Int, Int>()
+
+    /** 查询某个 CurseForge 项目的 classId（模组/资源包/光影），带缓存。 */
+    private suspend fun cfClassId(projectId: Int): Int {
+        cfClassIdCache[projectId]?.let { return it }
+        return try {
+            val resp = client.get("$CF_PROXY/mods/$projectId") {
+                header("Accept", "application/json")
+                header("User-Agent", "MD3L/1.1")
+            }
+            val classId = json.parseToJsonElement(resp.bodyAsText()).jsonObject["data"]?.jsonObject
+                ?.get("classId")?.jsonPrimitive?.intOrNull ?: CF_CLASS_MOD
+            cfClassIdCache[projectId] = classId
+            classId
+        } catch (_: Exception) {
+            CF_CLASS_MOD
+        }
+    }
+
+    /**
+     * 解析 CurseForge 整合包 manifest 中的单个 file（projectID/fileID）为可下载信息。
+     * 若官方 downloadUrl 为空（分发受限），按 HMCL 相同规则回退到 forgecdn edge 地址。
+     */
+    suspend fun resolveCurseForgeManifestFile(
+        projectId: Int,
+        fileId: Int,
+        required: Boolean,
+    ): CurseResolvedFile? = withContext(Dispatchers.IO) {
+        try {
+            val resp = client.get("$CF_PROXY/mods/$projectId/files/$fileId") {
+                header("Accept", "application/json")
+                header("User-Agent", "MD3L/1.1")
+            }
+            val data = json.parseToJsonElement(resp.bodyAsText()).jsonObject["data"]?.jsonObject
+                ?: return@withContext null
+            val fileName = data["fileName"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                ?: return@withContext null
+            val rawUrl = data["downloadUrl"]?.jsonPrimitive?.contentOrNull
+            val url = if (rawUrl.isNullOrBlank()) {
+                "https://edge.forgecdn.net/files/${fileId / 1000}/${fileId % 1000}/${fileName.replace(" ", "%20")}"
+            } else {
+                rawUrl
+            }
+            val size = data["fileLength"]?.jsonPrimitive?.longOrNull ?: 0L
+            CurseResolvedFile(projectId, fileId, fileName, url, size, cfClassId(projectId), required)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** 并发解析 CurseForge 整合包 manifest 的所有 file 条目。Triple = (projectID, fileID, required)。 */
+    suspend fun resolveCurseForgeManifestFiles(
+        files: List<Triple<Int, Int, Boolean>>,
+        onResolve: (Int) -> Unit = {},
+    ): List<CurseResolvedFile> = coroutineScope {
+        val sem = Semaphore(16)
+        val counter = java.util.concurrent.atomic.AtomicInteger(0)
+        files.map { (pid, fid, req) ->
+            async(Dispatchers.IO) {
+                sem.withPermit {
+                    val resolved = resolveCurseForgeManifestFile(pid, fid, req)
+                    onResolve(counter.incrementAndGet())
+                    resolved
+                }
+            }
+        }.awaitAll().filterNotNull()
     }
 
     suspend fun downloadCurseForgeFile(file: CurseForgeFile, targetDir: File): Boolean = withContext(Dispatchers.IO) {

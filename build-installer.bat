@@ -24,14 +24,12 @@ if not exist "dist\MD3LUpdater.exe" (
     echo [MD3L] Run build-update.bat first to generate the updater.
 )
 
-REM Read version from AutoUpdater.kt  (line: "    const val CURRENT_VERSION = "x.y.z"")
+REM Read version from insver.txt in project root
 set "APP_VERSION="
-set "RAW="
-for /f "tokens=5 delims= " %%v in ('findstr /c:"val CURRENT_VERSION = " "src\main\kotlin\launcher\core\AutoUpdater.kt"') do set "RAW=%%v"
-if not "%RAW%"=="" set "APP_VERSION=%RAW:~1,-1%"
+set /p APP_VERSION=<insver.txt
 
 if "%APP_VERSION%"=="" (
-    echo [MD3L] WARNING: Could not read version, using 1.0
+    echo [MD3L] WARNING: insver.txt not found or empty, using 1.0
     set "APP_VERSION=1.0"
 ) else (
     echo [MD3L] Version: %APP_VERSION%

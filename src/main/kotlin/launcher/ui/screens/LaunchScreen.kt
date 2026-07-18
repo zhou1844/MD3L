@@ -143,6 +143,8 @@ fun LaunchScreen() {
     // 致命错误弹窗
     var showErrorDialog by remember { mutableStateOf(false) }
     var errorStackTrace by remember { mutableStateOf("") }
+    // 是否为侧载/开发人员模式未开启导致的基岩版注册失败
+    var isSideloadError by remember { mutableStateOf(false) }
     var errorLogPath by remember { mutableStateOf("") }
 
     // 第三方登录状态
@@ -254,6 +256,30 @@ fun LaunchScreen() {
         val loadedSettings = withContext(Dispatchers.IO) { AppSettings.load() }
         settings = loadedSettings
         rescanLocalVersions(loadedSettings, forceReselect = false)
+    }
+
+    // 任何版本变更（基岩版下载/导入、整合包导入、重命名/删除）都会递增 revision，驱动启动页刷新
+    val versionRevision by VersionRepository.revision.collectAsState()
+    LaunchedEffect(versionRevision) {
+        if (!LaunchScreenState.initialized) return@LaunchedEffect
+        val loadedSettings = withContext(Dispatchers.IO) { AppSettings.load() }
+        settings = loadedSettings
+        rescanLocalVersions(loadedSettings, forceReselect = false)
+    }
+
+    // Java 版本下载完成后刷新启动页版本列表
+    val downloadTasks by DownloadHub.tasks.collectAsState()
+    LaunchedEffect(downloadTasks) {
+        if (!LaunchScreenState.initialized) return@LaunchedEffect
+        val hasJustCompletedJava = downloadTasks.any { t ->
+            t.type == DownloadHub.TaskType.JavaVersion &&
+                (t.status == DownloadHub.TaskStatus.Done || t.status == DownloadHub.TaskStatus.Error)
+        }
+        if (hasJustCompletedJava) {
+            val loadedSettings = withContext(Dispatchers.IO) { AppSettings.load() }
+            settings = loadedSettings
+            rescanLocalVersions(loadedSettings, forceReselect = false)
+        }
     }
 
     LaunchedEffect(crashReport) {
@@ -1228,6 +1254,11 @@ fun LaunchScreen() {
                                         e.printStackTrace(PrintWriter(sw))
                                         val trace = sw.toString()
                                         errorStackTrace = trace
+                                        // 检测是否为侧载/开发人员模式未开启导致的注册失败
+                                        isSideloadError = trace.contains("0x80073CFF") ||
+                                            trace.contains("开发者许可证") ||
+                                            trace.contains("旁加载") ||
+                                            trace.contains("开发人员模式")
                                         errorLogPath = writeLaunchFailureLog(ver.id, trace, isBedrock = true)
                                         showErrorDialog = true
                                         launchMessage = "启动失败，详情见错误弹窗/日志"
@@ -1905,22 +1936,85 @@ fun LaunchScreen() {
                 }
             },
             text = {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp),
-                ) {
-                    SelectionContainer {
-                        Text(
-                            errorStackTrace,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp,
-                                lineHeight = 14.sp,
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(12.dp).verticalScroll(rememberScrollState()),
-                        )
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    // ── 侧载/开发者模式引导 ──
+                    if (isSideloadError) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Filled.DeveloperMode, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        if (isEn) "Developer Mode / Sideloading Required" else "需要开启开发人员模式（侧载）",
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    )
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    if (isEn) "Minecraft Bedrock Edition needs Developer Mode to register the app package on your system.\n\nPlease follow these steps:" else "基岩版需要系统开启「开发人员模式」才能注册应用包。\n\n请按以下步骤操作：",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                val steps = if (isEn) listOf(
+                                    "Press Win+I to open Windows Settings",
+                                    "Go to \"Update & Security\" → \"For Developers\"",
+                                    "Enable \"Developer Mode\"",
+                                    "Wait for the Developer Mode package to install",
+                                    "Restart this launcher and try again",
+                                ) else listOf(
+                                    "按下 Win+I 打开 Windows 设置",
+                                    "进入「更新和安全」→「开发者选项」",
+                                    "开启「开发人员模式」",
+                                    "等待系统安装开发人员模式包",
+                                    "重启启动器后重试",
+                                )
+                                for (step in steps) {
+                                    Row(modifier = Modifier.padding(vertical = 2.dp)) {
+                                        Text("• ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                                        Text(step, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                                    }
+                                }
+                                Spacer(Modifier.height(12.dp))
+                                OutlinedButton(
+                                    onClick = {
+                                        try { Desktop.getDesktop().browse(URI("ms-settings:developers")) } catch (_: Exception) {
+                                            try { Runtime.getRuntime().exec("cmd /c start ms-settings:developers") } catch (_: Exception) {}
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                ) {
+                                    Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(if (isEn) "Open Developer Settings" else "打开开发者设置")
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                    }
+                    // ── 堆栈跟踪 ──
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        modifier = Modifier.fillMaxWidth().heightIn(max = if (isSideloadError) 200.dp else 300.dp),
+                    ) {
+                        SelectionContainer {
+                            Text(
+                                errorStackTrace,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.sp,
+                                    lineHeight = 14.sp,
+                                ),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(12.dp),
+                            )
+                        }
                     }
                 }
             },
@@ -1947,6 +2041,7 @@ fun LaunchScreen() {
                     ) { Text(if (isEn) "Open Log" else "打开日志") }
                     TextButton(onClick = {
                         showErrorDialog = false
+                        isSideloadError = false
                         GameProcessManager.clearCrashReport()
                     }) { Text(if (isEn) "Close" else "关闭") }
                 }

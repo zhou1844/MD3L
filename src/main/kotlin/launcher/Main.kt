@@ -52,12 +52,15 @@ import java.net.URI
 fun main() {
     launcher.core.AppLogger.installSystemStreams()
 
+    // ── 当前进程使用的渲染 API（在 setProperty 之后记录） ──
+    var currentRenderApi = "UNKNOWN"
+
     // ── 全局异常处理器（安全兜底）──────────────────────────────────────────
     Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
         val msg = throwable.message ?: ""
         println("[FATAL] 线程 [${thread.name}] 未捕获异常: $msg")
         throwable.printStackTrace()
-        // 渲染相关异常 → 写标记文件，下次启动强制 SOFTWARE
+        // 渲染相关异常 → 写 SOFTWARE 回退标记，下次启动兜底
         if (msg.contains("skiko", ignoreCase = true) ||
             msg.contains("render", ignoreCase = true) ||
             msg.contains("DirectX", ignoreCase = true) ||
@@ -68,7 +71,7 @@ fun main() {
             runCatching {
                 File(launcher.core.LauncherDirs.dataDir, ".render_fallback")
                     .writeText("SOFTWARE")
-                println("[Render] 渲染崩溃，已记录回退标记 → 下次启动强制 SOFTWARE")
+                println("[Render] 渲染崩溃（当前API=$currentRenderApi），已记录 SOFTWARE 回退标记")
             }
         }
     }
@@ -100,21 +103,25 @@ fun main() {
         }
     }
 
-    // ── 强制使用 DirectX11 ─────────────────────────────────────────────────
-    // Skiko 默认优先选择 DirectX12，但 D3D12 在某些系统上初始化失败
-    // 直接强制 D3D11，兼容 Windows 7 及以上所有系统，稳定可靠
-    // 用户也可在 data 目录创建 software_render 文件手动切换到 CPU 渲染
-    if (File(md3lDir, "software_render").exists() || File(md3lDir, "software_render.txt").exists()) {
+    // ── 渲染 API 固定为 DIRECT3D ──────────────────────────────────────────
+    // 注意：Skiko 0.7.x 合法的 renderApi 值是: DIRECT3D / OPENGL / SOFTWARE
+    // 不区分 DIRECT3D11 / DIRECT3D12，写成 DIRECT3D11 会被 Skiko 忽略，
+    // 导致 Skiko 回退到自动探测 → 先试 D3D12 再失败（日志中的
+    // "Failed to choose DirectX12 adapter"）→ 最终可能 Software 回退失败 → 幽灵窗口。
+    //
+    // 正确值 DIRECT3D 让 Skiko 内部选择合适的 D3D 版本（自动降级 D3D12→11→10）。
+    // 用户可在 data 目录创建 software_render 文件手动切 CPU 渲染。
+    val softwareMarker = File(md3lDir, "software_render")
+    val softwareMarkerTxt = File(md3lDir, "software_render.txt")
+
+    if (softwareMarker.exists() || softwareMarkerTxt.exists()) {
         System.setProperty("skiko.renderApi", "SOFTWARE")
-        println("[Render] 检测到 software_render 标记，使用 SOFTWARE")
-    } else if (File(md3lDir, ".render_fallback").exists()) {
-        // 上一次 GPU 渲染崩溃过，强制 SOFTWARE
-        System.setProperty("skiko.renderApi", "SOFTWARE")
-        println("[Render] 检测到上次渲染崩溃记录，使用 SOFTWARE")
+        currentRenderApi = "SOFTWARE"
+        println("[Render] 检测到 software_render 标记，使用 SOFTWARE（CPU 渲染）")
     } else {
-        // 直接走 DirectX11，跳过 DirectX12
-        System.setProperty("skiko.renderApi", "DIRECT3D11")
-        println("[Render] 强制渲染 API: DIRECT3D11")
+        System.setProperty("skiko.renderApi", "DIRECT3D")
+        currentRenderApi = "DIRECT3D"
+        println("[Render] 渲染 API: DIRECT3D（Skiko 自动选择最佳 D3D 版本）")
     }
 
     runLauncherApp()
@@ -140,7 +147,7 @@ private fun runLauncherApp() = application {
         title = "MD3L",
         icon = windowIcon,
         undecorated = true,
-        transparent = true,
+        transparent = false,
         visible = true,
     ) {
         val scope = rememberCoroutineScope()
@@ -158,9 +165,24 @@ private fun runLauncherApp() = application {
             }
         }
 
-        // 窗口背景设为透明，让 rounded corner 外的区域真正透明不露黑边
+        // 使用原生 AWT Window.setShape() 实现圆角窗口，替代透明分层窗口方案
+        // 透明分层窗口（WS_EX_LAYERED）+ GPU 渲染在部分系统上静默失败 → "幽灵窗口"
+        // AWT setShape() 直接裁剪窗口像素，无需分层窗口，兼容所有系统
         LaunchedEffect(Unit) {
-            window.background = java.awt.Color(0, 0, 0, 0)
+            // 窗口不透明，设置深色背景避免白色闪烁
+            window.background = java.awt.Color(0x11, 0x11, 0x13)
+            val arc = 24 // 圆角直径 px，对应 12dp 的视觉效果
+            val w = window.width.coerceAtLeast(arc)
+            val h = window.height.coerceAtLeast(arc)
+            val shape = java.awt.geom.RoundRectangle2D.Double(0.0, 0.0, w.toDouble(), h.toDouble(), arc.toDouble(), arc.toDouble())
+            window.setShape(shape)
+            // 同步更新：窗口尺寸变化时重设 shape
+            window.addPropertyChangeListener("size") { _ ->
+                val nw = window.width.coerceAtLeast(arc)
+                val nh = window.height.coerceAtLeast(arc)
+                window.setShape(java.awt.geom.RoundRectangle2D.Double(0.0, 0.0, nw.toDouble(), nh.toDouble(), arc.toDouble(), arc.toDouble()))
+            }
+            println("[Render] 窗口圆角已通过 AWT setShape 应用，不使用透明分层窗口")
         }
 
         LaunchedEffect(Unit) {
@@ -218,6 +240,7 @@ private fun runLauncherApp() = application {
                     ThemeState.showConsoleOnLaunch = settings.showConsoleOnLaunch
                     ThemeState.checkUpdateOnStartup = settings.checkUpdateOnStartup
                     ThemeState.showLogSidebar = settings.showLogSidebar
+                    ThemeState.customFontPath = settings.customFontPath
                     DownloadManager.activeMirror = settings.downloadMirror
                     // 若首次启动需要 EULA，切换到 EULA 界面
                     if (!settings.eulaAccepted) eulaAccepted = false
@@ -482,6 +505,9 @@ private fun FrameWindowScope.AppWindow(
     // 最大化时圆角设为 0，避免圆角区域露出桌面
     val windowShape = if (isMaximized) RoundedCornerShape(0.dp) else RoundedCornerShape(12.dp)
 
+    // 圆角直径 px，对应 12dp 的视觉效果
+    val cornerArc = 24
+
     // ── 自定义最大化：手动计算 Windows 工作区（排除任务栏） ──
     fun applyMaximized() {
         val ge = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment()
@@ -496,12 +522,20 @@ private fun FrameWindowScope.AppWindow(
         // 保存当前 bounds
         savedBounds.setBounds(window.x, window.y, window.width, window.height)
         window.setBounds(workArea)
+        // 最大化时取消圆角裁剪
+        runCatching { window.setShape(null) }
         isMaximized = true
     }
 
     fun applyRestored() {
         if (savedBounds.width > 0 && savedBounds.height > 0) {
             window.setBounds(savedBounds)
+        }
+        // 恢复圆角
+        runCatching {
+            val w = window.width.coerceAtLeast(cornerArc)
+            val h = window.height.coerceAtLeast(cornerArc)
+            window.setShape(java.awt.geom.RoundRectangle2D.Double(0.0, 0.0, w.toDouble(), h.toDouble(), cornerArc.toDouble(), cornerArc.toDouble()))
         }
         isMaximized = false
     }

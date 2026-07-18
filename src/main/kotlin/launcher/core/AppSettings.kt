@@ -134,6 +134,8 @@ data class AppSettings(
     val navFloatingCornerRadius: Int = 24,  // dp，浮动导航自身圆角
     val navFloatingHeight: Int = 64,        // dp，浮动导航高度
     val navFloatingShowLabels: Boolean = true,
+    // 自定义字体
+    val customFontPath: String = "",
 ) {
     companion object {
         private val json = Json {
