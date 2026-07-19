@@ -19,12 +19,12 @@ import java.util.zip.GZIPInputStream
 import kotlin.io.path.*
 
 /**
- * Terracotta 联机管理器 —— 复用 HMCL 的 Terracotta 生态。
+ * Terracotta 联机管理器
  *
- * 核心架构（与 HMCL TerracottaManager 一致）：
+ * 核心架构：
  *   1. 下载 terracotta-{version}-{os}-{arch}-pkg.tar.gz
  *   2. 解压出 terracotta 可执行文件 + 依赖
- *   3. 启动 terracotta 进程：terracotta.exe --hmcl <port_transfer_file>
+ *   3. 启动 terracotta 进程：terracotta.exe --port-file <port_transfer_file>
  *   4. terracotta 将 HTTP 端口写入 port_transfer_file
  *   5. 后台轮询 http://127.0.0.1:{port}/state 获取状态
  *   6. 通过 REST API 操作：/state/scanning(创建房间) /state/guesting(加入房间)
@@ -34,8 +34,8 @@ import kotlin.io.path.*
  */
 object MultiplayerManager {
 
-    // ── 状态定义（映射 HMCL TerracottaState） ─────────────────────────
-    /** 对应 HMCL 的 Bootstrap / Uninitialized / Preparing / Launching / ... */
+    // ── 状态定义 ──────────────────────────────────────────────────────
+    /** Bootstrap / Uninitialized / Preparing / Launching / ... */
     enum class State {
         /** 未初始化，需下载 Terracotta */
         Uninitialized,
@@ -220,7 +220,7 @@ object MultiplayerManager {
                 val nodes = fetchNodeList()
                 val playerName = getPlayerName()
 
-                // 构造 GET query string（参照 HMCL TerracottaManager.setScanning）
+                // 构造 GET query string
                 val query = buildString {
                     append("?player=").append(java.net.URLEncoder.encode(playerName, "UTF-8"))
                     for (node in nodes) {

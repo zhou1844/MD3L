@@ -29,7 +29,7 @@ import javax.imageio.ImageIO
 /**
  * 本地 Yggdrasil 认证 + 纹理服务器，用于离线账户皮肤加载。
  *
- * 完全参照 HMCL 的 YggdrasilServer 实现：
+ * 采用本地 Yggdrasil 认证服务器方案：
  *   - 启动一个嵌入式的 HTTP 服务器（Ktor Netty）
  *   - 实现 Yggdrasil API 的 /、/status、/api/profiles/minecraft、
  *     /sessionserver/session/minecraft/hasJoined、/sessionserver/session/minecraft/profile/{uuid}、
@@ -78,7 +78,7 @@ class OfflineSkinServer {
         return "-----BEGIN PUBLIC KEY-----\n${encoded.chunked(64).joinToString("\n")}\n-----END PUBLIC KEY-----"
     }
 
-    // ── SHA-256 纹理哈希（完全参照 HMCL 算法）────────────────────────
+    // ── SHA-256 纹理哈希 ────────────────────────────────────────────────
 
     private fun computeTextureHash(imageBytes: ByteArray): String {
         val img = ImageIO.read(ByteArrayInputStream(imageBytes))
@@ -102,7 +102,7 @@ class OfflineSkinServer {
             for (y in 0 until height) {
                 val argb = img.getRGB(x, y)
                 putInt(buf, pos, argb)
-                // alpha=0 → 所有通道清零（HMCL 行为）
+                // alpha=0 → 所有通道清零
                 if (buf[pos + 0] == 0.toByte()) {
                     buf[pos + 1] = 0
                     buf[pos + 2] = 0

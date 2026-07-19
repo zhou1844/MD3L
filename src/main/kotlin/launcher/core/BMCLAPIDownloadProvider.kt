@@ -1,13 +1,5 @@
 package launcher.core
 
-/**
- * HMCL 风格 BMCLAPI 下载源
- *
- * 精确移植自 HMCL BMCLAPIDownloadProvider：
- * - 两层 URL 替换：replacement（主要镜像）+ fallbackReplacement（备用镜像）
- * - injectURLWithCandidates: 主镜像命中 → 返回注入 URL；否则尝试备用镜像 → 返回 [原始, 备用]
- * - getConcurrency: max(cores*2, 6)
- */
 object BMCLAPIDownloadProvider : DownloadProvider {
 
     /** 默认 BMCLAPI 根地址 */
@@ -17,7 +9,7 @@ object BMCLAPIDownloadProvider : DownloadProvider {
     @Volatile
     var apiRoot: String = DEFAULT_API_ROOT
 
-    /** 主要 URL 替换规则（精确复制 HMCL） */
+    /** 主要 URL 替换规则 */
     private val replacement: List<Pair<String, String>> = listOf(
         "https://bmclapi2.bangbang93.com" to apiRoot,
         "https://launchermeta.mojang.com" to apiRoot,
@@ -95,15 +87,14 @@ object BMCLAPIDownloadProvider : DownloadProvider {
 
         val fallbackInjected = injectURL(fallbackReplacement, baseURL)
         if (fallbackInjected != baseURL) {
-            // 彻底只用镜像源：Modrinth/CurseForge 资源不再回退官方源，
-            // 避免国内直连官方 CDN 卡死拖垮整合包下载。
+            
             return listOf(fallbackInjected)
         }
 
         return listOf(baseURL)
     }
 
-    /** max(cores*2, 6) — 与 HMCL 完全一致 */
+    /** max(cores*2, 6) */
     override fun getConcurrency(): Int {
         return maxOf(Runtime.getRuntime().availableProcessors() * 2, 6)
     }

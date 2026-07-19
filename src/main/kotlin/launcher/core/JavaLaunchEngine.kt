@@ -18,7 +18,7 @@ class JavaLaunchEngine : ILaunchEngine {
     var lastLogFile: File? = null
         private set
 
-    // HMCL 方案：本地 Yggdrasil 服务器（用于离线账户皮肤）
+    // 本地 Yggdrasil 服务器（用于离线账户皮肤）
     // 在 execute() 中启动、在进程退出后由外部 stop
     var skinServer: OfflineSkinServer? = null
         private set
@@ -67,7 +67,7 @@ class JavaLaunchEngine : ILaunchEngine {
         val (mcMajor, mcMinor, mcPatch) = parseMcVersion(mcVersionStr)
         println("[SkinServer] MC版本: $mcVersionStr → ($mcMajor, $mcMinor, $mcPatch), 皮肤模型: ${context.skinModel}")
 
-        // HMCL 方案：通过 Yggdrasil 服务器直接传递皮肤模型（slim/wide），
+        // 通过 Yggdrasil 服务器直接传递皮肤模型（slim/wide），
         // 不再需要 UUID 操控来匹配纹理路径。MC 从 profile 响应的 textures metadata
         // 读取模型信息，因此对所有版本（包括 1.21.11+、快照版）通用。
 
@@ -255,9 +255,9 @@ class JavaLaunchEngine : ILaunchEngine {
     }
 
     /**
-     * 参照 HMCL 方案：使用本地 Yggdrasil 服务器 + authlib-injector 提供离线皮肤。
+     * 使用本地 Yggdrasil 服务器 + authlib-injector 提供离线皮肤。
      *
-     * HMCL 完全不用资源包方式——资源包方案在高版本 MC（1.21.11+、快照版 26w06a 等）存在
+     * 此方案完全不用资源包方式——资源包方案在高版本 MC（1.21.11+、快照版 26w06a 等）存在
      * pack_format 与 supported_formats 兼容性问题，即使格式正确也可能被 known_packs.json 缓存拒绝。
      *
      * 本方案通过 authlib-injector 将 MC 的认证请求重定向到本地 HTTP 服务器，
@@ -333,7 +333,7 @@ class JavaLaunchEngine : ILaunchEngine {
                 }
                 zip.closeEntry()
             }
-            // PCL2 的 pack.mcmeta 只写 pack_format + description；那是针对 ≤1.20.x。
+            // ≤1.20.x 的 pack.mcmeta 只写 pack_format + description。
             // MC 1.21.2+ (pack_format≥46) 强制要求 supported_formats，对象格式 {"min_inclusive":X,"max_inclusive":Y}。
             // 1.20.5-1.21.1 用数组格式 [min,max]；此处按 packFormat 版本自适应。
             val sf = if (packFormat >= 46) {
@@ -374,7 +374,7 @@ class JavaLaunchEngine : ILaunchEngine {
         }
         // MC 1.20.5+ 引入 known_packs.json 缓存资源包兼容性判定。
         // 之前被拒绝的同名资源包即使修复后，缓存也会导致继续被拒绝。
-        // PCL2 发布时 MC 尚未引入此机制，故 PCL2 未处理；此处为 1.21+ 补充清理。
+        // 此处为 1.21+ 补充清理。
         val knownPacksFile = File(packFile.parentFile?.parentFile, "known_packs.json")
         if (knownPacksFile.exists()) {
             knownPacksFile.delete()
@@ -384,7 +384,7 @@ class JavaLaunchEngine : ILaunchEngine {
     }
 
     /**
-     * 参考 PCL2 的 resourcePacks 写入逻辑：
+     * resourcePacks 写入逻辑：
      *   - 只写 resourcePacks 键，不碰 enabledResourcePacks（1.20.5+ 已废弃）
      *   - 重建整个列表：读现有列表 → 过滤旧 MD3L 条目 → 追加 → 写回全部行
      *   - MC ≥ 13（1.13+）使用 "file/PackName.zip" 格式，"vanilla" 始终排第一
@@ -414,7 +414,7 @@ class JavaLaunchEngine : ILaunchEngine {
         // 过滤掉旧的 MD3L 皮肤包条目（兼容 file/ 前缀和无前缀两种写法）
         items.removeAll { it == packName || it == "file/$packName" }
 
-        // 按 PCL2 规则重建列表：
+        // 重建列表规则：
         //   现代格式（≥1.13 / 快照）：vanilla 永远排在第一位，然后是我们的 pack
         //   旧格式（<1.13）：只放 pack 名称（无 file/ 前缀和 vanilla）
         val rebuilt = if (useModernFormat) {
@@ -439,7 +439,7 @@ class JavaLaunchEngine : ILaunchEngine {
             allLines.add("$key:[$jsonList]")
         }
 
-        // 移除 enabledResourcePacks 行（1.20.5+ 已废弃此键，且 PCL2 从不写入）
+        // 移除 enabledResourcePacks 行（1.20.5+ 已废弃此键）
         allLines.removeAll { it.startsWith("enabledResourcePacks:") }
 
         optionsFile.writeText(allLines.joinToString("\n") + "\n", Charsets.UTF_8)
@@ -931,7 +931,7 @@ class JavaLaunchEngine : ILaunchEngine {
             userArgs.filter { it !in gcFlags }.forEach { args.add(it) }
         }
 
-        // ── authlib-injector（HMCL 方案）─────────────────────────────────
+        // ── authlib-injector ─────────────────────────────────────────────
         // 两种场景需要 authlib-injector：
         //   1. 第三方登录 → 重定向到外部 Yggdrasil 服务器
         //   2. 离线账户且有皮肤 → 重定向到本地 Yggdrasil 服务器（OfflineSkinServer）
@@ -966,7 +966,7 @@ class JavaLaunchEngine : ILaunchEngine {
             }
             if (authlibInjectorPath.exists() && authlibInjectorPath.length() > 0L) {
                 args.add("-javaagent:${authlibInjectorPath.absolutePath}=$targetUrl")
-                // 参照 HMCL: OfflineAuthInfo.getLaunchArguments() 也添加此属性
+                // 参照离线认证方案添加此属性
                 args.add("-Dauthlibinjector.side=client")
             } else if (context.authServerUrl.isNotBlank()) {
                 throw RuntimeException("authlib-injector.jar 不存在且下载失败，无法进行第三方登录")
@@ -1385,7 +1385,6 @@ class JavaLaunchEngine : ILaunchEngine {
 
     // ══════════════════════════════════════════════════════════════════════
     // 皮肤辅助函数：MC 版本解析、UUID 操控、pack_format 计算
-    // 参考 PCL2 (Plain Craft Launcher 2) 的实现
     // ══════════════════════════════════════════════════════════════════════
 
     /**
@@ -1435,7 +1434,6 @@ class JavaLaunchEngine : ILaunchEngine {
     private fun calculatePackFormat(major: Int, minor: Int, patch: Int): Int {
         // 如果版本解析失败（major==0，例如快照 "26w06a" 无法匹配 "1.x" 正则），
         // 使用当前已知最高 pack_format 作为安全回退，确保资源包被新版 MC 接受。
-        // 参考 PCL2 对快照版（Major=9999）使用 Case Else → 17 的做法。
         return when {
             major == 0 -> 55                  // 版本解析失败（快照版等），使用最新 pack_format
             major >= 21 && minor >= 5 -> 55   // 1.21.5+
@@ -1475,7 +1473,6 @@ class JavaLaunchEngine : ILaunchEngine {
 
     /**
      * UUID 操控：递增 UUID 末 5 位十六进制字符直到其 hashCode 匹配期望的皮肤模型。
-     * 参考 PCL2 的 McLoginLegacyUuidWithCustomSkin 实现。
      *
      * 原理：Minecraft 根据 UUID.hashCode() & 1 决定加载 Steve(wide) 还是 Alex(slim) 纹理。
      * 通过微调 UUID（不影响玩家名），可以控制游戏使用哪个纹理路径，从而确保
