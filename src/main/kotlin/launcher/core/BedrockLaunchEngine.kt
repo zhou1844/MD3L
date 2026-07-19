@@ -526,7 +526,6 @@ class BedrockLaunchEngine : ILaunchEngine {
     }
 
     /**
-     * 仿照 BedrockBoot 的启动流程重构：
      * 1. 版本隔离（Junction 切换） → 2. COM 激活（注册+启动） → 3. 驻留等待进程退出
      * 移除了窗口句柄检测和超时强杀逻辑。
      */
@@ -541,7 +540,7 @@ class BedrockLaunchEngine : ILaunchEngine {
             // 裸进程没有 UWP 包标识（package identity），Xbox 许可证/授权查询会失败，
             // 正版账号也会被判定为「试玩版」。必须先 Add-AppxPackage -Register 注册，
             // 再通过 COM 激活（ActivateApplication），使进程带包标识，正版授权才生效。
-            // 因此 GDK + MSA 也统一走下方的 launchViaComActivation 路径（对齐 BedrockBoot）。
+            // 因此 GDK + MSA 也统一走下方的 launchViaComActivation 路径
 
             // ── 版本隔离：切换 com.mojang Junction ──
             onProgress?.invoke(30, "正在切换版本存档…")
@@ -688,7 +687,7 @@ class BedrockLaunchEngine : ILaunchEngine {
     }
 
     private fun uwpMonitorProcess(): Process {
-        // 简化版：仿照 BedrockBoot，只等待 Minecraft.Windows 进程出现，不检查窗口句柄
+        // 只等待 Minecraft.Windows 进程出现，不检查窗口句柄
         val script = """
             ${'$'}deadline = (Get-Date).AddSeconds(30)
             do {
@@ -717,7 +716,7 @@ class BedrockLaunchEngine : ILaunchEngine {
             ?: throw RuntimeException("等待 Minecraft.Windows.exe 超时（${timeoutMs / 1000}s），游戏未能启动。")
         println("[MD3L] 游戏进程已就绪: PID=${foundHandle.pid()}")
         onProgress?.invoke(100, "游戏已启动")
-        // 轻量驻留：仅等待进程退出，仿照 BedrockBoot 的 WaitForProcessExitAsync
+        // 轻量驻留：仅等待进程退出
         val sentinelScript = """
             Wait-Process -Id ${foundHandle.pid()} -ErrorAction SilentlyContinue
         """.trimIndent()

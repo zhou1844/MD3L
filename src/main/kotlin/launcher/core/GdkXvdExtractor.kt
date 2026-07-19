@@ -7,23 +7,6 @@ import java.io.RandomAccessFile
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
 
-/**
- * GdkXvdExtractor.kt
- *
- * 纯 Kotlin 实现的 GDK / MSIXVC (XVD) 解码器。
- *
- * 本实现是 BedrockLauncher.Core.GdkDecode（BedrockBoot 依赖库）中
- * MsiXVDStream / MsiXVDDecoder 的等价移植，按其原始算法逐步复刻：
- *
- *  - 解析 XVD 头部、UserData(PackageFiles)、SegmentMetadata.bin、XvcInfo/Region；
- *  - 按 Region 顺序、按 0x1000 字节页读取；
- *  - DataIntegrity 时顺序遍历哈希树，取每页 tweak；
- *  - AES-128-XTS 逐页解密（tweak = AES_Enc(TKey, tweakIv)，块间 GF(2^128) 推进）；
- *  - 使用 CIK 的 TKey/DKey（DKey 做块解密，TKey 做 tweak 加密）；
- *  - 逐段写出解密后的文件（AppxManifest.xml / Minecraft.Windows.exe 等）。
- *
- * 仅依赖 JDK 自带的 javax.crypto（AES/ECB/NoPadding），无外部可执行程序依赖。
- */
 object GdkXvdExtractor {
 
     private const val PAGE_SIZE = 0x1000
@@ -85,7 +68,7 @@ object GdkXvdExtractor {
     // ============================================================
 
     /**
-     * AES-128-XTS 解密器（IEEE P1619 风格）。
+     * AES-128-XTS 解密器。
      * tweak = AES_Enc(TKey, tweakIv)；每块：P = AES_Dec(DKey, C xor tweak) xor tweak；
      * 块间 tweak 以 GF(2^128) 乘 α 推进。等价于 C# MsiXVDDecoder。
      */
@@ -488,7 +471,7 @@ object GdkXvdExtractor {
     }
 
     // ============================================================
-    // 哈希树几何计算（复刻 C# Extensions / MsiXVDStream）
+    // 哈希树几何计算
     // ============================================================
 
     private fun calculateNumberHashPages(hashedPagesCount: Long, resilient: Boolean): Pair<Long, Long> {
