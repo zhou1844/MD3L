@@ -1015,7 +1015,7 @@ object ModpackManager {
     }
 
     /**
-     * 下载 CurseForge 整合包 manifest 声明的模组/资源文件（HMCL CurseCompletionTask 同款思路）：
+     * 下载 CurseForge 整合包 manifest 声明的模组/资源文件：
      * 逐个解析 projectID/fileID 得到直链（分发受限时回退 forgecdn edge 地址），
      * 按 classId 分流到 mods/resourcepacks/shaderpacks，再走统一并发下载引擎。
      * 返回需要展示给用户的警告文本（无警告时为 null）。
@@ -1167,7 +1167,7 @@ object ModpackManager {
      * 构建候选 URL 列表 — 强制镜像
      *
      * 所有 Modrinth/CurseForge 直链都经 BMCLAPIDownloadProvider 注入为
-     * MCIM（mod.mcimirror.top，PCL2 同款）镜像，且不保留任何官方源兜底。
+     * MCIM（mod.mcimirror.top）镜像，且不保留任何官方源兜底。
      * 无对应镜像的非标准第三方直链会记录告警（标准整合包不会出现）。
      *
      * SHA-1 精准下载链接作为高优先级候选（镜像化后同样指向 mcimirror）。

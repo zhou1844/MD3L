@@ -704,7 +704,7 @@ object ModrinthApi {
 
     /**
      * 解析 CurseForge 整合包 manifest 中的单个 file（projectID/fileID）为可下载信息。
-     * 若官方 downloadUrl 为空（分发受限），按 HMCL 相同规则回退到 forgecdn edge 地址。
+     * 若官方 downloadUrl 为空（分发受限），回退到 forgecdn edge 地址。
      */
     suspend fun resolveCurseForgeManifestFile(
         projectId: Int,

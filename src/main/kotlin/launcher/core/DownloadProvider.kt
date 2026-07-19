@@ -4,9 +4,8 @@ import java.net.URI
 import java.util.LinkedHashSet
 
 /**
- * HMCL 风格下载源接口
+ * 下载源接口
  *
- * 精确移植自 HMCL DownloadProvider 接口：
  * - injectURLWithCandidates: 生成候选 URL 列表（原 URL + 镜像）
  * - injectURLsWithCandidates: 批量注入（LinkedHashSet 去重）
  * - getConcurrency: 该下载源支持的并发数

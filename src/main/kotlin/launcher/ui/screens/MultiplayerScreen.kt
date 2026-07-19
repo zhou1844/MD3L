@@ -27,7 +27,6 @@ import launcher.ui.theme.ThemeState
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  Terracotta 联机主界面
-//  对应 HMCL TerracottaControllerPage 的设计
 // ═════════════════════════════════════════════════════════════════════════════
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

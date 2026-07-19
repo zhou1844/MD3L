@@ -1812,7 +1812,7 @@ object LoaderInstaller {
     }
 
     /**
-     * 仿照 HMCL 的方式全自动无 GUI 安装 OptiFine：
+     * 全自动无 GUI 安装 OptiFine：
      *  1. 若 jar 内有 optifine/Patcher.class → 调用 Patcher 将原版 mc.jar + of.jar → 生成 patched library
      *  2. 否则直接复制 jar 作为 library
      *  3. 提取 launchwrapper-of / launchwrapper-2.0 到 libraries
