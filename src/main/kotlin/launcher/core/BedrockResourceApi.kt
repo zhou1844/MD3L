@@ -1,4 +1,4 @@
-﻿package launcher.core
+package launcher.core
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -98,7 +98,7 @@ object BedrockResourceApi {
         }.getOrDefault(emptyList())
     }
 
-    /** 按点分数字段从高到低排序版本字符串（如 1.21.101 > 1.21.94）。 */
+    // 按点分数字段从高到低排序版本字符串（如 1.21.101 > 1.21.94）。 
     private val VersionComparator = Comparator<String> { a, b ->
         val pa = a.split('.').map { it.toIntOrNull() ?: 0 }
         val pb = b.split('.').map { it.toIntOrNull() ?: 0 }
@@ -116,7 +116,7 @@ object BedrockResourceApi {
         kotlinx.coroutines.runBlocking { MicrosoftTranslate.toEnglish(text) }
     }.getOrNull()
 
-    /** 获取单个 mod 的文件列表 */
+    // 获取单个 mod 的文件列表 
     suspend fun getModFiles(modId: Int): List<CfBedrockFile> = withContext(Dispatchers.IO) {
         runCatching {
             val resp = client.get("$CF_PROXY/mods/$modId/files") {
@@ -134,7 +134,7 @@ object BedrockResourceApi {
         }.getOrDefault(emptyList())
     }
 
-    /** 获取单个 mod 详情 */
+    // 获取单个 mod 详情 
     suspend fun getMod(modId: Int): CfBedrockProject? = withContext(Dispatchers.IO) {
         runCatching {
             val resp = client.get("$CF_PROXY/mods/$modId") {

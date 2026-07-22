@@ -481,7 +481,7 @@ object BedrockDownloadManager {
             cacheDir.mkdirs()
             val targetFile = File(cacheDir, entry.fileName)
 
-            // ── Phase 1: 尝试直接 HTTP 下载 ─────────────────────────────
+            // Phase 1: 尝试直接 HTTP 下载
             if (targetFile.exists() && targetFile.length() > 0 &&
                 (entry.fileSize <= 0 || targetFile.length() >= entry.fileSize * 0.95)) {
                 println("[BDM] 缓存命中: ${entry.fileName} (${targetFile.length()} bytes)")
@@ -1052,14 +1052,12 @@ object BedrockDownloadManager {
         return DownloadResult.FAILED
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
     //  从 exe 安装器中提取 .appx
-    // ═══════════════════════════════════════════════════════════════════════
 
     private val APPX_EXTS = setOf("appx", "msixbundle", "appxbundle", "msix")
 
     private fun extractAppxFromExe(exeFile: File, extractDir: File, @Suppress("UNUSED_PARAMETER") versionKey: String): File? {
-        // 策略1: 当作 ZIP 打开（自解压 ZIP）
+
         try {
             ZipFile(exeFile).use { zip ->
                 val appx = zip.entries().asSequence().firstOrNull { e ->
@@ -1074,7 +1072,7 @@ object BedrockDownloadManager {
             }
         } catch (_: Exception) {}
 
-        // 策略2: 7z 提取（支持 NSIS/Inno/7z SFX）
+  
         try {
             val proc = ProcessBuilder(
                 "powershell", "-NoProfile", "-Command",
@@ -1087,7 +1085,7 @@ object BedrockDownloadManager {
             }
         } catch (_: Exception) {}
 
-        // 策略3: Inno Setup 静默解压
+
         try {
             val proc = ProcessBuilder(
                 exeFile.absolutePath, "/VERYSILENT", "/SUPPRESSMSGBOXES",
@@ -1107,9 +1105,8 @@ object BedrockDownloadManager {
         }.maxByOrNull { it.length() }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
+
     //  ZIP 解压回退
-    // ═══════════════════════════════════════════════════════════════════════
 
     private fun extractZipWithProgress(zipFile: File, targetDir: File, versionKey: String) {
         ZipFile(zipFile).use { zip ->

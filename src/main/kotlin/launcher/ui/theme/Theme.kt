@@ -9,7 +9,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// ── Neutral dark tones (shared across all palettes) ─────────────────────────
+// Neutral dark tones (shared across all palettes)
 private val darkBackground = Color(0xFF111113)
 private val darkOnBackground = Color(0xFFE3E2E6)
 private val darkSurface = Color(0xFF1B1B1F)
@@ -32,7 +32,7 @@ private val darkOnError = Color(0xFF690005)
 private val darkErrorContainer = Color(0xFF93000A)
 private val darkOnErrorContainer = Color(0xFFFFDAD6)
 
-// ── Dynamic accent palettes ─────────────────────────────────────────────────
+// Dynamic accent palettes
 data class AccentPalette(
     val primary: Color,
     val onPrimary: Color,
@@ -290,7 +290,7 @@ val AccentNames = listOf(
     "星尘玫瑰", "深海靛蓝", "碧玉苔绿", "暖沙棕", "月光银灰", "极光",
 )
 
-// ── Global accent state ─────────────────────────────────────────────────────
+// Global accent state
 object ThemeState {
     var accent by mutableStateOf(AccentMonetPurple)
     var isDark by mutableStateOf(true)
@@ -326,7 +326,7 @@ object ThemeState {
     var cachedBgKey by mutableStateOf("")  // 仅 bgPath，模糊由 GPU layer 实时处理
 }
 
-// ── Build dark color scheme from accent ─────────────────────────────────────
+// Build dark color scheme from accent
 private fun buildDarkScheme(accent: AccentPalette): ColorScheme = darkColorScheme(
     primary = accent.primary,
     onPrimary = accent.onPrimary,
@@ -358,7 +358,7 @@ private fun buildDarkScheme(accent: AccentPalette): ColorScheme = darkColorSchem
     surfaceTint = darkSurfaceTint,
 )
 
-// ── Build light color scheme from accent ────────────────────────────────────
+// Build light color scheme from accent
 private fun buildLightScheme(accent: AccentPalette): ColorScheme = lightColorScheme(
     primary = accent.inversePrimary, // Use darker inversePrimary for light mode
     onPrimary = Color.White,
@@ -385,7 +385,7 @@ private fun buildLightScheme(accent: AccentPalette): ColorScheme = lightColorSch
     inversePrimary = accent.primary,
 )
 
-// ── Smooth animated transitions ─────────────────────────────────────────────
+// Smooth animated transitions
 // 使用单一动画驱动，减少 animateColorAsState 数量，降低重组开销
 @Composable
 fun animateColorScheme(target: ColorScheme): ColorScheme {
@@ -417,7 +417,7 @@ fun animateColorScheme(target: ColorScheme): ColorScheme {
     )
 }
 
-// ── Apply font scaling to all typography text styles ────────────────────────
+// Apply font scaling to all typography text styles
 private fun scaleTypography(base: Typography, scale: Float): Typography {
     if (scale == 1f) return base
     return base.copy(
@@ -439,7 +439,7 @@ private fun scaleTypography(base: Typography, scale: Float): Typography {
     )
 }
 
-// ── Main theme composable ───────────────────────────────────────────────────
+// Main theme composable
 @Composable
 fun MD3LTheme(content: @Composable () -> Unit) {
     val baseScheme = if (ThemeState.isDark) buildDarkScheme(ThemeState.accent) else buildLightScheme(ThemeState.accent)

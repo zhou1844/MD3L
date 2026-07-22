@@ -26,7 +26,7 @@ fun DownloadManagerScreen() {
     val finished = tasks.filter { it.status != DownloadHub.TaskStatus.Running }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ── 标题栏 ──────────────────────────────────────────────────────
+        // 标题栏
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { Navigator.back() }) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")

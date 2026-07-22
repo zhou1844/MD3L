@@ -21,7 +21,7 @@ object ModToggleManager {
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
-    // ── Java 版模组扫描缓存 ──────────────────────────────────────────────
+    // Java 版模组扫描缓存
     private data class ModCacheEntry(
         val mods: List<ModItem>,
         val fileTimestamps: Map<String, Long>,
@@ -35,7 +35,7 @@ object ModToggleManager {
         javaModCache.remove(versionDir)
     }
 
-    // ── 数据模型 ──────────────────────────────────────────────────────────
+    // 数据模型
     data class ModItem(
         val name: String,           // 显示名
         val fileName: String,       // 实际文件名（或目录名）
@@ -44,10 +44,7 @@ object ModToggleManager {
         val filePath: String,       // 完整路径
     )
 
-    // ── Java 版 ───────────────────────────────────────────────────────────
-    /**
-     * 扫描 Java 版版本目录下的 mods 文件夹。
-     */
+    // Java 版
     suspend fun scanJavaMods(versionDir: String): List<ModItem> = withContext(Dispatchers.IO) {
         val gameDir = File(versionDir, ".minecraft").takeIf { it.isDirectory } ?: File(versionDir)
         val modsDir = File(gameDir, "mods")
@@ -123,7 +120,7 @@ object ModToggleManager {
         }
     }
 
-    // ── 基岩版 ───────────────────────────────────────────────────────────
+    // 基岩版
     /**
      * 扫描基岩版版本目录下的 behavior_packs 和 resource_packs 文件夹。
      */

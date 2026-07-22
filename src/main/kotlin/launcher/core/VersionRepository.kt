@@ -78,7 +78,7 @@ object VersionRepository {
             val oldId = version.id
             val isBedrock = version.type == "bedrock"
 
-            // ── Java 版：修改 JSON 中的 id 字段并重命名 JSON + JAR ────────
+            // Java 版：修改 JSON 中的 id 字段并重命名 JSON + JAR
             if (!isBedrock) {
                 val oldJsonFile = File(oldDir, "$oldId.json")
                 if (!oldJsonFile.exists()) return@withContext "找不到版本 JSON: ${oldJsonFile.name}"
@@ -116,7 +116,7 @@ object VersionRepository {
                 }
             }
 
-            // ── 重命名目录（Java 和 Bedrock 通用） ────────────────────────
+            // 重命名目录（Java 和 Bedrock 通用）
             try {
                 Files.move(oldDir.toPath(), newDir.toPath(), StandardCopyOption.ATOMIC_MOVE)
             } catch (_: java.nio.file.AtomicMoveNotSupportedException) {

@@ -62,7 +62,7 @@ class JavaLaunchEngine : ILaunchEngine {
             }
         }
 
-        // ── 解析 MC 版本号（从继承链获取原始版本 ID，如 "1.20.4"） ──────────
+        // 解析 MC 版本号（从继承链获取原始版本 ID，如 "1.20.4"）
         val mcVersionStr = resolveMcVersionString(root, inheritanceRoots, cachedAssetsIndex)
         val (mcMajor, mcMinor, mcPatch) = parseMcVersion(mcVersionStr)
         println("[SkinServer] MC版本: $mcVersionStr → ($mcMajor, $mcMinor, $mcPatch), 皮肤模型: ${context.skinModel}")
@@ -71,7 +71,7 @@ class JavaLaunchEngine : ILaunchEngine {
         // 不再需要 UUID 操控来匹配纹理路径。MC 从 profile 响应的 textures metadata
         // 读取模型信息，因此对所有版本（包括 1.21.11+、快照版）通用。
 
-        // ── 目录初始化 ──────────────────────────────────────────────────
+        // 目录初始化
         val nativesDir = context.nativesDir
         if (!nativesDir.exists()) nativesDir.mkdirs()
 
@@ -90,7 +90,7 @@ class JavaLaunchEngine : ILaunchEngine {
             }
         }
 
-        // ── 版本隔离目录创建 ──────────────────────────────────────────────
+        // 版本隔离目录创建
         val isolatedDir = context.gameDir
         if (!isolatedDir.exists()) isolatedDir.mkdirs()
         File(isolatedDir, "mods").mkdirs()
@@ -104,7 +104,7 @@ class JavaLaunchEngine : ILaunchEngine {
         // 否则 skinServer 为 null，authlib-injector JVM 参数永远不会被加入
         ensureOfflineSkin(context, isolatedDir)
 
-        // ── 构建启动参数（JVM 参数在此处读取 skinServer 状态）────────────────
+        // 构建启动参数（JVM 参数在此处读取 skinServer 状态）
         val mainClass = resolveMainClass(root, inheritanceRoots)
         val classPath = buildClassPath(root, context, inheritanceRoots)
         val gameArgs = buildGameArguments(root, context, inheritanceRoots)
@@ -123,7 +123,7 @@ class JavaLaunchEngine : ILaunchEngine {
         // APPDATA 必须是 .minecraft 的父目录，否则 MC 会创建嵌套 .minecraft\.minecraft 导致黑屏
         pb.environment()["APPDATA"] = File(context.minecraftDir).parent ?: context.rootGameDir.absolutePath
 
-        // ── 启动日志写入文件，方便排查崩溃 ──────────────────────────────────
+        // 启动日志写入文件，方便排查崩溃
         val logFile = File(LauncherDirs.javaLogDir, "launch-${context.version.id}-${java.time.LocalDateTime.now().toString().replace(':', '-')}.log")
         logFile.parentFile?.mkdirs()
         lastLogFile = logFile
@@ -869,7 +869,7 @@ class JavaLaunchEngine : ILaunchEngine {
         if (context.jvmNativeMemoryTracking)   args.add("-XX:NativeMemoryTracking=summary")
         if (context.jvmUseLargePages)          args.add("-XX:+UseLargePages")
 
-        // ── GC 策略 ──────────────────────────────────────────────────────────
+        // GC 策略
         val userArgs = context.customJvmArgs.split("\\s+".toRegex()).filter { it.isNotBlank() }
         val hasCustomGc = userArgs.any { it.startsWith("-XX:+Use") && it.contains("GC") }
         if (!hasCustomGc) {
@@ -931,7 +931,7 @@ class JavaLaunchEngine : ILaunchEngine {
             userArgs.filter { it !in gcFlags }.forEach { args.add(it) }
         }
 
-        // ── authlib-injector ─────────────────────────────────────────────
+        // authlib-injector
         // 两种场景需要 authlib-injector：
         //   1. 第三方登录 → 重定向到外部 Yggdrasil 服务器
         //   2. 离线账户且有皮肤 → 重定向到本地 Yggdrasil 服务器（OfflineSkinServer）
@@ -1034,7 +1034,7 @@ class JavaLaunchEngine : ILaunchEngine {
         }
         collectJvmArgs(root)
 
-        // ── Java 22+ 兼容性标志 ─────────────────────────────────────────────
+        // Java 22+ 兼容性标志
         // NeoForge/Forge 1.21.1 版本 JSON 的 JVM 参数是针对 Java 21 编写的，
         // 缺少 Java 22+ 所需的 --enable-native-access（LWJGL 原生绑定要求）和
         // 额外的 --add-opens（Java 22+ 模块系统更严格的封装检查）。

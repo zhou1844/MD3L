@@ -211,7 +211,7 @@ private fun StickerItem(
     val file = remember(sticker.fileName) { File(StickerManager.stickersDir, sticker.fileName) }
     val isGif = remember(sticker.fileName) { sticker.fileName.lowercase().endsWith(".gif") }
 
-    // GIF 帧数据（只在文件变化时解析一次）
+    // GIF 帧数据
     val gifFrames = remember(sticker.fileName) {
         if (isGif && file.exists()) decodeGifFrames(file) else emptyList()
     }
@@ -269,7 +269,7 @@ private fun StickerItem(
         onMoved(xFrac, yFrac)
     }
 
-    // ── 右键菜单：缩放 + 速度 + 删除 ──
+    // 右键菜单：缩放 + 速度 + 删除
     if (showMenu) {
         Popup(
             alignment = Alignment.TopStart,
@@ -284,7 +284,7 @@ private fun StickerItem(
                 tonalElevation = 3.dp,
             ) {
                 Column(modifier = Modifier.padding(horizontal = 2.dp, vertical = 1.dp)) {
-                    // ── 缩放行 ──
+                    // 缩放行
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(
                             onClick = {
@@ -315,7 +315,7 @@ private fun StickerItem(
                         }
                     }
 
-                    // ── 速度行（仅 GIF） ──
+                    // 速度行（仅 GIF）
                     if (isGif) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.SlowMotionVideo, "速度", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
@@ -357,7 +357,7 @@ private fun StickerItem(
         }
     }
 
-    // ── 贴纸本体 ──
+    // 贴纸本体
     Box(
         modifier = Modifier
             .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }

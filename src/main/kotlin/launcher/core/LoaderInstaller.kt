@@ -1828,7 +1828,7 @@ object LoaderInstaller {
         onProgress: (String, Float) -> Unit,
     ): String {
 
-        // ── 目录结构 ──────────────────────────────────────────────────────────
+        // 目录结构
         // OptiFine library 路径：libraries/optifine/OptiFine/<mcVer>_<ofVer>/OptiFine-<mcVer>_<ofVer>.jar
         val ofVer = versionId.removePrefix("OptiFine_${mcVersion}_")   // e.g. "HD_U_I7"
         val mavenVer = "${mcVersion}_${ofVer}"                          // e.g. "1.20.1_HD_U_I7"
@@ -1838,7 +1838,7 @@ object LoaderInstaller {
 
         val zip = java.util.zip.ZipFile(ofJar)
 
-        // ── 1. 生成/复制 OptiFine library jar ─────────────────────────────────
+        // 1. 生成/复制 OptiFine library jar
         val hasPatcher = zip.getEntry("optifine/Patcher.class") != null
         if (hasPatcher && !libJar.exists()) {
             onProgress("正在 Patch OptiFine…", 0.55f)
@@ -1869,7 +1869,7 @@ object LoaderInstaller {
             ofJar.copyTo(libJar, overwrite = true)
         }
 
-        // ── 2. 提取 launchwrapper ──────────────────────────────────────────────
+        // 2. 提取 launchwrapper
         onProgress("正在提取 launchwrapper…", 0.75f)
         val libraries = mutableListOf<String>()   // maven 坐标列表，供 JSON 使用
 
@@ -1908,7 +1908,7 @@ object LoaderInstaller {
 
         zip.close()
 
-        // ── 3. 写版本 JSON ─────────────────────────────────────────────────────
+        // 3. 写版本 JSON
         onProgress("正在写入版本 JSON…", 0.88f)
         val versionDir = File(minecraftDir, "versions/$versionId").also { it.mkdirs() }
         val versionJson = File(versionDir, "$versionId.json")

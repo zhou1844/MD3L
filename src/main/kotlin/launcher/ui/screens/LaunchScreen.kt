@@ -1,4 +1,4 @@
-﻿package launcher.ui.screens
+package launcher.ui.screens
 
 import launcher.ui.layout.NavBarScrollState
 
@@ -109,7 +109,7 @@ fun LaunchScreen() {
     val bedrockDownloading by BedrockDownloadManager.downloadingVersions.collectAsState()
     val bedrockDownloadResults by BedrockDownloadManager.downloadResults.collectAsState()
 
-    // ── AccountRepository StateFlow 响应式绑定 ──────────────────────────────
+    // AccountRepository StateFlow 响应式绑定
     val accountList by AccountRepository.accounts.collectAsState()
     val activeAccount by AccountRepository.activeAccount.collectAsState()
     val refreshState by AccountRepository.refreshState.collectAsState()
@@ -308,7 +308,7 @@ fun LaunchScreen() {
     Box(modifier = Modifier.fillMaxSize()) {
     Row(modifier = Modifier.fillMaxSize()) {
 
-        // ── 左区：玩家仪表盘 ────────────────────────────────────────
+        // 左区：玩家仪表盘
         val stats by PlayerStats.data.collectAsState()
         // 使用 derivedStateOf 缓存统计数据计算，避免每次重组都重新计算
         val statsData by remember {
@@ -356,7 +356,7 @@ fun LaunchScreen() {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            // ── 标题 ──
+            // 标题
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
@@ -372,7 +372,7 @@ fun LaunchScreen() {
                 }
             }
 
-            // ── 圆环图：启动次数分布 ──
+            // 圆环图：启动次数分布
             Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(14.dp),
@@ -417,7 +417,7 @@ fun LaunchScreen() {
                 }
             }
 
-            // ── 游玩时长卡片 ──
+            // 游玩时长卡片
             Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(14.dp),
@@ -438,7 +438,7 @@ fun LaunchScreen() {
                 }
             }
 
-            // ── 小数据卡片 2×2 ──
+            // 小数据卡片 2×2
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // 崩溃次数
                 Surface(modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)) {
@@ -482,7 +482,7 @@ fun LaunchScreen() {
                 }
             }
 
-            // ── 上次游玩 ──
+            // 上次游玩
             if (stats.lastPlayedVersion.isNotBlank()) {
                 Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f), modifier = Modifier.fillMaxWidth()) {
                     Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -499,7 +499,7 @@ fun LaunchScreen() {
                 }
             }
 
-            // ── 运行状态条 ──
+            // 运行状态条
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = if (gameRunning) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
@@ -523,7 +523,7 @@ fun LaunchScreen() {
 
         Spacer(Modifier.width(12.dp))
 
-        // ── 右区 (Control Node) ─── Column 堆叠，杜绝错位 ──────────
+        // 右区 (Control Node) ─── Column 堆叠，杜绝错位
         Column(
             modifier = Modifier
                 .weight(0.382f)
@@ -538,7 +538,7 @@ fun LaunchScreen() {
                     .fillMaxWidth()
                     .wrapContentHeight(),
             ) {
-                // ── Windows 风格账号卡片 ──────────────────────────────────
+                // Windows 风格账号卡片
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -847,7 +847,7 @@ fun LaunchScreen() {
                     .wrapContentHeight(align = Alignment.CenterVertically),
             ) {
                 if (launchProgress > 0) {
-                    // ── 启动中：居中圆环 + 下方启动文字 ──
+                    // 启动中：居中圆环 + 下方启动文字
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -920,7 +920,7 @@ fun LaunchScreen() {
                         }
                     }
                 } else {
-                    // ── 未启动：紧凑型皮肤预览 ──
+                    // 未启动：紧凑型皮肤预览
                     val acct = activeAccount
                     val isOffline = acct?.type == AccountType.Offline
                     val isMsaOrThirdParty = acct?.type == AccountType.MSA || acct?.type == AccountType.ThirdParty
@@ -976,7 +976,7 @@ fun LaunchScreen() {
                             ),
                     ) {
                         if (hasSkinFile && faceBmp != null) {
-                            // ── 离线账户：本地皮肤文件预览 ──
+                            // 离线账户：本地皮肤文件预览
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
@@ -1009,7 +1009,7 @@ fun LaunchScreen() {
                                 }
                             }
                         } else if (hasSkinUrl) {
-                            // ── 正版/第三方账户：网络皮肤预览 ──
+                            // 正版/第三方账户：网络皮肤预览
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
@@ -1208,7 +1208,7 @@ fun LaunchScreen() {
                             launchMessage = ""
 
                             if (ver.type == "bedrock") {
-                                // ── 基岩版启动（细粒度进度） ──
+                                // 基岩版启动（细粒度进度）
                                 LaunchState.begin("正在初始化基岩版启动流程…")
                                 LaunchState.updateProgress(5)
                                 scope.launch {
@@ -1267,7 +1267,7 @@ fun LaunchScreen() {
                                     }
                                 }
                             } else {
-                                // ── Java 版启动 ──
+                                // Java 版启动
                                 LaunchState.begin("正在检测 Java 环境…")
                                 LaunchState.updateProgress(15)
                                 scope.launch {
@@ -1937,7 +1937,7 @@ fun LaunchScreen() {
             },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    // ── 侧载/开发者模式引导 ──
+                    // 侧载/开发者模式引导
                     if (isSideloadError) {
                         Surface(
                             shape = RoundedCornerShape(12.dp),
@@ -1997,7 +1997,7 @@ fun LaunchScreen() {
                         }
                         Spacer(Modifier.height(4.dp))
                     }
-                    // ── 堆栈跟踪 ──
+                    // 堆栈跟踪
                     Surface(
                         shape = RoundedCornerShape(8.dp),
                         color = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -2110,10 +2110,10 @@ fun LaunchScreen() {
     }
 }
 
-/** 皮肤导入成功时右下角弹窗的数据 */
+// 皮肤导入成功时右下角弹窗的数据 
 private data class SkinToastInfo(val username: String, val modelLabel: String)
 
-/** 缓存统计数据的数据类，避免在 derivedStateOf 中返回 Pair/Triple */
+// 缓存统计数据的数据类，避免在 derivedStateOf 中返回 Pair/Triple 
 private data class StatsData(
     val totalLaunches: Int,
     val totalSec: Long,

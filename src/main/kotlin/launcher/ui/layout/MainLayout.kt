@@ -1,4 +1,4 @@
-﻿package launcher.ui.layout
+package launcher.ui.layout
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.CubicBezierEasing
@@ -183,7 +183,7 @@ fun MainLayout(modifier: Modifier = Modifier) {
     val cornerR = ThemeState.uiCornerRadius.dp
     val isEn = ThemeState.language == "en"
 
-    // ── MD3 动画曲线（共享）─────────────────────────────────────────────
+    // MD3 动画曲线（共享）
     val md3EmphasizedDecelerate = remember { CubicBezierEasing(0.05f, 0.7f, 0.1f, 1.0f) }
     val md3EmphasizedAccelerate = remember { CubicBezierEasing(0.3f, 0.0f, 0.8f, 0.15f) }
     val md3StandardDecelerate = remember { CubicBezierEasing(0.0f, 0.0f, 0.2f, 1.0f) }
@@ -198,7 +198,7 @@ fun MainLayout(modifier: Modifier = Modifier) {
     }
     val animSpeed = ThemeState.uiAnimationSpeed
 
-    // ── 浮动导航栏：基于页面滚动位置淡出隐藏 ─────────────────────────
+    // 浮动导航栏：基于页面滚动位置淡出隐藏
     // 由各主屏幕（Launch/Version/Download/Settings 等）通过 snapshotFlow
     // 监听各自的 ScrollState/LazyListState 并写入 NavBarScrollState.scrollFraction。
     // 隐藏条件：滚动比例 >= 0.90（接近页底）；只要一往上拉（< 0.90）立即显示。
@@ -231,7 +231,7 @@ fun MainLayout(modifier: Modifier = Modifier) {
     // ═══════════════════════════════════════════════ 统一布局 ═══
     // 内容区始终在同一个位置，侧边栏/浮动导航通过 AnimatedVisibility 显隐
     Box(modifier = modifier.fillMaxSize().graphicsLayer { clip = true }) {
-        // ── 全局壁纸底层 ─────────────────────────────────────────────────────
+        // 全局壁纸底层
         val bmp = bgBitmap
         if (bmp != null) {
             val blurPx = bgBlur.toFloat() * 2f
@@ -263,7 +263,7 @@ fun MainLayout(modifier: Modifier = Modifier) {
         // ═══════════════════════════════════════════════ 内容布局 ═══
         Box(modifier = Modifier.fillMaxSize()) {
             Row(modifier = Modifier.fillMaxSize()) {
-                // ── Sidebar（仅侧边导航模式显示）────────────────────────────────
+                // Sidebar（仅侧边导航模式显示）
             AnimatedVisibility(
                 visible = navigationMode == "sidebar",
                 enter = fadeIn(animationSpec = tween(200)) + slideInHorizontally(animationSpec = tween(200)),
@@ -310,7 +310,7 @@ fun MainLayout(modifier: Modifier = Modifier) {
                 }
             }
 
-            // ── Main content（始终存在，两种模式共享同一个实例）─────────────
+            // Main content（始终存在，两种模式共享同一个实例）
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -361,7 +361,7 @@ fun MainLayout(modifier: Modifier = Modifier) {
                         ScreenContent(route)
                     }
 
-                    // ── 下载悬浮球 ────────────────────────────────────────
+                    // 下载悬浮球
                     val density = LocalDensity.current
                     val fabSizePx = with(density) { 56.dp.toPx() }
                     val fabPadPx = with(density) { 20.dp.toPx() }
@@ -392,7 +392,7 @@ fun MainLayout(modifier: Modifier = Modifier) {
             }
         }
 
-        // ── 底部浮动导航栏（仅浮动导航模式显示）─────────────────────────────
+        // 底部浮动导航栏（仅浮动导航模式显示）
         AnimatedVisibility(
             visible = navigationMode == "floating" && navBarAlpha > 0.01f,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(animationSpec = tween(300)),
@@ -433,7 +433,7 @@ fun MainLayout(modifier: Modifier = Modifier) {
                         }
                     }
                 }
-                // ── 版本号徽章（浮动导航栏上方，浮动模式下隐藏）────────────
+                // 版本号徽章（浮动导航栏上方，浮动模式下隐藏）
                 if (ThemeState.uiShowVersionBadge && navigationMode != "floating") {
                     Text(
                         text = "v${AutoUpdater.CURRENT_VERSION}",
@@ -446,7 +446,7 @@ fun MainLayout(modifier: Modifier = Modifier) {
             }
         }
 
-        // ── 全局贴纸覆盖层（所有页面可见）──────────────────────────────────
+        // 全局贴纸覆盖层（所有页面可见）
         val stickerScope = rememberCoroutineScope()
         var stickers by remember { mutableStateOf<List<StickerData>>(emptyList()) }
         var showFirstImportHint by remember { mutableStateOf(false) }
@@ -484,7 +484,7 @@ fun MainLayout(modifier: Modifier = Modifier) {
             onFirstImportHintAcknowledged = { showFirstImportHint = false },
         )
 
-        // ── 右上角贴纸添加按钮（全局）────────────────────────────────────
+        // 右上角贴纸添加按钮（全局）
         IconButton(
             onClick = {
                 val chooser = javax.swing.JFileChooser().apply {
@@ -619,7 +619,7 @@ private fun SidebarNavItem(
     }
 }
 
-// ── Screen content router ─────────────────────────────────────────────────────
+// Screen content router
 @Composable
 private fun ScreenContent(route: Route) {
     when (route) {
@@ -642,7 +642,7 @@ private fun ScreenContent(route: Route) {
     }
 }
 
-// ── Floating nav item（紧凑版）─────────────────────────────────────────────────
+// Floating nav item（紧凑版）
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 private fun FloatingNavItem(

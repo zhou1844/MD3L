@@ -12,7 +12,7 @@ object BedrockExportManager {
 
     private val json = Json { prettyPrint = true; encodeDefaults = true; ignoreUnknownKeys = true }
 
-    // ── 1. 导出 Addon（.mcaddon）────────────────────────────────────────────
+    // 1. 导出 Addon（.mcaddon）
     /**
      * 将版本 profile 目录内所有行为包和资源包合并打包为标准 .mcaddon ZIP。
      */
@@ -58,7 +58,7 @@ object BedrockExportManager {
         }
     }
 
-    // ── 2. 导出 .md3l 整合包────────────────────────────────────────────────
+    // 2. 导出 .md3l 整合包
     @Serializable
     data class Md3lPackMeta(
         val formatVersion: Int = 1,
@@ -134,7 +134,7 @@ object BedrockExportManager {
         }
     }
 
-    // ── 3. 备份版本（.md3lbackup）────────────────────────────────────────────
+    // 3. 备份版本（.md3lbackup）
     /**
      * 整个版本目录（含 profile 数据）的完整 ZIP 备份，后缀 .md3lbackup。
      */
@@ -174,7 +174,7 @@ object BedrockExportManager {
         }
     }
 
-    // ── 4. 导入 .md3l 整合包──────────────────────────────────────────────────
+    // 4. 导入 .md3l 整合包
     /**
      * 读取 .md3l 整合包，将行为包/资源包注入到指定版本，并输出元信息描述。
      */
@@ -225,7 +225,7 @@ object BedrockExportManager {
         }
     }
 
-    // ── 5. 导入 .md3lbackup 备份──────────────────────────────────────────────
+    // 5. 导入 .md3lbackup 备份
     /**
      * 将 .md3lbackup 恢复到目标游戏目录，恢复版本文件和 profile 数据。
      */
@@ -283,7 +283,7 @@ object BedrockExportManager {
         }
     }
 
-    // ── 工具函数 ─────────────────────────────────────────────────────────────
+    // 工具函数
     private fun readPackDisplayNameFromDir(packDir: File): String? {
         return try {
             val manifest = File(packDir, "manifest.json")

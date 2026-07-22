@@ -6,7 +6,7 @@ import launcher.core.RemoteVersion
 import launcher.core.WUDownloadClient
 
 sealed class Route {
-    // ── 一级页面 (NavigationRail 直达) ────────────────────────────────────────
+    // 一级页面 (NavigationRail 直达)
     data object Launch : Route()
     data object Versions : Route()
     data object Download : Route()
@@ -15,7 +15,7 @@ sealed class Route {
     data object Multiplayer : Route()
     data object Settings : Route()
 
-    // ── 二级页面 (从一级页面跳转进入) ──────────────────────────────────────────
+    // 二级页面 (从一级页面跳转进入)
     data class VersionDetail(val version: RemoteVersion) : Route()
     data class BedrockVersionDetail(val version: WUDownloadClient.WUVersion) : Route()
     data class ModDetail(val project: ModrinthProject, val edition: String = "java", val contentType: String = project.projectType) : Route()

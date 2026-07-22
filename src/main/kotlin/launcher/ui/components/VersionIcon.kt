@@ -20,12 +20,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import launcher.core.LoaderType
 
-/**
- * 统一版本图标分发：
- * - Forge  → icons/forge.png
- * - Fabric → icons/fabric.png
- * - 其他   → 根据 versionType 加载草方块 / 钻石块 / 鹅卵石
- */
 @Composable
 fun VersionIcon(
     loaderType: LoaderType,

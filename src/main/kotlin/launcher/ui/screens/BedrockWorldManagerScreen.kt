@@ -86,7 +86,7 @@ fun BedrockWorldManagerScreen(versionId: String, versionDir: String) {
     LaunchedEffect(versionId) { refresh() }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ── 顶部栏 ───────────────────────────────────────────────────────────
+        // 顶部栏
         Row(verticalAlignment = Alignment.CenterVertically) {
             FilledTonalIconButton(
                 onClick = { Navigator.back() },
@@ -306,7 +306,7 @@ fun BedrockWorldManagerScreen(versionId: String, versionDir: String) {
         }
     }
 
-    // ── 删除确认对话框 ────────────────────────────────────────────────────────
+    // 删除确认对话框
     val target = confirmDeleteTarget
     if (target != null) {
         AlertDialog(
@@ -419,7 +419,7 @@ private fun doExportWorld(worldDir: File, levelName: String): String {
     } catch (e: Exception) { "导出失败: ${e.message}" }
 }
 
-/** 尝试从 levelname.txt 读取地图显示名，如不存在则返回 null */
+// 尝试从 levelname.txt 读取地图显示名，如不存在则返回 null 
 private fun readLevelName(worldDir: File): String? {
     val nameFile = File(worldDir, "levelname.txt")
     if (nameFile.isFile) {

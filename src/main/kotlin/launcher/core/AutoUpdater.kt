@@ -137,7 +137,6 @@ object AutoUpdater {
 
                 if (destFile.exists()) destFile.delete()
 
-                // Gitee 附件是国内直连，直接用原始 URL
                 val downloadUrl = asset.browser_download_url
                 println("[AutoUpdater] 下载: $downloadUrl")
 
@@ -154,9 +153,6 @@ object AutoUpdater {
                     println("[AutoUpdater] 下载完成，准备替换: ${destFile.absolutePath}")
                     try { File(LauncherDirs.dataDir, "update_success").writeText(release.tag_name) } catch (_: Exception) {}
 
-                    // 1. 优先用当前进程自身命令（JVM打包EXE时有效）
-                    // 2. 其次遍历父进程链找 MD3L*.exe
-                    // 3. 最后 fallback 到 user.dir/MD3L.exe
                     fun resolveCurrentExe(): String {
                         val own = ProcessHandle.current().info().command().orElse("") ?: ""
                         if (own.endsWith(".exe", ignoreCase = true) &&
@@ -183,8 +179,6 @@ object AutoUpdater {
                     println("[AutoUpdater] 当前EXE路径: $currentExePath")
 
                     if (destFile.name.lowercase().endsWith(".exe")) {
-                        // ── 使用 MD3LUpdater.exe 替换 ──────────────────────────
-                        // 查找 MD3LUpdater.exe：优先在启动器同级目录，其次在 dataDir
                         val updaterPaths = listOf(
                             File(File(currentExePath).parentFile, "MD3LUpdater.exe"),
                             File(LauncherDirs.dataDir, "MD3LUpdater.exe"),
@@ -202,41 +196,27 @@ object AutoUpdater {
                             println("[AutoUpdater] 更新器不存在，尝试直接启动: $updaterPath")
                         }
 
-                        // ── 启动更新器 ──────────────────────────────────────────
-                        // 问题：MD3LUpdater.exe manifest 声明了 requireAdministrator，
-                        // 但 ProcessBuilder 默认 UseShellExecute=false，不会触发 manifest 提权，
-                        // 导致 UAC 弹窗"请求的操作需要提升"。
-                        //
-                        // 解决方案：使用 ShellExecute 方式启动，让 Windows 读取 manifest 并弹出 UAC 提权对话框。
-                        // 策略：
-                        //   1. 优先用 PowerShell Start-Process -Verb RunAs（最可靠，直接请求管理员权限）
-                        //   2. 其次用 cmd /c start（ShellExecute，会触发 manifest 提权）
-                        //   3. 最后 fallback 到直接 ProcessBuilder（无提权，用于调试/降级场景）
+                       
                         val updaterArgs = "\"${destFile.absolutePath}\" \"${currentExePath}\" --wait-pid ${currentPid}"
 
-                        // 方式1: PowerShell Start-Process -Verb RunAs（推荐）
-                        // 这会弹出 UAC 对话框请求管理员权限
+            
                         val psLaunched = runCatching {
                             val psCmd = "Start-Process -FilePath '${updaterPath}' -ArgumentList '${updaterArgs}' -Verb RunAs -WindowStyle Hidden"
                             ProcessBuilder(
                                 "powershell", "-NoProfile", "-Command", psCmd
                             ).redirectErrorStream(true).start()
-                            // 不等 PowerShell 返回，它会在后台运行
                             println("[AutoUpdater] PowerShell RunAs 已启动")
                             true
                         }.getOrDefault(false)
 
                         if (!psLaunched) {
                             println("[AutoUpdater] PowerShell 方式失败，尝试 cmd /c start...")
-                            // 方式2: cmd /c start（ShellExecute，会触发 manifest 提权）
                             runCatching {
-                                // start 命令使用 ShellExecute，能识别 exe 的 manifest 提权请求
                                 val cmd = "cmd.exe /c start \"\" /B \"${updaterPath}\" ${updaterArgs}"
                                 Runtime.getRuntime().exec(cmd)
                                 println("[AutoUpdater] cmd start 已启动")
                             }.onFailure { e2 ->
                                 println("[AutoUpdater] cmd start 也失败: ${e2.message}")
-                                // 方式3: 直接 ProcessBuilder（无提权，作为最后手段）
                                 println("[AutoUpdater] 降级到直接 ProcessBuilder 启动（无提权）")
                                 ProcessBuilder(
                                     updaterPath,
@@ -247,7 +227,6 @@ object AutoUpdater {
                             }
                         }
                     } else {
-                        // 非 exe 更新（如 jar），直接启动
                         ProcessBuilder("cmd", "/c", "start", "", destFile.absolutePath).start()
                     }
                     exitProcess(0)
@@ -288,10 +267,6 @@ object AutoUpdater {
         return 0
     }
 
-    /**
-     * 并发竞速：同时对所有镜像发 HEAD 请求，返回最先响应 200 的 URL。
-     * 比串行测试快数倍。
-     */
     private suspend fun pickFastestMirror(mirrors: List<String>): String? =
         withContext(Dispatchers.IO) {
             // 并发发起所有 HEAD 请求，取第一个成功的
@@ -326,10 +301,6 @@ object AutoUpdater {
             winner
         }
 
-    /**
-     * 用 curl.exe 静默下载，另起协程轮询文件大小来计算进度和速度。
-     * 不依赖 stderr 解析，100% 可靠。
-     */
     private suspend fun downloadWithCurl(
         url: String,
         dest: File,
@@ -364,7 +335,7 @@ object AutoUpdater {
             ).redirectErrorStream(true).start()
         }
 
-        // 轮询文件大小更新进度（独立协程，直接在调用者 scope 里运行）
+        // 轮询文件大小更新进度
         val pollJob = scope.launch {
             var lastSize = 0L
             var lastTime = System.currentTimeMillis()

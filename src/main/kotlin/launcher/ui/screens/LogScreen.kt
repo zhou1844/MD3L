@@ -67,7 +67,7 @@ fun LogScreen() {
 
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
 
-        // ── 顶部工具栏 ────────────────────────────────────────────────────────
+        // 顶部工具栏
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(
                 modifier = Modifier.size(42.dp).clip(RoundedCornerShape(14.dp))
@@ -108,7 +108,7 @@ fun LogScreen() {
             }
         }
 
-        // ── 搜索栏 ────────────────────────────────────────────────────────────
+        // 搜索栏
         OutlinedTextField(
             value = filterQuery,
             onValueChange = { filterQuery = it },
@@ -126,7 +126,7 @@ fun LogScreen() {
             modifier = Modifier.fillMaxWidth(),
         )
 
-        // ── 日志列表 ──────────────────────────────────────────────────────────
+        // 日志列表
         ElevatedCard(
             shape = RoundedCornerShape(18.dp),
             modifier = Modifier.fillMaxWidth().weight(1f),

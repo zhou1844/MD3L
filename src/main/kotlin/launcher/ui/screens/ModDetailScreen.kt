@@ -117,7 +117,7 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
             modifier = Modifier.fillMaxSize().padding(end = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            // ── 顶部导航栏 ───────────────────────────────────────────────────
+            // 顶部导航栏
             item(key = "header") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     FilledTonalIconButton(
@@ -146,7 +146,7 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                 }
             }
 
-            // ── 项目信息大横幅 ───────────────────────────────────────────────
+            // 项目信息大横幅
             item(key = "banner") {
                 ElevatedCard(
                     shape = RoundedCornerShape(24.dp),
@@ -198,7 +198,7 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                 }
             }
 
-            // ── 目标版本选择器卡片 ───────────────────────────────────────────
+            // 目标版本选择器卡片
             if (localVersions.isNotEmpty() && !isJavaModpackPage) {
                 item(key = "target_version") {
                     ElevatedCard(
@@ -253,7 +253,7 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                 }
             }
 
-            // ── 过滤器卡片（Java 版）────────────────────────────────────────
+            // 过滤器卡片（Java 版）
             if (edition != "bedrock") {
                 item(key = "filter") {
                     ElevatedCard(
@@ -330,7 +330,7 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                 }
             }
 
-            // ── 状态消息 ─────────────────────────────────────────────────────
+            // 状态消息
             if (statusMessage.isNotBlank()) {
                 item(key = "status") {
                     val isOk = "成功" in statusMessage || "加入" in statusMessage || "完成" in statusMessage
@@ -352,7 +352,7 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                 }
             }
 
-            // ── 版本列表分隔标题 ─────────────────────────────────────────────
+            // 版本列表分隔标题
             item(key = "versions_title") {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
@@ -364,7 +364,7 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                 }
             }
 
-            // ── 空状态 ───────────────────────────────────────────────────────
+            // 空状态
             if (!isLoading && filteredVersions.isEmpty()) {
                 item(key = "empty") {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
@@ -378,7 +378,7 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                 }
             }
 
-            // ── 版本条目 ─────────────────────────────────────────────────────
+            // 版本条目
             items(filteredVersions, key = { it.id }) { ver ->
                     val isDownloading = downloadingId == ver.id
                     ElevatedCard(
@@ -484,7 +484,7 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                                                 val dest = File(targetDir, file.filename)
                                                 val versionHint = selectedTargetVersion?.let { " → ${it.id}" } ?: if (isJavaModpack) " → 导入为新版本" else " → 全局目录"
 
-                                                // ── 自动解析并下载前置依赖（仅 Java mod，非整合包）──
+                                                // 自动解析并下载前置依赖（仅 Java mod，非整合包）
                                                 if (edition != "bedrock" && !isJavaModpack) {
                                                     val preferGv = ver.gameVersions.firstOrNull() ?: filterGameVersion
                                                     val preferLd = ver.loaders.firstOrNull() ?: filterLoader

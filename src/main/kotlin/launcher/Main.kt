@@ -52,10 +52,10 @@ import java.net.URI
 fun main() {
     launcher.core.AppLogger.installSystemStreams()
 
-    // ── 当前进程使用的渲染 API（在 setProperty 之后记录） ──
+    // 当前进程使用的渲染 API（在 setProperty 之后记录）
     var currentRenderApi = "UNKNOWN"
 
-    // ── 全局异常处理器（安全兜底）──────────────────────────────────────────
+    // 全局异常处理器（安全兜底）
     Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
         val msg = throwable.message ?: ""
         println("[FATAL] 线程 [${thread.name}] 未捕获异常: $msg")
@@ -91,7 +91,7 @@ fun main() {
     LauncherDirs.migrateFromLegacyIfNeeded()
     val md3lDir = LauncherDirs.dataDir
 
-    // ── 启动前预加载导航模式，防止首次渲染时闪现错误布局 ────────────────
+    // 启动前预加载导航模式，防止首次渲染时闪现错误布局
     runCatching {
         val settingsFile = java.io.File(md3lDir, "settings.json")
         if (settingsFile.exists()) {
@@ -103,7 +103,7 @@ fun main() {
         }
     }
 
-    // ── 渲染 API 固定为 DIRECT3D ──────────────────────────────────────────
+    // 渲染 API 固定为 DIRECT3D
     // 注意：Skiko 0.7.x 合法的 renderApi 值是: DIRECT3D / OPENGL / SOFTWARE
     // 不区分 DIRECT3D11 / DIRECT3D12，写成 DIRECT3D11 会被 Skiko 忽略，
     // 导致 Skiko 回退到自动探测 → 先试 D3D12 再失败（日志中的
@@ -262,7 +262,7 @@ private fun runLauncherApp() = application {
         }
 
         MD3LTheme {
-            // ── 启动动画：动画播放完之前显示 SplashScreen，之后才渲染主界面 ──
+            // 启动动画：动画播放完之前显示 SplashScreen，之后才渲染主界面
             if (!splashFinished) {
                 SplashScreen(
                     onAnimationEnd = { splashFinished = true }
@@ -508,7 +508,7 @@ private fun FrameWindowScope.AppWindow(
     // 圆角直径 px，对应 12dp 的视觉效果
     val cornerArc = 24
 
-    // ── 自定义最大化：手动计算 Windows 工作区（排除任务栏） ──
+    // 自定义最大化：手动计算 Windows 工作区（排除任务栏）
     fun applyMaximized() {
         val ge = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment()
         val screen = ge.defaultScreenDevice.defaultConfiguration.bounds
@@ -727,7 +727,7 @@ private fun TitleBar(
             )
             Spacer(Modifier.weight(1f))
 
-            // ── Window buttons ────────────────────────────────────────────────
+            // Window buttons
             IconButton(
                 onClick = onMinimize,
                 modifier = Modifier.size(32.dp),
