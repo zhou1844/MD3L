@@ -65,7 +65,7 @@ fun VersionScreen() {
     val bedrockDownloading by BedrockDownloadManager.downloadingVersions.collectAsState()
     val bedrockDownloadResults by BedrockDownloadManager.downloadResults.collectAsState()
 
-    // ── BottomSheet 状态 ─────────────────────────────────────────────────
+    // BottomSheet 状态
     var selectedVersion by remember { mutableStateOf<LocalVersion?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showSheet by remember { mutableStateOf(false) }
@@ -115,7 +115,7 @@ fun VersionScreen() {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ── 标题区 ───────────────────────────────────────────────────────────
+        // 标题区
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier.size(44.dp).clip(RoundedCornerShape(14.dp))
@@ -132,7 +132,7 @@ fun VersionScreen() {
         }
         Spacer(Modifier.height(16.dp))
 
-        // ── 搜索栏 ───────────────────────────────────────────────────────────
+        // 搜索栏
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
@@ -146,7 +146,7 @@ fun VersionScreen() {
         )
         Spacer(Modifier.height(10.dp))
 
-        // ── 过滤 Pills + 操作按钮 ─────────────────────────────────────────────
+        // 过滤 Pills + 操作按钮
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             val filterTypes = listOf(null to "全部", LoaderType.Vanilla to "原版", LoaderType.Forge to "Forge", LoaderType.NeoForge to "NeoForge", LoaderType.Fabric to "Fabric", null to "基岩版")
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f)) {
@@ -228,7 +228,7 @@ fun VersionScreen() {
         }
         Spacer(Modifier.height(12.dp))
 
-        // ── 版本列表 ─────────────────────────────────────────────────────────
+        // 版本列表
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -294,7 +294,7 @@ fun VersionScreen() {
         }
     }
 
-    // ── ModalBottomSheet: 版本管理面板 ───────────────────────────────────
+    // ModalBottomSheet: 版本管理面板
     if (showSheet && selectedVersion != null) {
         val ver = selectedVersion!!
         ModalBottomSheet(
@@ -305,12 +305,12 @@ fun VersionScreen() {
         ) {
             val sheetScrollState = rememberScrollState()
             Column(modifier = Modifier.fillMaxWidth().verticalScroll(sheetScrollState).padding(horizontal = 24.dp, vertical = 8.dp)) {
-                // ── 标题 ─────────────────────────────────────────────────
+                // 标题
                 Text(ver.id, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
                 Text("${ver.loaderType.name} · ${ver.type}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(20.dp))
 
-                // ── 重命名（仅 Java 版支持）───────────────────────────────
+                // 重命名（仅 Java 版支持）
                 if (ver.type != "bedrock") {
                     Text(if (isEn) "Rename Version" else "重命名版本", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
                     Spacer(Modifier.height(8.dp))
@@ -350,7 +350,7 @@ fun VersionScreen() {
                     Spacer(Modifier.height(16.dp))
                 }
 
-                // ── 自定义 Java 路径（仅 Java 版支持）────────────────────
+                // 自定义 Java 路径（仅 Java 版支持）
                 if (ver.type != "bedrock") {
                     Text(if (isEn) "Custom Java Path (optional)" else "自定义 Java 路径（可选）", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
                     Spacer(Modifier.height(8.dp))
@@ -425,7 +425,7 @@ fun VersionScreen() {
                     Spacer(Modifier.height(16.dp))
                 }
 
-                // ── 操作按钮 ─────────────────────────────────────────────
+                // 操作按钮
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     FilledTonalButton(
                         onClick = {
@@ -467,7 +467,7 @@ fun VersionScreen() {
                     }
                 }
 
-                // ── Java 模组管理 ───────────────────────────────────
+                // Java 模组管理
                 if (ver.type != "bedrock") {
                     Spacer(Modifier.height(16.dp))
                     FilledTonalButton(
@@ -506,7 +506,7 @@ fun VersionScreen() {
                     }
                 }
 
-                // ── 基岩版: 包管理 ────────────────────────────────────
+                // 基岩版: 包管理
                 if (ver.type == "bedrock") {
                     Spacer(Modifier.height(16.dp))
                     Text(if (isEn) "Pack Management" else "包管理", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
@@ -642,7 +642,7 @@ fun VersionScreen() {
                     }
                 }
 
-                // ── 消息 ─────────────────────────────────────────────────
+                // 消息
                 if (sheetMessage.isNotBlank()) {
                     Spacer(Modifier.height(12.dp))
                     Text(sheetMessage, style = MaterialTheme.typography.bodySmall,
@@ -784,7 +784,7 @@ private fun chooseFileDialog(title: String, pattern: String, load: Boolean, defa
     }
 }
 
-// ── 模组管理面板（Java 版 + 基岩版通用）────────────────────────────────
+// 模组管理面板（Java 版 + 基岩版通用）
 @Composable
 private fun ModToggleSection(ver: LocalVersion, isEn: Boolean, scope: kotlinx.coroutines.CoroutineScope, sheetMessage: (String) -> Unit) {
     var mods by remember { mutableStateOf<List<ModToggleManager.ModItem>>(emptyList()) }

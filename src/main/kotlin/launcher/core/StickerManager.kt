@@ -48,7 +48,7 @@ object StickerManager {
 
     val stickers: List<StickerData> get() = _store.stickers
 
-    /** 加载贴纸元数据（启动时调用一次） */
+    // 加载贴纸元数据（启动时调用一次） 
     suspend fun load(): List<StickerData> = withContext(Dispatchers.IO) {
         try {
             if (storeFile.exists()) {
@@ -73,7 +73,7 @@ object StickerManager {
         }
     }
 
-    /** 添加贴纸：复制图片到 stickers 目录 */
+    // 添加贴纸：复制图片到 stickers 目录 
     suspend fun addSticker(sourceFile: File): StickerData? = withContext(Dispatchers.IO) {
         try {
             val ext = sourceFile.extension.lowercase()
@@ -97,7 +97,7 @@ object StickerManager {
         }
     }
 
-    /** 删除贴纸 */
+    // 删除贴纸 
     suspend fun removeSticker(id: String) = withContext(Dispatchers.IO) {
         val sticker = _store.stickers.find { it.id == id } ?: return@withContext
         try {
@@ -107,7 +107,7 @@ object StickerManager {
         save()
     }
 
-    /** 更新贴纸位置、缩放和播放倍速 */
+    // 更新贴纸位置、缩放和播放倍速 
     suspend fun updateSticker(id: String, x: Float? = null, y: Float? = null, scale: Float? = null, playbackSpeed: Float? = null) {
         _store = _store.copy(stickers = _store.stickers.map { s ->
             if (s.id == id) s.copy(

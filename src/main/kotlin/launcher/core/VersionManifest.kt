@@ -26,7 +26,7 @@ object VersionManifest {
     private const val MOJANG_MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
     private const val BMCLAPI_MANIFEST = "https://bmclapi2.bangbang93.com/mc/game/version_manifest_v2.json"
 
-    /** 根据镜像源设置排列获取顺序 */
+    // 根据镜像源设置排列获取顺序 
     private fun getManifestUrls(): List<String> {
         return if (DownloadManager.activeMirror == "official") {
             listOf(MOJANG_MANIFEST, BMCLAPI_MANIFEST)
@@ -46,7 +46,7 @@ object VersionManifest {
         }
     }
 
-    /** 最后一次获取版本列表的错误信息（供 UI 展示） */
+    // 最后一次获取版本列表的错误信息（供 UI 展示） 
     @Volatile
     var lastError: String = ""
         private set
@@ -106,7 +106,7 @@ object VersionManifest {
         emptyList()
     }
 
-    /** 通用 HTTP GET：先 Ktor，失败走 curl.exe（解决 JVM SSL 问题） */
+    // 通用 HTTP GET：先 Ktor，失败走 curl.exe（解决 JVM SSL 问题） 
     private fun httpGet(url: String): String {
         // Ktor
         try {
@@ -165,7 +165,7 @@ object VersionManifest {
         try {
             versionDir.mkdirs()
 
-            // ── Step 1: 下载 version JSON（curl 优先，解决 JVM SSL 问题）────
+            // Step 1: 下载 version JSON（curl 优先，解决 JVM SSL 问题）
             onProgress("步骤 1/6：下载版本 JSON", 0.05f)
             val vJsonText = httpGet(version.url)
 
@@ -184,7 +184,7 @@ object VersionManifest {
             val tasks = mutableListOf<DownloadTask>()
             val librariesDir = File(minecraftDir, "libraries")
 
-            // ── Step 2: client.jar ────────────────────────────────────────────
+            // Step 2: client.jar
             val clientDl = root["downloads"]?.jsonObject?.get("client")?.jsonObject
             if (clientDl != null) {
                 val url = DownloadManager.mirrorUrl(clientDl["url"]!!.jsonPrimitive.content)
@@ -196,7 +196,7 @@ object VersionManifest {
                 }
             }
 
-            // ── Step 3: 所有 libraries ────────────────────────────────────────
+            // Step 3: 所有 libraries
             root["libraries"]?.jsonArray?.forEach { libEl ->
                 val lib = libEl.jsonObject
 
@@ -236,7 +236,7 @@ object VersionManifest {
                 }
             }
 
-            // ── Step 4: asset index ───────────────────────────────────────────
+            // Step 4: asset index
             val assetIndex = root["assetIndex"]?.jsonObject
             var assetIndexId: String? = null
             if (assetIndex != null) {
@@ -250,7 +250,7 @@ object VersionManifest {
                 }
             }
 
-            // ── 先下载 libraries + client jar + asset index ───────────────────
+            // 先下载 libraries + client jar + asset index
             if (tasks.isNotEmpty()) {
                 onProgress("步骤 2/6：下载客户端与库文件（共 ${tasks.size} 个）", 0.15f)
                 kotlinx.coroutines.coroutineScope {
@@ -261,7 +261,7 @@ object VersionManifest {
                 }
             }
 
-            // ── Step 5: 下载 asset objects ────────────────────────────────────
+            // Step 5: 下载 asset objects
             if (assetIndexId != null) {
                 val indexFile = File(minecraftDir, "assets/indexes/$assetIndexId.json")
                 if (indexFile.exists()) {
@@ -278,7 +278,7 @@ object VersionManifest {
                 }
             }
 
-            // ── Step 6: 解压 natives ──────────────────────────────────────────
+            // Step 6: 解压 natives
             onProgress("步骤 5/6：解压 natives", 0.97f)
             extractNatives(root, minecraftDir, versionDir)
             onProgress("步骤 6/6：原版安装完成", 1f)

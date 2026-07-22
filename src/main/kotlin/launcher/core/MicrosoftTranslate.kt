@@ -13,15 +13,6 @@ import kotlinx.serialization.json.*
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * 多源中文→英文翻译引擎。
- *
- * 优先级：内存缓存 > 硬编码 Minecraft 术语词典 > MyMemory 免费翻译 API > 单字逐译
- *
- * MyMemory 限制约 5000 请求/天/IP，通常足够个人使用。
- * 对每个翻译结果缓存到 ConcurrentHashMap 以避免重复请求。
- * 使用 Mutex 控制并发请求数避免触发限流。
- */
 object MicrosoftTranslate {
 
     private val client = HttpClient(CIO) {
@@ -29,42 +20,28 @@ object MicrosoftTranslate {
     }
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** 翻译缓存：src -> translated */
     private val translationCache = ConcurrentHashMap<String, String>()
 
-    /** 并发限流 Mutex：同一时间最多 1 个 MyMemory 请求 */
     private val apiMutex = Mutex()
 
-    /** 上次 API 请求时间戳（ms），用于间隔至少 300ms */
     @Volatile
     private var lastApiCallMs = 0L
 
     suspend fun toChinese(text: String): String = text
 
-    /**
-     * 将包含中文的文本翻译为英文。
-     * - 无中文字符 → 直接返回原文
-     * - 命中缓存 → 返回缓存
-     * - 命中硬编码词典 → 直接返回
-     * - 调用 MyMemory API → 解析并缓存结果
-     * - API 失败 → 返回 null（由调用方决定是否使用原文）
-     */
     suspend fun toEnglish(text: String): String? = withContext(Dispatchers.IO) {
         if (text.isBlank()) return@withContext null
         val zhChars = text.count { it.code in 0x4E00..0x9FFF }
         if (zhChars == 0) return@withContext text
 
-        // ── 缓存命中 ────────────────────────────────────────────────────
         translationCache[text]?.let { return@withContext it }
 
-        // ── 硬编码 Minecraft 术语词典（更快、更准确） ────────────────────
         val lower = text.trim().lowercase()
         MINECRAFT_TERMS[lower]?.let {
             translationCache[text] = it
             return@withContext it
         }
 
-        // ── 整个查询命中词典短语（拆词组合） ────────────────────────────
         val words = text.trim().split(Regex("[\\s,，、;；]+")).filter { it.isNotBlank() }
         val allInDict = words.all { MINECRAFT_TERMS[it.lowercase()] != null }
         if (allInDict && words.isNotEmpty()) {
@@ -73,7 +50,6 @@ object MicrosoftTranslate {
             return@withContext combined
         }
 
-        // ── MyMemory 免费翻译 API（带间隔限流） ─────────────────────────
         try {
             apiMutex.withLock {
                 // 保证每次请求间隔至少 300ms
@@ -92,7 +68,6 @@ object MicrosoftTranslate {
             // fall through
         }
 
-        // ── 兜底：单字逐译 ──────────────────────────────────────────────
         val fallback = words.map { w ->
             MINECRAFT_TERMS[w.lowercase()] ?: w
         }.joinToString(" ")

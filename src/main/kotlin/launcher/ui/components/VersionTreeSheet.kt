@@ -318,7 +318,7 @@ fun VersionTreeSheetContent(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp),
         ) {
-            // ── 一级节点 (Java / Bedrock) ────────────────────────────────
+            // 一级节点 (Java / Bedrock)
             tree.forEach { node ->
                 val nodeExpanded = expandedNode == node.label
                 item(key = "node_${node.label}") {
@@ -366,7 +366,7 @@ fun VersionTreeSheetContent(
                     }
                 }
 
-                // ── 二级分类 (Release / Snapshot / ...) ──────────────────
+                // 二级分类 (Release / Snapshot / ...)
                 if (nodeExpanded) {
                     node.children.filter { it.versions.isNotEmpty() }.forEach { category ->
                         val catKey = "${node.label}_${category.label}"

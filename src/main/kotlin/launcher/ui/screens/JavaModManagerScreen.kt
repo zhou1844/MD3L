@@ -295,7 +295,7 @@ fun JavaModManagerScreen(versionId: String, versionDir: String) {
         }
     }
 
-    // ── 删除确认对话框 ────────────────────────────────────────────────────────
+    // 删除确认对话框
     val target = confirmDeleteTarget
     if (target != null) {
         AlertDialog(

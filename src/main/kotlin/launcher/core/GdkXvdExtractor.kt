@@ -20,14 +20,13 @@ object GdkXvdExtractor {
     private const val FLAG_DATA_INTEGRITY_DISABLED = 0x04
     private const val FLAG_RESILIENCY_ENABLED = 0x10
 
-    /** 进度回调，与既有调用方（BedrockDownloadManager / BedrockLaunchEngine）保持一致。 */
+    // 进度回调，与既有调用方（BedrockDownloadManager / BedrockLaunchEngine）保持一致。 
     fun interface ExtractProgress {
         fun onProgress(current: Int, total: Int, fileName: String)
     }
 
-    // ============================================================
+
     // 公共入口
-    // ============================================================
 
     /**
      * 从 .msixvc (XVD) 容器解压出全部文件。
@@ -63,9 +62,7 @@ object GdkXvdExtractor {
         }
     }
 
-    // ============================================================
     // AES-128-XTS 解密器
-    // ============================================================
 
     /**
      * AES-128-XTS 解密器。
@@ -81,7 +78,7 @@ object GdkXvdExtractor {
         }
         private val tmp = ByteArray(16)
 
-        /** 原地解密 buf[off, off+0x1000) 一整页，使用给定 tweakIv。 */
+        // 原地解密 buf[off, off+0x1000) 一整页，使用给定 tweakIv。 
         fun decryptPage(buf: ByteArray, off: Int, tweakIv: ByteArray) {
             var tweak = encTweak.doFinal(tweakIv)
             var p = off
@@ -112,9 +109,7 @@ object GdkXvdExtractor {
         return r
     }
 
-    // ============================================================
     // XVD 流解析 + 提取
-    // ============================================================
 
     private class MsiXvdStream(file: File) : AutoCloseable {
         private val raf = RandomAccessFile(file, "r")
@@ -350,7 +345,6 @@ object GdkXvdExtractor {
             return extracted > 0
         }
 
-        /** 复刻 C# MsiXVDStream.ExtractPart 的顺序页/哈希缓存遍历。 */
         private fun extractPart(
             outputDir: File,
             decryptor: XtsDecryptor,
@@ -453,7 +447,7 @@ object GdkXvdExtractor {
 
         // --- 文件读取 ---
 
-        /** 从绝对偏移读取，最多 len 字节；不足则以 0 填充剩余，不抛 EOF。 */
+        // 从绝对偏移读取，最多 len 字节；不足则以 0 填充剩余，不抛 EOF。 
         private fun readFullyAt(pos: Long, buf: ByteArray, len: Int) {
             raf.seek(pos)
             var read = 0
@@ -470,9 +464,8 @@ object GdkXvdExtractor {
         }
     }
 
-    // ============================================================
+
     // 哈希树几何计算
-    // ============================================================
 
     private fun calculateNumberHashPages(hashedPagesCount: Long, resilient: Boolean): Pair<Long, Long> {
         val perPage = HASH_ENTRIES_IN_PAGE.toLong() // 0xAA
@@ -501,7 +494,7 @@ object GdkXvdExtractor {
         return hashTreePageCount to hashTreeLevels
     }
 
-    /** level=0 版本的 ComputeHashBlockIndexForDataBlock，返回 (hashBlockIndex, entryIndexInHashBlock)。 */
+    // level=0 版本的 ComputeHashBlockIndexForDataBlock，返回 (hashBlockIndex, entryIndexInHashBlock)。 
     private fun computeHashBlockIndexForDataBlockLevel0(
         imageType: Int,
         hashTreeDepthIn: Long,
@@ -533,9 +526,7 @@ object GdkXvdExtractor {
         return hashBlockIndex to entryIndex
     }
 
-    // ============================================================
     // 工具函数
-    // ============================================================
 
     private fun pageToOffset(pages: Long): Long = pages * PAGE_SIZE
     private fun getPageOffset(value: Long): Long = value / PAGE_SIZE

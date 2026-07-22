@@ -64,27 +64,27 @@ data class DownloadProgress(
  */
 object DownloadManager {
 
-    /** 64KB */
+    // 64KB 
     private const val BUFFER_SIZE = 65536
 
-    /** body 传输停滞超时：10 秒内无任何新增字节则判定连接假死，强制中断并切换候选源（慢源快速失败） */
+    // body 传输停滞超时：10 秒内无任何新增字节则判定连接假死，强制中断并切换候选源（慢源快速失败） 
     private const val STALL_TIMEOUT_MS = 10_000L
 
-    /** 全局默认并发数 */
+    // 全局默认并发数 
     val DEFAULT_CONCURRENCY: Int = minOf(Runtime.getRuntime().availableProcessors() * 4, 64)
 
-    /** 全局信号量 */
+    // 全局信号量 
     private val GLOBAL_SEMAPHORE = Semaphore(DEFAULT_CONCURRENCY)
 
-    /** 全局 HTTP 客户端 — HTTP/2 */
-    /** 连接超时 8 秒（慢源快速失败切镜像） */
+    // 全局 HTTP 客户端 — HTTP/2 
+    // 连接超时 8 秒（慢源快速失败切镜像） 
     private val httpClient: HttpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofMillis(8_000))
         .version(HttpClient.Version.HTTP_2)
         .followRedirects(HttpClient.Redirect.NEVER)  // 手动处理重定向
         .build()
 
-    /** 全局下载速度追踪 */
+    // 全局下载速度追踪 
     private val globalDownloadSpeed = AtomicLong(0L)
     private val speedTimer = Timer("DownloadSpeedRecorder", true)
 
@@ -105,14 +105,14 @@ object DownloadManager {
 
     private var downloadJob: Job? = null
 
-    /** 当前下载源 */
+    // 当前下载源 
     @Volatile
     var downloadProvider: DownloadProvider = BMCLAPIDownloadProvider
 
     // ========== 向后兼容：mirrorUrl / activeMirror ==========
     // 旧代码大量引用这些 API，这里委托给 BMCLAPIDownloadProvider.injectURL()
 
-    /** 当前镜像名称（向后兼容） */
+    // 当前镜像名称（向后兼容） 
     @Volatile
     var activeMirror: String = "bmclapi"
         set(value) {
@@ -124,7 +124,7 @@ object DownloadManager {
             }
         }
 
-    /** 镜像 URL 替换（向后兼容，委托给 BMCLAPIDownloadProvider.injectURL） */
+    // 镜像 URL 替换（向后兼容，委托给 BMCLAPIDownloadProvider.injectURL） 
     fun mirrorUrl(original: String): String {
         return downloadProvider.injectURL(original)
     }

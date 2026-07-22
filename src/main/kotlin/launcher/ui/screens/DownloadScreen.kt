@@ -62,7 +62,7 @@ fun BedrockVersionDetailScreen(version: WUDownloadClient.WUVersion) {
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // ── 顶部标题区 ────────────────────────────────────────────────────────
+        // 顶部标题区
         Row(verticalAlignment = Alignment.CenterVertically) {
             FilledTonalIconButton(
                 onClick = { Navigator.back() },
@@ -85,7 +85,7 @@ fun BedrockVersionDetailScreen(version: WUDownloadClient.WUVersion) {
             }
         }
 
-        // ── 版本信息横幅 ──────────────────────────────────────────────────────
+        // 版本信息横幅
         ElevatedCard(
             shape = RoundedCornerShape(20.dp),
             modifier = Modifier.fillMaxWidth(),
@@ -143,7 +143,7 @@ fun BedrockVersionDetailScreen(version: WUDownloadClient.WUVersion) {
             }
         }
 
-        // ── 下载源选择 ────────────────────────────────────────────────────────
+        // 下载源选择
         ElevatedCard(
             shape = RoundedCornerShape(20.dp),
             modifier = Modifier.fillMaxWidth(),
@@ -188,7 +188,7 @@ fun BedrockVersionDetailScreen(version: WUDownloadClient.WUVersion) {
             }
         }
 
-        // ── 进度卡片 ──────────────────────────────────────────────────────────
+        // 进度卡片
         if (isDownloading && installProgress.versionKey == keyPreview && installProgress.phase.isNotBlank()) {
             ElevatedCard(
                 shape = RoundedCornerShape(18.dp),
@@ -231,7 +231,7 @@ fun BedrockVersionDetailScreen(version: WUDownloadClient.WUVersion) {
             }
         }
 
-        // ── 错误消息 ──────────────────────────────────────────────────────────
+        // 错误消息
         if (localError.isNotBlank()) {
             Surface(
                 shape = RoundedCornerShape(12.dp),
@@ -247,7 +247,7 @@ fun BedrockVersionDetailScreen(version: WUDownloadClient.WUVersion) {
 
         Spacer(Modifier.weight(1f))
 
-        // ── 安装按钮 ──────────────────────────────────────────────────────────
+        // 安装按钮
         Button(
             onClick = {
                 val finalName = version.name
@@ -292,7 +292,7 @@ fun BedrockVersionDetailScreen(version: WUDownloadClient.WUVersion) {
     }
 }
 
-// ── Java 版分类 ──────────────────────────────────────────────────────────────
+// Java 版分类
 private enum class JavaVersionTab(
     val label: String,
     val iconRes: String,
@@ -305,7 +305,7 @@ private enum class JavaVersionTab(
     AprilFool("愚人节", "icons/command_block.png", "Cmd", Color(0xFFDC9632)),
 }
 
-// ── 基岩版分类 ────────────────────────────────────────────────────────────────
+// 基岩版分类
 private enum class BedrockSubTab(val label: String) {
     Release("正式版 Release"),
     Preview("测试版 Preview"),
@@ -414,7 +414,7 @@ fun DownloadScreen() {
     var editionTab by DownloadScreenState.editionTab
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ── 标题区 + 内嵌版本切换 ──────────────────────────────────────────────
+        // 标题区 + 内嵌版本切换
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier.size(44.dp).clip(RoundedCornerShape(16.dp))
@@ -533,7 +533,7 @@ private fun JavaDownloadContent() {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ── 分类Pills + 搜索框（合并卡片）────────────────────────────────────
+        // 分类Pills + 搜索框（合并卡片）
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -591,7 +591,7 @@ private fun JavaDownloadContent() {
         }
         Spacer(Modifier.height(10.dp))
 
-        // ── 版本列表 ───────────────────────────────────────────────────────────
+        // 版本列表
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -741,7 +741,7 @@ private fun BedrockDownloadContent() {
     )
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ── 基岩版分类 Pills ───────────────────────────────────────────────
+        // 基岩版分类 Pills
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BedrockSubTab.entries.forEach { tab ->
                 val sel = bedrockSubTab == tab
@@ -775,7 +775,7 @@ private fun BedrockDownloadContent() {
         }
         Spacer(Modifier.height(10.dp))
 
-        // ── 搜索栏 ───────────────────────────────────────────────────────────
+        // 搜索栏
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
@@ -789,7 +789,7 @@ private fun BedrockDownloadContent() {
         )
         Spacer(Modifier.height(10.dp))
 
-        // ── 版本列表 ───────────────────────────────────────────────────────
+        // 版本列表
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {

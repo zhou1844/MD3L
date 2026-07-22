@@ -30,7 +30,7 @@ object VersionScanner {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    // ── 扫描缓存 ──────────────────────────────────────────────────────
+    //扫描缓存
     private data class VersionCacheEntry(
         val version: LocalVersion,
         val jsonLastModified: Long,
@@ -38,7 +38,7 @@ object VersionScanner {
     private val versionCache = ConcurrentHashMap<String, VersionCacheEntry>()
 
     /**
-     * 清除扫描缓存，下次 [scan] 将强制重新解析所有版本 JSON。
+     * 清除扫描缓存
      */
     fun clearCache() {
         versionCache.clear()

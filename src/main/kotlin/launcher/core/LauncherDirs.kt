@@ -14,61 +14,37 @@ import java.io.File
  */
 object LauncherDirs {
 
-    /**
-     * 启动器自身所在目录（EXE 或 JAR 所在目录）。
-     * 运行时通过 ProcessHandle 获取 EXE 路径，找不到则回退到 user.dir。
-     */
+
     val launcherDir: File by lazy {
         resolveExeDir() ?: File(System.getProperty("user.dir"))
     }
 
-    /**
-     * 数据根目录：<launcherDir>/data
-     */
     val dataDir: File by lazy {
         File(launcherDir, "data").also { it.mkdirs() }
     }
 
-    /**
-     * 启动器日志根目录：<launcherDir>/log
-     * 所有启动器自身事件（渲染、启动流程等）写入此目录。
-     */
+
     val logDir: File by lazy {
         File(launcherDir, "log").also { it.mkdirs() }
     }
 
-    /**
-     * Java 版游戏日志目录：<launcherDir>/log/Java
-     * Java 版启动、游戏输出等日志写入此目录。
-     */
+
     val javaLogDir: File by lazy {
         File(logDir, "Java").also { it.mkdirs() }
     }
 
-    /**
-     * 基岩版游戏日志目录：<launcherDir>/log/bedrock
-     * 基岩版启动、游戏输出等日志写入此目录。
-     */
+
     val bedrockLogDir: File by lazy {
         File(logDir, "bedrock").also { it.mkdirs() }
     }
 
-    /**
-     * 旧版数据目录（~/.md3l）。迁移完成后不再使用。
-     */
     private val legacyDataDir: File
         get() = File(System.getProperty("user.home"), ".md3l")
 
-    /**
-     * 迁移标志文件，存在则说明已迁移过，不再重复迁移。
-     */
     private val migrationDoneMarker: File
         get() = File(dataDir, ".migration_done")
 
-    /**
-     * 首次启动时调用：将旧版 ~/.md3l 中的所有数据迁移到新 dataDir。
-     * 已迁移过（.migration_done 存在）或旧目录不存在则跳过。
-     */
+
     fun migrateFromLegacyIfNeeded(onProgress: (String) -> Unit = {}) {
         if (migrationDoneMarker.exists()) return
         val legacy = legacyDataDir

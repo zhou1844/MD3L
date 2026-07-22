@@ -43,7 +43,7 @@ fun SplashScreen(
 ) {
     val isEn = ThemeState.language == "en"
 
-    // ── MD3 标准缓动曲线 ──────────────────────────────────────────────────────
+    // MD3 标准缓动曲线
     // Emphasized Decelerate: 进场——从快到慢，感觉内容「落定」
     val md3EmphasizedDecelerate = remember { CubicBezierEasing(0.05f, 0.7f, 0.1f, 1.0f) }
     // Emphasized Accelerate: 退场——从慢到快，感觉内容「飞走」
@@ -53,7 +53,7 @@ fun SplashScreen(
     // Standard Accelerate
     val md3StandardAccelerate = remember { CubicBezierEasing(0.4f, 0.0f, 1.0f, 1.0f) }
 
-    // ── 动画状态 ──────────────────────────────────────────────────────────────
+    // 动画状态
     val logoAlpha = remember { Animatable(0f) }
     val logoOffsetY = remember { Animatable(30f) }
     val rotation = remember { Animatable(0f) }
@@ -137,7 +137,7 @@ fun SplashScreen(
                 .offset(y = logoOffsetY.value.dp)
                 .alpha(logoAlpha.value),
         ) {
-            // ── 使用 exe 同款图标 ──────────────────────────────────────────
+            // 使用 exe 同款图标
             Image(
                 painter = appIconPainter,
                 contentDescription = "MD3L Logo",
@@ -146,7 +146,7 @@ fun SplashScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // ── 名称 ───────────────────────────────────────────────────────
+            // 名称
             Text(
                 text = "MD3L",
                 style = MaterialTheme.typography.headlineMedium.copy(
@@ -158,7 +158,7 @@ fun SplashScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // ── 副标题 ─────────────────────────────────────────────────────
+            // 副标题
             Text(
                 text = if (isEn) "Material Design 3 Launcher" else "Material Design 3 启动器",
                 style = MaterialTheme.typography.bodyMedium.copy(
@@ -169,7 +169,7 @@ fun SplashScreen(
 
             Spacer(modifier = Modifier.height(48.dp))
 
-            // ── 进度环 ─────────────────────────────────────────────────────
+            // 进度环
             Box(
                 modifier = Modifier.size(32.dp),
                 contentAlignment = Alignment.Center,
@@ -204,7 +204,7 @@ fun SplashScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // ── 加载提示文字 ───────────────────────────────────────────────
+            // 加载提示文字
             Text(
                 text = if (isEn) "Loading…" else "正在加载…",
                 style = MaterialTheme.typography.labelMedium.copy(

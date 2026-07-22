@@ -82,7 +82,7 @@ fun CfBedrockDetailScreen(project: CfBedrockProject) {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ── 顶部标题区 ────────────────────────────────────────────────────────
+        // 顶部标题区
         Row(verticalAlignment = Alignment.CenterVertically) {
             FilledTonalIconButton(
                 onClick = { Navigator.back() },
@@ -118,7 +118,7 @@ fun CfBedrockDetailScreen(project: CfBedrockProject) {
         }
         Spacer(Modifier.height(12.dp))
 
-        // ── 项目信息横幅卡片 ─────────────────────────────────────────────────
+        // 项目信息横幅卡片
         ElevatedCard(
             shape = RoundedCornerShape(20.dp),
             modifier = Modifier.fillMaxWidth(),
@@ -159,7 +159,7 @@ fun CfBedrockDetailScreen(project: CfBedrockProject) {
         }
         Spacer(Modifier.height(8.dp))
 
-        // ── 目标版本选择卡片 ─────────────────────────────────────────────────
+        // 目标版本选择卡片
         if (localVersions.isNotEmpty()) {
             ElevatedCard(
                 shape = RoundedCornerShape(18.dp),
@@ -207,7 +207,7 @@ fun CfBedrockDetailScreen(project: CfBedrockProject) {
             Spacer(Modifier.height(8.dp))
         }
 
-        // ── 状态消息 ─────────────────────────────────────────────────────────
+        // 状态消息
         if (statusMessage.isNotBlank()) {
             val isOk = "成功" in statusMessage || "加入" in statusMessage || "已安装" in statusMessage
             Surface(
@@ -233,7 +233,7 @@ fun CfBedrockDetailScreen(project: CfBedrockProject) {
             Spacer(Modifier.height(8.dp))
         }
 
-        // ── 文件版本列表 ─────────────────────────────────────────────────────
+        // 文件版本列表
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {

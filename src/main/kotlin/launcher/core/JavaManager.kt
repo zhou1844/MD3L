@@ -34,14 +34,14 @@ object JavaManager {
     fun requiredJavaMajor(mcVersionId: String): Int {
         val v = mcVersionId.lowercase().trim()
 
-        // ── 远古版本强制 Java 8 ──────────────────────────────────────────────
+        // 远古版本强制 Java 8
         if (v.startsWith("b1.") || v.startsWith("a1.") ||
             v.startsWith("inf-") || v.startsWith("c0.") ||
             v.startsWith("rd-") || v.contains("combat") ||
             v.endsWith("pre-classic")
         ) return 8
 
-        // ── 快照格式 (YYwXXa) 近似映射 ─────────────────────────────────────
+        // 快照格式 (YYwXXa) 近似映射
         val snapshotMatch = Regex("""^(\d{2})w(\d{2})[a-z]$""").matchEntire(v)
         if (snapshotMatch != null) {
             val year = snapshotMatch.groupValues[1].toIntOrNull() ?: 99
@@ -55,7 +55,7 @@ object JavaManager {
             }
         }
 
-        // ── 正式版 X.Y.Z 解析 ───────────────────────────────────────────────
+        // 正式版 X.Y.Z 解析
         val parts = v.split(".")
         val major = parts.getOrNull(0)?.toIntOrNull()
         val minor = parts.getOrNull(1)?.toIntOrNull()

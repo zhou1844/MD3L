@@ -33,11 +33,11 @@ object DownloadHub {
     private val closeActions = java.util.concurrent.ConcurrentHashMap<String, () -> Unit>()
     private val hiddenTasks = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
-    /** 活跃任务数 */
+    // 活跃任务数 
     val activeCount: Int
         get() = _tasks.value.count { it.status == TaskStatus.Running }
 
-    /** 全局平均进度 0..1 */
+    // 全局平均进度 0..1 
     val overallFraction: Float
         get() {
             val running = _tasks.value.filter { it.status == TaskStatus.Running }
@@ -87,7 +87,7 @@ object DownloadHub {
             ?: remove(id)
     }
 
-    /** 清除已完成/错误的任务 */
+    // 清除已完成/错误的任务 
     fun clearFinished() {
         _tasks.value = _tasks.value.filter { it.status == TaskStatus.Running }
     }

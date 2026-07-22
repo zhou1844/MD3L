@@ -52,7 +52,7 @@ object AccountRepository {
     private val _refreshState = MutableStateFlow<RefreshState>(RefreshState.Idle)
     val refreshState: StateFlow<RefreshState> = _refreshState.asStateFlow()
 
-    /** 皮肤导入成功事件（用于右下角弹窗提示） */
+    // 皮肤导入成功事件（用于右下角弹窗提示） 
     data class SkinImportEvent(val username: String, val model: String)
 
     private val _skinImportEvent = MutableSharedFlow<SkinImportEvent>(extraBufferCapacity = 1)
@@ -556,7 +556,7 @@ object AccountRepository {
         return body["Token"]!!.jsonPrimitive.content
     }
 
-    /** 用 XBL 用户令牌换取面向 Xbox Live（http://xboxlive.com）的 XSTS 令牌，用于访问 profile 服务。 */
+    // 用 XBL 用户令牌换取面向 Xbox Live（http://xboxlive.com）的 XSTS 令牌，用于访问 profile 服务。 
     private suspend fun authenticateXSTSForXbox(xblToken: String): String {
         val resp = client.post(XSTS_URL) {
             contentType(ContentType.Application.Json)

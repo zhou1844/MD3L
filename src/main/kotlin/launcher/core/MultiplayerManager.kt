@@ -18,66 +18,53 @@ import java.util.HexFormat
 import java.util.zip.GZIPInputStream
 import kotlin.io.path.*
 
-/**
- * Terracotta 联机管理器
- *
- * 核心架构：
- *   1. 下载 terracotta-{version}-{os}-{arch}-pkg.tar.gz
- *   2. 解压出 terracotta 可执行文件 + 依赖
- *   3. 启动 terracotta 进程：terracotta.exe --port-file <port_transfer_file>
- *   4. terracotta 将 HTTP 端口写入 port_transfer_file
- *   5. 后台轮询 http://127.0.0.1:{port}/state 获取状态
- *   6. 通过 REST API 操作：/state/scanning(创建房间) /state/guesting(加入房间)
- *   7. 使用 --quickPlayMultiplayer 参数启动 Minecraft 直连
- *
- * 中继节点：从 https://terracotta.glavo.site/nodes 获取
- */
+
 object MultiplayerManager {
 
-    // ── 状态定义 ──────────────────────────────────────────────────────
-    /** Bootstrap / Uninitialized / Preparing / Launching / ... */
+    // 状态定义
+    // Bootstrap / Uninitialized / Preparing / Launching / ... 
     enum class State {
-        /** 未初始化，需下载 Terracotta */
+        // 未初始化，需下载 Terracotta 
         Uninitialized,
-        /** 正在下载 Terracotta */
+        // 正在下载 Terracotta 
         Downloading,
-        /** 正在安装（解压） */
+        // 正在安装（解压） 
         Installing,
-        /** 正在启动 Terracotta 进程 */
+        // 正在启动 Terracotta 进程 
         Launching,
-        /** Terracotta 已启动但尚未进入操作状态 */
+        // Terracotta 已启动但尚未进入操作状态 
         Unknown,
-        /** 空闲就绪，等待用户操作 */
+        // 空闲就绪，等待用户操作 
         Idle,
-        /** 正在扫描/创建房间（Host 模式） */
+        // 正在扫描/创建房间（Host 模式） 
         HostScanning,
-        /** 房间已创建，等待客户端加入 */
+        // 房间已创建，等待客户端加入 
         HostOK,
-        /** 正在连接房间（Guest 模式） */
+        // 正在连接房间（Guest 模式） 
         GuestConnecting,
-        /** 已成功连接到房间 */
+        // 已成功连接到房间 
         GuestOK,
-        /** 发生异常 */
+        // 发生异常 
         Exception,
-        /** 致命错误，需要重新下载 */
+        // 致命错误，需要重新下载 
         Fatal,
     }
 
-    // ── 玩家档案信息（对应 TerracottaProfile） ────────────────────────
+    // 玩家档案信息（对应 TerracottaProfile）
     data class PlayerProfile(
         val name: String,
         val vendor: String = "",
         val type: String = "guest",
     )
 
-    // ── 房间码信息 ────────────────────────────────────────────────────
+    // 房间码信息
     data class RoomInfo(
         val code: String,
         val profiles: List<PlayerProfile> = emptyList(),
         val profileIndex: Int = 0,
     )
 
-    // ── Terracotta 配置结构 ────────────────────────────────────────────
+    // Terracotta 配置结构
     @Serializable
     data class TerracottaConfig(
         val version_latest: String = "",
@@ -92,7 +79,7 @@ object MultiplayerManager {
         val files: Map<String, String> = emptyMap(),
     )
 
-    // ── 状态流 ────────────────────────────────────────────────────────
+    // 状态流
     private val _state = MutableStateFlow(State.Uninitialized)
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -111,7 +98,7 @@ object MultiplayerManager {
     private val _serverAddress = MutableStateFlow("")
     val serverAddress: StateFlow<String> = _serverAddress.asStateFlow()
 
-    // ── 内部状态 ──────────────────────────────────────────────────────
+    // 内部状态
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var terracottaProcess: Process? = null
     private var terracottaPort: Int = -1
@@ -126,10 +113,10 @@ object MultiplayerManager {
     private var currentExe: Path? = null
     private val currentClassifier: String by lazy { detectClassifier() }
 
-    // ── JSON ───────────────────────────────────────────────────────────
+    // JSON
     private val json = Json { ignoreUnknownKeys = true }
 
-    // ── 初始化 ─────────────────────────────────────────────────────────
+    // 初始化
     fun initialize() {
         scope.launch {
             try {
@@ -157,7 +144,7 @@ object MultiplayerManager {
         }
     }
 
-    // ── 下载 Terracotta ───────────────────────────────────────────────
+    // 下载 Terracotta
     fun startDownload() {
         if (_state.value != State.Uninitialized && _state.value != State.Fatal) return
         _state.value = State.Downloading
@@ -210,7 +197,7 @@ object MultiplayerManager {
         }
     }
 
-    // ── 创建房间（Host） ──────────────────────────────────────────────
+    // 创建房间（Host）
     fun createRoom() {
         scope.launch {
             try {
@@ -241,7 +228,7 @@ object MultiplayerManager {
         }
     }
 
-    // ── 踢出玩家（仅房主可用） ────────────────────────────────────────
+    // 踢出玩家（仅房主可用）
     fun kickPlayer(playerName: String) {
         if (playerName.isBlank()) return
         scope.launch {
@@ -256,7 +243,7 @@ object MultiplayerManager {
         }
     }
 
-    // ── 取消 / 断开回到空闲（不杀进程） ─────────────────────────────
+    // 取消 / 断开回到空闲（不杀进程）
     fun cancelToIdle() {
         scope.launch {
             try {
@@ -273,7 +260,7 @@ object MultiplayerManager {
         }
     }
 
-    // ── 加入房间（Guest） ─────────────────────────────────────────────
+    // 加入房间（Guest）
     fun joinRoom(code: String) {
         if (code.isBlank()) {
             _errorMessage.value = "房间码不能为空"
@@ -307,7 +294,7 @@ object MultiplayerManager {
         }
     }
 
-    // ── 重置为等待状态 ────────────────────────────────────────────────
+    // 重置为等待状态
     fun setWaiting() {
         scope.launch {
             try {
@@ -318,14 +305,14 @@ object MultiplayerManager {
         }
     }
 
-    // ── 获取 Minecraft 启动参数 ───────────────────────────────────────
+    // 获取 Minecraft 启动参数
     fun getQuickPlayArgs(): List<String> {
         val addr = _serverAddress.value
         if (addr.isBlank()) return emptyList()
         return listOf("--quickPlayMultiplayer", addr)
     }
 
-    // ── 断开/重置 ─────────────────────────────────────────────────────
+    // 断开/重置
     fun reset() {
         statePollJob?.cancel()
         terracottaProcess?.destroy()
@@ -355,9 +342,7 @@ object MultiplayerManager {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════
     //  内部实现
-    // ═══════════════════════════════════════════════════════════════════
 
     private suspend fun launchTerracotta() {
         _state.value = State.Launching
@@ -730,7 +715,7 @@ object MultiplayerManager {
         return account?.username ?: "MD3L_Player"
     }
 
-    /** 输入流包装，计算 SHA-512 */
+    // 输入流包装，计算 SHA-512 
     private class DigestInputStream(
         private val input: InputStream,
         private val digest: MessageDigest,
@@ -750,7 +735,7 @@ object MultiplayerManager {
         override fun close() = input.close()
     }
 
-    /** 跳过 n 个字节 */
+    // 跳过 n 个字节 
     private fun InputStream.skipNBytes(n: Long) {
         var remaining = n
         val buffer = ByteArray(8192)

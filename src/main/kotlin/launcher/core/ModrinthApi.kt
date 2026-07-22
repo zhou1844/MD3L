@@ -48,7 +48,7 @@ data class CurseForgeFile(
     val releaseDate: String = "",
 )
 
-/** CurseForge 整合包 manifest 中一个 file 条目解析后的可下载信息。 */
+// CurseForge 整合包 manifest 中一个 file 条目解析后的可下载信息。
 @Serializable
 data class CurseResolvedFile(
     val projectId: Int = 0,
@@ -491,9 +491,6 @@ object ModrinthApi {
         result
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    //  中文自动翻译 — MyMemory 免费 API（无需 API Key）
-    // ═══════════════════════════════════════════════════════════════════════════
 
     private val chineseRegex = Regex("[\u4e00-\u9fff]")
 
@@ -528,9 +525,8 @@ object ModrinthApi {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────
+
     // CurseForge Java / Java-like resources
-    // ─────────────────────────────────────────────────────────────────────
 
     private fun cfClassIdFor(projectType: String): Int = when (projectType) {
         "resourcepack" -> CF_CLASS_RESOURCEPACK
@@ -685,7 +681,7 @@ object ModrinthApi {
 
     private val cfClassIdCache = java.util.concurrent.ConcurrentHashMap<Int, Int>()
 
-    /** 查询某个 CurseForge 项目的 classId（模组/资源包/光影），带缓存。 */
+    // 查询某个 CurseForge 项目的 classId（模组/资源包/光影），带缓存。 
     private suspend fun cfClassId(projectId: Int): Int {
         cfClassIdCache[projectId]?.let { return it }
         return try {
@@ -733,7 +729,7 @@ object ModrinthApi {
         }
     }
 
-    /** 并发解析 CurseForge 整合包 manifest 的所有 file 条目。Triple = (projectID, fileID, required)。 */
+    // 并发解析 CurseForge 整合包 manifest 的所有 file 条目。Triple = (projectID, fileID, required)。 
     suspend fun resolveCurseForgeManifestFiles(
         files: List<Triple<Int, Int, Boolean>>,
         onResolve: (Int) -> Unit = {},

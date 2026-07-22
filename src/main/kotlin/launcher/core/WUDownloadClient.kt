@@ -37,7 +37,7 @@ object WUDownloadClient {
         val isPreview: Boolean get() = type != 0
         val isGdk: Boolean get() = packageType.equals("GDK", ignoreCase = true) || isGdkByVersion
         val isUwp: Boolean get() = !isGdk
-        /** 版本号 >= 1.21.120.21 判定为 GDK（无 UWP 包） */
+        // 版本号 >= 1.21.120.21 判定为 GDK（无 UWP 包） 
         val isGdkByVersion: Boolean get() {
             val threshold = listOf(1, 21, 120, 21)
             val parts = name.trim().split(".").mapNotNull { it.toIntOrNull() }
@@ -209,20 +209,15 @@ object WUDownloadClient {
         return cachedList
     }
 
-    /**
-     * 对于版本号 >= 1.21.120.21（即 isGdkByVersion=true）的版本：
-     * - 若同时存在 GDK 和 UWP 条目，丢弃 UWP 条目（UWP 包不存在）
-     * - 若只有 UWP 条目，将其升级为 GDK（packageType 改为 GDK），downloadUrls 保持空，
-     *   下游 chooseGdkDownloadUrl 返回 null 后走 Xbox catalog fallback
-     */
+
     private fun deduplicateGdkUwp(list: List<WUVersion>): List<WUVersion> {
         val gdkNames = list.filter { it.packageType.equals("GDK", ignoreCase = true) }.map { it.name }.toSet()
         return list.filter { it.name.startsWith("1.") }.mapNotNull { ver ->
-            if (!ver.isGdkByVersion) return@mapNotNull ver          // 真 UWP 版本，保留
-            if (ver.packageType.equals("GDK", ignoreCase = true)) return@mapNotNull ver  // 已是 GDK，保留
-            // UWP 条目但版本号属于 GDK 时代
-            if (ver.name in gdkNames) null   // 已有对应 GDK 条目，丢弃此 UWP 副本
-            else ver.copy(packageType = "GDK")  // 升级为 GDK，让下游走正确路径
+            if (!ver.isGdkByVersion) return@mapNotNull ver          
+            if (ver.packageType.equals("GDK", ignoreCase = true)) return@mapNotNull ver  
+
+            if (ver.name in gdkNames) null   
+            else ver.copy(packageType = "GDK")  
         }
     }
 

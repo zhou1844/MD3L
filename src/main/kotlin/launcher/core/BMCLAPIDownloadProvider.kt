@@ -2,14 +2,14 @@ package launcher.core
 
 object BMCLAPIDownloadProvider : DownloadProvider {
 
-    /** 默认 BMCLAPI 根地址 */
+    // 默认 BMCLAPI 根地址 
     private const val DEFAULT_API_ROOT = "https://bmclapi2.bangbang93.com"
 
-    /** 当前使用的 API 根地址 */
+    // 当前使用的 API 根地址 
     @Volatile
     var apiRoot: String = DEFAULT_API_ROOT
 
-    /** 主要 URL 替换规则 */
+    // 主要 URL 替换规则 
     private val replacement: List<Pair<String, String>> = listOf(
         "https://bmclapi2.bangbang93.com" to apiRoot,
         "https://launchermeta.mojang.com" to apiRoot,
@@ -35,7 +35,7 @@ object BMCLAPIDownloadProvider : DownloadProvider {
         "https://resources.download.minecraft.net" to "$apiRoot/assets",
     )
 
-    /** 备用 URL 替换规则（Modrinth / CurseForge 镜像） */
+    // 备用 URL 替换规则（Modrinth / CurseForge 镜像） 
     private val fallbackReplacement: List<Pair<String, String>> = listOf(
         "https://api.modrinth.com" to "https://mod.mcimirror.top/modrinth",
         "https://cdn.modrinth.com" to "https://mod.mcimirror.top",
@@ -45,7 +45,7 @@ object BMCLAPIDownloadProvider : DownloadProvider {
         "https://media.forgecdn.net" to "https://mod.mcimirror.top",
     )
 
-    /** 用替换规则注入 URL */
+    // 用替换规则注入 URL 
     private fun injectURL(replacement: List<Pair<String, String>>, baseURL: String): String {
         for ((key, value) in replacement) {
             if (baseURL.startsWith(key)) {
@@ -94,7 +94,7 @@ object BMCLAPIDownloadProvider : DownloadProvider {
         return listOf(baseURL)
     }
 
-    /** max(cores*2, 6) */
+    // max(cores*2, 6) 
     override fun getConcurrency(): Int {
         return maxOf(Runtime.getRuntime().availableProcessors() * 2, 6)
     }

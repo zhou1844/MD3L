@@ -1,4 +1,4 @@
-﻿package launcher.core
+package launcher.core
 
 import com.sun.jna.*
 import com.sun.jna.platform.win32.*
@@ -542,7 +542,7 @@ class BedrockLaunchEngine : ILaunchEngine {
             // 再通过 COM 激活（ActivateApplication），使进程带包标识，正版授权才生效。
             // 因此 GDK + MSA 也统一走下方的 launchViaComActivation 路径
 
-            // ── 版本隔离：切换 com.mojang Junction ──
+            // 版本隔离：切换 com.mojang Junction
             onProgress?.invoke(30, "正在切换版本存档…")
             val targetProfile = resolveBedrockVersionComMojang(context.minecraftDir, context.version.id)
             runCatching { switchProfileJunction(targetProfile) }
@@ -553,7 +553,7 @@ class BedrockLaunchEngine : ILaunchEngine {
                 injectBedrockGameOptions(targetProfile, context)
             }
 
-            // ── COM 注册 + 激活（GDK 离线 / UWP 通用） ──
+            // COM 注册 + 激活（GDK 离线 / UWP 通用）
             return launchViaComActivation(versionDir, versionId)
         }
 
@@ -640,7 +640,7 @@ class BedrockLaunchEngine : ILaunchEngine {
             }
         }
 
-        // ── 验证 COM 激活是否真的产生了 Minecraft.Windows.exe 进程 ──
+        // 验证 COM 激活是否真的产生了 Minecraft.Windows.exe 进程
         if (comActivated) {
             val deadline = System.currentTimeMillis() + 5000
             while (System.currentTimeMillis() < deadline) {
@@ -659,7 +659,7 @@ class BedrockLaunchEngine : ILaunchEngine {
             println("[MD3L] COM 激活完全失败，尝试直接启动 EXE 回退")
         }
 
-        // ── 回退：直接启动 Minecraft.Windows.exe ──
+        // 回退：直接启动 Minecraft.Windows.exe
         onProgress?.invoke(85, "COM 激活未生效，尝试直接启动 EXE…")
         return launchDirectExe(versionDir, versionId)
     }
@@ -973,7 +973,7 @@ class BedrockLaunchEngine : ILaunchEngine {
             onProgress?.invoke(80, "注册完成，正在验证…")
             println("[Bedrock] -Register 注册日志:\n$output")
             if (proc.exitValue() != 0) {
-                // ── 检测是否因系统未开启开发人员模式/侧载导致 ──
+                // 检测是否因系统未开启开发人员模式/侧载导致
                 if (output.contains("0x80073CFF") || output.contains("开发者许可证") || output.contains("旁加载")) {
                     throw RuntimeException(
                         "基岩版注册失败：系统未开启开发人员模式（侧载）。\n\n" +

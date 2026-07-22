@@ -7,14 +7,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import java.io.FileOutputStream
 
-/**
- * 全局单例进程管理器 —— 维护游戏进程句柄的唯一数据源。
- *
- * - [activeProcess]：当前正在运行的游戏进程。UI 层订阅此状态以锁定/解锁交互。
- * - [processInfo]：附加元信息（版本 ID、启动时间等），用于 UI 显示。
- * - 进程退出后自动在 IO 线程清理状态，无需手动 end()。
- * - [forceKill]：暴力销毁幽灵进程并立即重置 UI。
- */
 object GameProcessManager {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -59,7 +51,7 @@ object GameProcessManager {
         
         monitorJob?.cancel()
         monitorJob = scope.launch {
-            // ── 持续消费进程 stdout/stderr，防止管道缓冲区满导致游戏卡死 ──
+            // 持续消费进程 stdout/stderr，防止管道缓冲区满导致游戏卡死
             val lastLines = mutableListOf<String>()
             val outputLog = logFile
             val windowJob = launch(Dispatchers.IO) {

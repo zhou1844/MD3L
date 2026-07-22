@@ -45,8 +45,7 @@ import javax.imageio.ImageIO
  */
 class OfflineSkinServer {
 
-    // ── 角色数据结构 ──────────────────────────────────────────────────
-
+    // 角色数据结构
     data class CharacterData(
         val uuid: UUID,
         val name: String,
@@ -55,15 +54,15 @@ class OfflineSkinServer {
         val isSlim: Boolean
     )
 
-    // ── 纹理缓存 ──────────────────────────────────────────────────────
+    // 纹理缓存
     // hash → PNG bytes
     private val textureCache = ConcurrentHashMap<String, ByteArray>()
 
-    // ── 角色注册表 ────────────────────────────────────────────────────
+    // 角色注册表
     private val charactersByUuid = ConcurrentHashMap<UUID, CharacterData>()
     private val charactersByName = ConcurrentHashMap<String, CharacterData>()
 
-    // ── RSA 密钥对 ────────────────────────────────────────────────────
+    // RSA 密钥对
     private val keyPair: KeyPair = generateRsaKeyPair()
 
     private fun generateRsaKeyPair(): KeyPair {
@@ -78,8 +77,7 @@ class OfflineSkinServer {
         return "-----BEGIN PUBLIC KEY-----\n${encoded.chunked(64).joinToString("\n")}\n-----END PUBLIC KEY-----"
     }
 
-    // ── SHA-256 纹理哈希 ────────────────────────────────────────────────
-
+    // SHA-256 纹理哈希
     private fun computeTextureHash(imageBytes: ByteArray): String {
         val img = ImageIO.read(ByteArrayInputStream(imageBytes))
             ?: throw IllegalArgumentException("Cannot decode image for hashing")
@@ -121,8 +119,7 @@ class OfflineSkinServer {
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
-    // ── 注册离线角色 ──────────────────────────────────────────────────
-
+    // 注册离线角色
     fun addCharacter(uuid: String, name: String, skinFile: File, isSlim: Boolean) {
         val imageBytes = skinFile.readBytes()
         val hash = computeTextureHash(imageBytes)
@@ -139,8 +136,7 @@ class OfflineSkinServer {
         println("[OfflineSkinServer] 已注册角色: $name (uuid=$uuid, hash=$hash, slim=$isSlim, size=${imageBytes.size})")
     }
 
-    // ── RSA 签名 ──────────────────────────────────────────────────────
-
+    // RSA 签名
     private fun sign(data: String): String {
         val sig = Signature.getInstance("SHA1withRSA")
         sig.initSign(keyPair.private, SecureRandom())
@@ -148,8 +144,7 @@ class OfflineSkinServer {
         return Base64.getEncoder().encodeToString(sig.sign())
     }
 
-    // ── Ktor 服务器 ───────────────────────────────────────────────────
-
+    // Ktor 服务器
     private var server: ApplicationEngine? = null
     @Volatile var port: Int = 0
         private set
@@ -161,7 +156,7 @@ class OfflineSkinServer {
 
         val engine = embeddedServer(Netty, port = 0, host = "127.0.0.1") {
             routing {
-                // ── 根路径：Yggdrasil 元数据 ──────────────────────────
+                // 根路径：Yggdrasil 元数据
                 get("/") {
                     val responseJson = Json.encodeToString(
                         buildJsonObject {
@@ -181,7 +176,7 @@ class OfflineSkinServer {
                     call.respondText(responseJson, ContentType.Application.Json)
                 }
 
-                // ── /status ──────────────────────────────────────────
+                // /status
                 get("/status") {
                     val responseJson = Json.encodeToString(
                         buildJsonObject {
@@ -193,7 +188,7 @@ class OfflineSkinServer {
                     call.respondText(responseJson, ContentType.Application.Json)
                 }
 
-                // ── /api/profiles/minecraft ──────────────────────────
+                // /api/profiles/minecraft
                 post("/api/profiles/minecraft") {
                     val body = call.receiveText()
                     val names = try {
@@ -214,7 +209,7 @@ class OfflineSkinServer {
                     call.respondText(Json.encodeToString(profilesArray), ContentType.Application.Json)
                 }
 
-                // ── /sessionserver/session/minecraft/hasJoined ───────
+                // /sessionserver/session/minecraft/hasJoined
                 get("/sessionserver/session/minecraft/hasJoined") {
                     val username = call.request.queryParameters["username"]
                     if (username == null) {
@@ -229,12 +224,12 @@ class OfflineSkinServer {
                     }
                 }
 
-                // ── /sessionserver/session/minecraft/join ────────────
+                // /sessionserver/session/minecraft/join
                 post("/sessionserver/session/minecraft/join") {
                     call.respondText("", status = HttpStatusCode.NoContent)
                 }
 
-                // ── /sessionserver/session/minecraft/profile/<uuid> ──
+                // /sessionserver/session/minecraft/profile/<uuid>
                 get("/sessionserver/session/minecraft/profile/{uuid}") {
                     val uuidStr = call.parameters["uuid"] ?: ""
                     val uuid = try {
@@ -251,7 +246,7 @@ class OfflineSkinServer {
                     }
                 }
 
-                // ── /textures/{hash} ─────────────────────────────────
+                // /textures/{hash}
                 get("/textures/{hash}") {
                     val hash = call.parameters["hash"] ?: ""
                     val data = textureCache[hash]
@@ -279,8 +274,7 @@ class OfflineSkinServer {
         println("[OfflineSkinServer] 已停止")
     }
 
-    // ── 构建完整角色响应（含 textures 属性）──────────────────────────
-
+    // 构建完整角色响应（含 textures 属性）
     private fun buildCompleteResponse(character: CharacterData): JsonObject {
         val skinUrl = "$rootUrl/textures/${character.skinHash}"
 

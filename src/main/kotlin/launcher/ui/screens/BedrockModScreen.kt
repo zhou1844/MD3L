@@ -106,7 +106,7 @@ fun BedrockModScreen() {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ── 标题栏 ───────────────────────────────────────────────────────────
+        // 标题栏
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { Navigator.navigate(Route.Mods) }) {
                 Icon(Icons.Filled.ArrowBack, contentDescription = "返回", modifier = Modifier.size(20.dp))
@@ -127,7 +127,7 @@ fun BedrockModScreen() {
         }
         Spacer(Modifier.height(12.dp))
 
-        // ── 类型选择 chip ────────────────────────────────────────────────────
+        // 类型选择 chip
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             (if (isEn) listOf("addon" to "Addon", "texture_pack" to "Texture Packs", "map" to "Maps", "skin" to "Skins") else listOf("addon" to "Addon", "texture_pack" to "资源包", "map" to "地图", "skin" to "皮肤")).forEach { (type, label) ->
                 FilterChip(
@@ -143,7 +143,7 @@ fun BedrockModScreen() {
         }
         Spacer(Modifier.height(8.dp))
 
-        // ── 搜索框 ───────────────────────────────────────────────────────────
+        // 搜索框
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(52.dp)) {
             OutlinedTextField(
                 value = searchQuery,
@@ -181,7 +181,7 @@ fun BedrockModScreen() {
         }
         Spacer(Modifier.height(8.dp))
 
-        // ── 列表 ─────────────────────────────────────────────────────────────
+        // 列表
         when {
             isLoading && projects.isEmpty() -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -253,7 +253,7 @@ private fun CfBedrockProjectCard(project: CfBedrockProject, comMojangDir: File?,
         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {
         Column {
-            // ── 卡片主体 ─────────────────────────────────────────────────────
+            // 卡片主体
             Row(
                 modifier = Modifier.padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -356,7 +356,7 @@ private fun CfBedrockProjectCard(project: CfBedrockProject, comMojangDir: File?,
                 }
             }
 
-            // ── 下载进度条 ───────────────────────────────────────────────────
+            // 下载进度条
             if (downloading) {
                 LinearProgressIndicator(
                     progress = { downloadProgress },
@@ -376,7 +376,7 @@ private fun CfBedrockProjectCard(project: CfBedrockProject, comMojangDir: File?,
                 )
             }
 
-            // ── 展开的文件列表 ───────────────────────────────────────────────
+            // 展开的文件列表
             if (showFiles) {
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp))
                 if (loadingFiles) {

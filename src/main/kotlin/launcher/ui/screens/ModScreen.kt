@@ -197,7 +197,7 @@ fun ModScreen() {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ── 标题区 + 版本切换 ──────────────────────────────────────────────
+        // 标题区 + 版本切换
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier.size(44.dp).clip(RoundedCornerShape(16.dp))
@@ -260,7 +260,7 @@ fun ModScreen() {
         }
         Spacer(Modifier.height(14.dp))
 
-        // ── 搜索框（卡片式）─────────────────────────────────────────────────
+        // 搜索框（卡片式）
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -355,7 +355,7 @@ fun ModScreen() {
         }
         Spacer(Modifier.height(10.dp))
 
-        // ── 过滤 Pills ───────────────────────────────────────────────────────
+        // 过滤 Pills
         if (selectedEdition == "java") {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(end = 8.dp)) {
                 val types = if (isEn)
@@ -393,7 +393,7 @@ fun ModScreen() {
         }
         Spacer(Modifier.height(10.dp))
 
-        // ── 内容列表 ─────────────────────────────────────────────────────────
+        // 内容列表
         AnimatedContent(
             targetState = isLoading,
             transitionSpec = { fadeIn() togetherWith fadeOut() },

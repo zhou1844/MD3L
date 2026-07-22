@@ -75,7 +75,7 @@ fun MultiplayerScreen() {
             .verticalScroll(scrollState)
             .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
-        // ── 顶部标题 ──────────────────────────────────────────────
+        // 顶部标题
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(bottom = 16.dp)
@@ -101,7 +101,7 @@ fun MultiplayerScreen() {
             )
         }
 
-        // ── 根据状态渲染不同内容 ─────────────────────────────────
+        // 根据状态渲染不同内容
         when (connectionState) {
             MultiplayerManager.State.Uninitialized -> {
                 UninitializedContent(isEn = isEn)
@@ -299,7 +299,7 @@ private fun IdleContent(
     onCreateRoom: () -> Unit,
     onJoinRoom: () -> Unit,
 ) {
-    // ── 创建房间 ────────────────────────────────────────────────
+    // 创建房间
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)),
@@ -338,7 +338,7 @@ private fun IdleContent(
 
     Spacer(Modifier.height(16.dp))
 
-    // ── 加入房间 ────────────────────────────────────────────────
+    // 加入房间
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)),

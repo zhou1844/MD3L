@@ -40,7 +40,7 @@ object SilentEdgeDownloader {
             "--user-data-dir=${tempProfile.absolutePath}",
         )
 
-        // ── 模式 1: headless（无任务栏图标） ──────────────────────────
+        // 模式 1: headless（无任务栏图标）
         onStatus("正在启动下载引擎...")
         val args1 = mutableListOf(browserExe, "--headless=new") + commonArgs + url
         var proc = ProcessBuilder(args1).redirectErrorStream(true).start()
@@ -53,7 +53,7 @@ object SilentEdgeDownloader {
             println("[EdgeDL] headless 无活动，切换到屏幕外模式")
             proc.destroyForcibly(); Thread.sleep(500)
 
-            // ── 模式 2: 窗口在屏幕外 ──────────────────────────────────
+            // 模式 2: 窗口在屏幕外
             onStatus("正在切换下载模式...")
             val args2 = mutableListOf(browserExe,
                 "--window-position=-32000,-32000", "--window-size=1,1") + commonArgs + url
@@ -70,9 +70,9 @@ object SilentEdgeDownloader {
         }
     }
 
-    // ───────────────────────────────────────────────────────────────────
+
     //  监控下载目录
-    // ───────────────────────────────────────────────────────────────────
+
     private fun monitor(
         dir: File, existing: Set<String>, expectedSize: Long,
         timeoutMs: Long, isCancelled: () -> Boolean, onStatus: (String) -> Unit,
@@ -126,9 +126,9 @@ object SilentEdgeDownloader {
         return null
     }
 
-    // ───────────────────────────────────────────────────────────────────
+
     //  写入 Edge/Chrome Preferences
-    // ───────────────────────────────────────────────────────────────────
+
     private fun writePrefs(profile: File, dlDir: File) {
         val d = File(profile, "Default"); d.mkdirs()
         File(d, "Preferences").writeText("""
@@ -140,9 +140,9 @@ object SilentEdgeDownloader {
 }""".trimIndent())
     }
 
-    // ───────────────────────────────────────────────────────────────────
+
     //  用 PowerShell 隐藏窗口（彻底从任务栏消失）
-    // ───────────────────────────────────────────────────────────────────
+
     private fun hideWindowAsync(proc: Process) {
         Thread {
             try {

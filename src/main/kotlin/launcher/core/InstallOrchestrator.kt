@@ -35,7 +35,7 @@ object InstallOrchestrator {
 
         lateinit var installJob: Job
         installJob = globalScope.launch {
-            // ── 推送初始状态 ────────────────────────────────────────
+            // 推送初始状态
             DownloadHub.upsert(DownloadHub.HubTask(
                 id = taskId, name = taskName,
                 type = DownloadHub.TaskType.JavaVersion,
@@ -62,7 +62,7 @@ object InstallOrchestrator {
                 },
             )
 
-            // ── 桥接 DownloadManager.progress → DownloadHub ───────
+            // 桥接 DownloadManager.progress → DownloadHub
             val bridgeJob = launch {
                 DownloadManager.progress.collectLatest { p ->
                     if (p.isRunning) {
@@ -76,7 +76,7 @@ object InstallOrchestrator {
                 }
             }
 
-            // ── Step 1: 安装原版 ──────────────────────────────────
+            // Step 1: 安装原版
             val ok = try {
                 VersionManifest.installVersion(
                     version = req.version,
@@ -145,7 +145,7 @@ object InstallOrchestrator {
                 return@launch
             }
 
-            // ── Step 2: 安装加载器 ────────────────────────────────
+            // Step 2: 安装加载器
             DownloadHub.upsert(DownloadHub.HubTask(
                 id = taskId, name = taskName,
                 type = DownloadHub.TaskType.JavaVersion,

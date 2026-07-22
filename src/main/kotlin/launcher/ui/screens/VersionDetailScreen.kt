@@ -56,13 +56,13 @@ fun VersionDetailScreen(version: RemoteVersion) {
     val loaderProgress by LoaderInstaller.progress.collectAsState()
     val scrollState = rememberScrollState()
 
-    // ── Loader 版本列表 ──────────────────────────────────────────────────
+    // Loader 版本列表
     var loaderVersions by remember { mutableStateOf<List<LoaderVersionItem>>(emptyList()) }
     var selectedLoaderVersion by remember { mutableStateOf<LoaderVersionItem?>(null) }
     var isLoadingLoaderVersions by remember { mutableStateOf(false) }
     var loaderDropdownExpanded by remember { mutableStateOf(false) }
 
-    // ── OptiFine 版本列表 ────────────────────────────────────────────────
+    // OptiFine 版本列表
     var optifineVersions by remember { mutableStateOf<List<LoaderVersionItem>>(emptyList()) }
     var selectedOptiFineVersion by remember { mutableStateOf<LoaderVersionItem?>(null) }
     var isLoadingOptiFine by remember { mutableStateOf(false) }
@@ -119,7 +119,7 @@ fun VersionDetailScreen(version: RemoteVersion) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
 
-            // ── 顶部标题区 ────────────────────────────────────────────────────
+            // 顶部标题区
             Row(verticalAlignment = Alignment.CenterVertically) {
                 FilledTonalIconButton(
                     onClick = { Navigator.back() },
@@ -145,7 +145,7 @@ fun VersionDetailScreen(version: RemoteVersion) {
                 }
             }
 
-            // ── 版本信息横幅 ─────────────────────────────────────────────────
+            // 版本信息横幅
             ElevatedCard(
                 shape = RoundedCornerShape(20.dp),
                 modifier = Modifier.fillMaxWidth(),
@@ -186,7 +186,7 @@ fun VersionDetailScreen(version: RemoteVersion) {
                 }
             }
 
-            // ── 自定义版本名称 ───────────────────────────────────────────────
+            // 自定义版本名称
             ElevatedCard(
                 shape = RoundedCornerShape(20.dp),
                 modifier = Modifier.fillMaxWidth(),
@@ -228,7 +228,7 @@ fun VersionDetailScreen(version: RemoteVersion) {
                 }
             }
 
-            // ── 模组加载器 ───────────────────────────────────────────────────
+            // 模组加载器
             ElevatedCard(
                 shape = RoundedCornerShape(20.dp),
                 modifier = Modifier.fillMaxWidth(),
@@ -330,7 +330,7 @@ fun VersionDetailScreen(version: RemoteVersion) {
                 }
             }
 
-            // ── OptiFine 选项 ────────────────────────────────────────────────
+            // OptiFine 选项
             ElevatedCard(
                 shape = RoundedCornerShape(20.dp),
                 modifier = Modifier.fillMaxWidth(),
@@ -445,7 +445,7 @@ fun VersionDetailScreen(version: RemoteVersion) {
                 }
             }
 
-            // ── 安装总览摘要 ─────────────────────────────────────────────────
+            // 安装总览摘要
             if (selectedLoader != LoaderOption.None || installOptiFine) {
                 Surface(
                     shape = RoundedCornerShape(14.dp),
@@ -467,7 +467,7 @@ fun VersionDetailScreen(version: RemoteVersion) {
                 }
             }
 
-            // ── 加载器安装进度 ───────────────────────────────────────────────
+            // 加载器安装进度
             if (loaderProgress.isRunning || loaderProgress.done || loaderProgress.error.isNotBlank()) {
                 ElevatedCard(
                     shape = RoundedCornerShape(18.dp),
@@ -508,7 +508,7 @@ fun VersionDetailScreen(version: RemoteVersion) {
                 }
             }
 
-            // ── 下载进度 ─────────────────────────────────────────────────────
+            // 下载进度
             if (downloadProgress.isRunning) {
                 ElevatedCard(
                     shape = RoundedCornerShape(18.dp),
@@ -541,7 +541,7 @@ fun VersionDetailScreen(version: RemoteVersion) {
                 }
             }
 
-            // ── 消息提示 ─────────────────────────────────────────────────────
+            // 消息提示
             if (installMessage.isNotBlank()) {
                 val isSuccess = "成功" in installMessage
                 Surface(
@@ -569,7 +569,7 @@ fun VersionDetailScreen(version: RemoteVersion) {
 
             Spacer(Modifier.height(4.dp))
 
-            // ── 确认安装按钮 ─────────────────────────────────────────────────
+            // 确认安装按钮
             Button(
                 onClick = {
                     isInstalling = true
@@ -658,7 +658,7 @@ private suspend fun fetchLoaderVersions(mcVersion: String, loader: LoaderOption)
     }
 }
 
-/** 通用 HTTP GET：先 curl.exe，后 HttpURLConnection（解决 JVM SSL 问题） */
+// 通用 HTTP GET：先 curl.exe，后 HttpURLConnection（解决 JVM SSL 问题） 
 private fun loaderHttpGet(url: String): String {
     // curl 优先（Fabric 响应很大，给充足超时）
     try {
