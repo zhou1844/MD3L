@@ -213,24 +213,46 @@ object ProtonManager {
                                 continue
                             }
 
+                            // 优先用 GitHub API 返回的 releaseSize 作为总大小（代理响应头可能缺失 Content-Length）
                             val contentLen = response.headers().firstValue("Content-Length").map { it.toLong() }.orElse(-1L)
+                            val totalSize = if (contentLen > 0) contentLen else targetVersion.releaseSize
                             downloadPath.deleteRecursively()
                             response.body().use { input ->
                                 downloadPath.outputStream().use { output ->
                                     val buffer = ByteArray(65536)
                                     var len: Int
                                     var downloaded = 0L
+                                    var lastPercent = -1
+                                    var lastEmit = 0L
                                     while (input.read(buffer).also { len = it } != -1) {
                                         ensureActive()
                                         output.write(buffer, 0, len)
                                         downloaded += len
-                                        if (downloaded % (512 * 1024) == 0L) {
-                                            val frac = if (contentLen > 0) (0.1f + (downloaded.toFloat() / contentLen) * 0.5f).coerceIn(0.1f, 0.6f) else 0.3f
-                                            _installProgress.value = ProtonInstallProgress(
-                                                step = "下载 ProtonGDK...",
-                                                fraction = frac,
-                                                isRunning = true,
-                                            )
+                                        // 实时汇报：每 ~256KB 或下载完成时更新一次
+                                        if (downloaded - lastEmit >= 256 * 1024 || downloaded == totalSize) {
+                                            lastEmit = downloaded
+                                            val pct = if (totalSize > 0) (downloaded * 100 / totalSize).toInt().coerceIn(0, 100) else -1
+                                            // pct<0（总大小未知）时也照常汇报字节数，避免 lastPercent 去重导致永不更新
+                                            if (pct != lastPercent || pct < 0) {
+                                                lastPercent = pct
+                                                val frac = if (totalSize > 0) (0.1f + (downloaded.toFloat() / totalSize) * 0.5f).coerceIn(0.1f, 0.6f) else 0.3f
+                                                val step = if (pct >= 0)
+                                                    "下载 ProtonGDK... ${formatSize(downloaded)} / ${formatSize(totalSize)} ($pct%)"
+                                                else
+                                                    "下载 ProtonGDK... ${formatSize(downloaded)}"
+                                                _installProgress.value = ProtonInstallProgress(
+                                                    step = step,
+                                                    fraction = frac,
+                                                    isRunning = true,
+                                                )
+                                                // 启动流程中自动安装时同步到 LaunchState，实现启动页实时进度
+                                                if (LaunchState.isLaunching.value) {
+                                                    LaunchState.updateProgress(
+                                                        (40 + (frac - 0.1f) / 0.5f * 50).toInt().coerceIn(40, 90),
+                                                        step,
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -265,11 +287,15 @@ object ProtonManager {
                                 lineCount++
                                 if (lineCount % 100 == 0) {
                                     val f = (0.65f + (lineCount / 10000f).coerceAtMost(0.08f)).coerceIn(0.65f, 0.73f)
+                                    val step = "解压 ProtonGDK... ($lineCount files)"
                                     _installProgress.value = ProtonInstallProgress(
-                                        step = "解压 ProtonGDK... ($lineCount files)",
+                                        step = step,
                                         fraction = f,
                                         isRunning = true,
                                     )
+                                    if (LaunchState.isLaunching.value) {
+                                        LaunchState.updateProgress((90 + (f - 0.65f) / 0.08f * 8).toInt().coerceIn(90, 98), step)
+                                    }
                                 }
                             }
                         }
@@ -429,5 +455,12 @@ object ProtonManager {
 
     private fun ensureProtonExecutable(installPath: File) {
         installPath.walkTopDown().forEach { if (it.isFile) it.setExecutable(true, false) }
+    }
+
+    private fun formatSize(bytes: Long): String = when {
+        bytes >= 1_073_741_824 -> "${"%.2f".format(bytes / 1_073_741_824.0)} GB"
+        bytes >= 1_048_576 -> "${"%.1f".format(bytes / 1_048_576.0)} MB"
+        bytes >= 1024 -> "${"%.0f".format(bytes / 1024.0)} KB"
+        else -> "$bytes B"
     }
 }

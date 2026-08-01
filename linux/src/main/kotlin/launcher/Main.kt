@@ -313,8 +313,7 @@ private fun runLauncherApp() = application {
                                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                         Text(
                                             "基岩版 Minecraft 需要 ProtonGDK (Wine) 运行环境才能运行。\n" +
-                                            "检测到您尚未安装此组件，请先下载并安装。\n\n" +
-                                            "此外，GdkExtractor 工具需要 .NET 8 Desktop Runtime 支持，将在 ProtonGDK 安装后自动安装。",
+                                            "检测到您尚未安装此组件，请先下载并安装。",
                                             style = MaterialTheme.typography.bodyMedium,
                                         )
                                         if (protonInstalling) {
