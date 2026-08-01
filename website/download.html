@@ -126,7 +126,7 @@
       <div>
         <div class="dl-title">
           MD3L 安装器
-          <span class="dl-badge">v1.4.1 最新</span>
+          <span class="dl-badge">v1.4.4.a 最新</span>
         </div>
         <p class="dl-desc">
           Windows 安装版，内含完整 Java 运行时，无需提前安装 Java。<br/>
@@ -141,11 +141,46 @@
       </div>
       <div class="dl-actions">
         <a class="btn btn-filled"
-           href="https://dlink.host/1drv/aHR0cHM6Ly8xZHJ2Lm1zL3UvYy80NmEyZjAxZDI1NjA4YjI5L0lRQXhjLWpkb2tnSVNJbjZ3UHpHQUptNUFhZEtnSW5iR2lLQjFFTDRsSlVJZXhRP2U9cjZ6M0Vi.exe">
+           href="https://dlink.host/1drv/aHR0cHM6Ly8xZHJ2Lm1zL3UvYy80NmEyZjAxZDI1NjA4YjI5L0lRQXhjLWpkb2tnSVNJbjZ3UHpHQUptNUFhZEtnSW5iR2lLQjFFTDRsSlVJZXhRP2U9ald5dGpZ.exe">
           <span class="ms">download</span>下载 .exe 安装器
         </a>
         <a class="btn btn-outlined" href="https://github.com/zhou1844/MD3L/releases" target="_blank">
           <span class="ms">history</span>历史版本
+        </a>
+        <a class="btn btn-text" href="changelog.html">
+          <span class="ms">article</span>查看更新日志
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- LINUX DOWNLOAD -->
+<section class="section" style="padding-top:16px">
+  <div class="container">
+    <p class="section-label reveal">Linux 版</p>
+    <h2 class="section-title reveal">MD3L for Linux</h2>
+
+    <div class="dl-main reveal">
+      <div>
+        <div class="dl-title">
+          MD3L Linux 版
+          <span class="dl-badge">v1.4.4.a</span>
+        </div>
+        <p class="dl-desc">
+          Linux AppImage 版，兼容主流发行版，无需安装依赖，下载后赋予执行权限即可运行。<br/>
+          支持 Java 版与基岩版启动，与 Windows 版功能一致。
+        </p>
+        <div class="dl-meta">
+          <div class="dl-meta-item"><span class="ms">computer</span>Linux x86_64</div>
+          <div class="dl-meta-item"><span class="ms">storage</span>约 140 MB</div>
+          <div class="dl-meta-item"><span class="ms">verified</span>免费开源</div>
+        </div>
+      </div>
+      <div class="dl-actions">
+        <a class="btn btn-filled"
+           href="https://dlink.host/1drv/aHR0cHM6Ly8xZHJ2Lm1zL3UvYy80NmEyZjAxZDI1NjA4YjI5L0lRREFqR1RsbDlkWlFKWnh3NG1NSEJqckFmMFpFc2tSOWNaTTA4NFFJbzFJQlhJP2U9RmgyMXV5.appimage">
+          <span class="ms">download</span>下载 .AppImage
         </a>
         <a class="btn btn-text" href="changelog.html">
           <span class="ms">article</span>查看更新日志
@@ -163,7 +198,7 @@
     <div class="req-grid">
       <div class="req-card reveal">
         <h4>操作系统</h4>
-        <p>Windows 10 / 11<br/><small style="font-size:13px;font-weight:400;color:var(--md-on-surface-var)">64 位，版本 1903+</small></p>
+        <p>Windows 10 / 11 · Linux<br/><small style="font-size:13px;font-weight:400;color:var(--md-on-surface-var)">Windows 64 位 1903+ / Linux x86_64</small></p>
       </div>
       <div class="req-card reveal">
         <h4>处理器</h4>
@@ -220,6 +255,37 @@
   </div>
 </section>
 
+<!-- LINUX INSTALL STEPS -->
+<section class="section" style="background:var(--md-surface-c-low);padding-top:48px;padding-bottom:48px">
+  <div class="container">
+    <p class="section-label reveal">Linux 安装指南</p>
+    <h2 class="section-title reveal">Linux 三步开始游戏</h2>
+    <div class="steps">
+      <div class="step reveal">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <h3>下载 AppImage</h3>
+          <p>点击上方"下载 .AppImage"按钮，下载 MD3L AppImage 文件到本地。</p>
+        </div>
+      </div>
+      <div class="step reveal">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <h3>赋予执行权限并运行</h3>
+          <p>在终端中执行 <code>chmod +x MD3L-*.AppImage</code>，然后双击运行，或在终端中执行 <code>./MD3L-*.AppImage</code> 启动。</p>
+        </div>
+      </div>
+      <div class="step reveal">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <h3>登录并开始游戏</h3>
+          <p>启动 MD3L，登录你的 Minecraft 账号，选择版本开始游戏！Java 版与基岩版功能与 Windows 版一致。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- FAQ -->
 <section class="section" style="background:var(--md-surface-c-low);padding-top:48px;padding-bottom:64px">
   <div class="container">
@@ -238,7 +304,7 @@
           支持 macOS / Linux 吗？
           <span class="ms">expand_more</span>
         </button>
-        <div class="faq-a">目前 MD3L 仅支持 Windows 10 / 11 64位系统。macOS 和 Linux 支持在规划中，敬请期待。</div>
+        <div class="faq-a">MD3L 已正式支持 Linux（x86_64），提供 AppImage 版本，功能与 Windows 版一致。macOS 支持仍在规划中，敬请期待。</div>
       </div>
       <div class="faq-item">
         <button class="faq-q" onclick="toggleFaq(this)">
