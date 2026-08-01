@@ -59,10 +59,17 @@ Thumbs.db
 # Large local artifacts (game packages / extracted versions / linux build outputs)
 *.msixvc
 ys/
-linux/
 msixvc_out/
 *.deb
 *.AppImage
 *.pkg.tar.zst
 squashfs-root/
 appimagetool-*.AppImage
+
+# Linux launcher source lives under linux/ — only ignore its build outputs & local data
+linux/build/
+linux/.gradle/
+linux/data/
+linux/.fuse_hidden*
+!linux/gradle/wrapper/gradle-wrapper.jar
+!linux/**/*.exe
