@@ -35,7 +35,7 @@
 或者直接走 OneDrive 直链（最新版）：  
 👉 **[下载 MD3L Setup.exe](https://dlink.host/1drv/aHR0cHM6Ly8xZHJ2Lm1zL3UvYy80NmEyZjAxZDI1NjA4YjI5L0lRQXhjLWpkb2tnSVNJbjZ3UHpHQUptNUFhZEtnSW5iR2lLQjFFTDRsSlVJZXhRP2U9cjZ6M0Vi.exe)**
 
-系统要求：Windows 10 / 11 64 位，不需要装 Java（内置了）。
+系统要求：Windows 10 / 11 64 位，不需要装 Java（内置了）/任意linux版本。
 
 也可以访问项目网站：https://md3l.top
 
