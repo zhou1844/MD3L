@@ -33,7 +33,7 @@ data class ProtonInstallProgress(
 object ProtonManager {
 
     private const val PROTON_VERSION = "GDK-Proton10-32"
-    private const val GH_PROXY = "https://gh.xmly.dev/"
+    private const val GH_PROXY = "https://gh-proxy.com/"
     private const val GITHUB_API = "https://api.github.com/repos/LukasPAH/GDK-Proton-Custom/releases"
     private val GITHUB_API_PROXIED = "$GH_PROXY$GITHUB_API"
 
@@ -189,7 +189,7 @@ object ProtonManager {
                 val downloadPath = File(protonDownloadDir, fileName)
 
                 val candidateUrls = if (downloadUrl.contains("github.com"))
-                    listOf("https://gh.xmly.dev/$downloadUrl", downloadUrl)
+                    listOf("$GH_PROXY$downloadUrl", downloadUrl)
                 else
                     listOf(downloadUrl)
 
