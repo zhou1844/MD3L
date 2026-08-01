@@ -25,16 +25,12 @@ import kotlinx.coroutines.launch
 import launcher.core.MultiplayerManager
 import launcher.ui.theme.ThemeState
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  Terracotta 联机主界面
-// ═════════════════════════════════════════════════════════════════════════════
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MultiplayerScreen() {
     val isEn = ThemeState.language == "en"
     val scope = rememberCoroutineScope()
 
-    // 订阅 MultiplayerManager 状态
     val connectionState by MultiplayerManager.state.collectAsState()
     val statusMessage by MultiplayerManager.statusMessage.collectAsState()
     val errorMessage by MultiplayerManager.errorMessage.collectAsState()
@@ -45,12 +41,10 @@ fun MultiplayerScreen() {
     var roomCodeInput by remember { mutableStateOf("") }
     val scrollState = rememberScrollState()
 
-    // 初始化 Terracotta
     LaunchedEffect(Unit) {
         MultiplayerManager.initialize()
     }
 
-    // 监听滚动位置
     LaunchedEffect(scrollState) {
         snapshotFlow {
             val canScrollForward = scrollState.canScrollForward
@@ -64,9 +58,8 @@ fun MultiplayerScreen() {
         }
     }
 
-    // 清理
     DisposableEffect(Unit) {
-        onDispose { /* 保持 Terracotta 运行 */ }
+        onDispose {   }
     }
 
     Column(
@@ -75,7 +68,6 @@ fun MultiplayerScreen() {
             .verticalScroll(scrollState)
             .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
-        // 顶部标题
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(bottom = 16.dp)
@@ -93,7 +85,6 @@ fun MultiplayerScreen() {
                 fontWeight = FontWeight.Bold,
             )
             Spacer(Modifier.weight(1f))
-            // Terracotta 版本标签
             AssistChip(
                 onClick = {},
                 label = { Text("Terracotta 0.4.2", fontSize = 11.sp) },
@@ -101,7 +92,6 @@ fun MultiplayerScreen() {
             )
         }
 
-        // 根据状态渲染不同内容
         when (connectionState) {
             MultiplayerManager.State.Uninitialized -> {
                 UninitializedContent(isEn = isEn)
@@ -165,9 +155,6 @@ fun MultiplayerScreen() {
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  Uninitialized — 需要下载
-// ═════════════════════════════════════════════════════════════════════════════
 @Composable
 private fun UninitializedContent(isEn: Boolean) {
     Column(
@@ -219,9 +206,6 @@ private fun UninitializedContent(isEn: Boolean) {
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  Downloading — 下载中
-// ═════════════════════════════════════════════════════════════════════════════
 @Composable
 private fun DownloadingContent(isEn: Boolean, progress: Float, message: String) {
     Column(
@@ -246,9 +230,6 @@ private fun DownloadingContent(isEn: Boolean, progress: Float, message: String) 
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  Installing — 解压安装中
-// ═════════════════════════════════════════════════════════════════════════════
 @Composable
 private fun InstallingContent(isEn: Boolean, message: String) {
     Column(
@@ -264,9 +245,6 @@ private fun InstallingContent(isEn: Boolean, message: String) {
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  Launching — 启动 Terracotta 进程
-// ═════════════════════════════════════════════════════════════════════════════
 @Composable
 private fun LaunchingContent(isEn: Boolean, message: String) {
     Column(
@@ -288,9 +266,6 @@ private fun LaunchingContent(isEn: Boolean, message: String) {
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  Idle — 就绪，选择操作
-// ═════════════════════════════════════════════════════════════════════════════
 @Composable
 private fun IdleContent(
     isEn: Boolean,
@@ -299,7 +274,6 @@ private fun IdleContent(
     onCreateRoom: () -> Unit,
     onJoinRoom: () -> Unit,
 ) {
-    // 创建房间
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)),
@@ -338,7 +312,6 @@ private fun IdleContent(
 
     Spacer(Modifier.height(16.dp))
 
-    // 加入房间
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)),
@@ -388,9 +361,6 @@ private fun IdleContent(
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  Scanning — 扫描中继节点
-// ═════════════════════════════════════════════════════════════════════════════
 @Composable
 private fun ScanningContent(isEn: Boolean, message: String) {
     Column(
@@ -416,9 +386,6 @@ private fun ScanningContent(isEn: Boolean, message: String) {
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  HostOK — 房间已创建
-// ═════════════════════════════════════════════════════════════════════════════
 @Composable
 private fun HostOkContent(
     isEn: Boolean,
@@ -428,7 +395,6 @@ private fun HostOkContent(
 ) {
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
 
-    // 解析自己的玩家名（当前房主）
     val myName = remember {
         launcher.core.AccountRepository.activeAccount.value?.username ?: "MD3L_Player"
     }
@@ -437,7 +403,6 @@ private fun HostOkContent(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
     ) {
-        // 状态指示灯
         Box(
             modifier = Modifier
                 .size(16.dp)
@@ -460,7 +425,6 @@ private fun HostOkContent(
 
         Spacer(Modifier.height(16.dp))
 
-        // 房间码显示
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -490,7 +454,6 @@ private fun HostOkContent(
             }
         }
 
-        // 玩家列表（带踢人按钮）
         if (roomInfo != null && roomInfo.profiles.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -534,7 +497,6 @@ private fun HostOkContent(
                                 )
                             },
                         )
-                        // 房主可以踢客机（不能踢自己）
                         if (profile.type != "host" && profile.name != myName) {
                             Spacer(Modifier.width(8.dp))
                             IconButton(
@@ -568,9 +530,6 @@ private fun HostOkContent(
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  Connecting — 连接中
-// ═════════════════════════════════════════════════════════════════════════════
 @Composable
 private fun ConnectingContent(isEn: Boolean, message: String) {
     Column(
@@ -596,9 +555,6 @@ private fun ConnectingContent(isEn: Boolean, message: String) {
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  GuestOK — 已连接
-// ═════════════════════════════════════════════════════════════════════════════
 @Composable
 private fun GuestOkContent(isEn: Boolean, serverAddress: String, onReset: () -> Unit) {
     Column(
@@ -648,9 +604,6 @@ private fun GuestOkContent(isEn: Boolean, serverAddress: String, onReset: () -> 
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  Exception — 异常状态
-// ═════════════════════════════════════════════════════════════════════════════
 @Composable
 private fun ExceptionContent(
     isEn: Boolean,
@@ -700,9 +653,6 @@ private fun ExceptionContent(
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  Fatal — 致命错误
-// ═════════════════════════════════════════════════════════════════════════════
 @Composable
 private fun FatalContent(isEn: Boolean, error: String?, onRetry: () -> Unit) {
     Column(

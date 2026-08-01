@@ -362,7 +362,6 @@ object BedrockDownloader {
     private fun extractPackage(packagePath: File, installDir: File, gameType: String): Boolean {
         return try {
             println("[BedrockDL] GDK 包解压待实现: ${packagePath.absolutePath}")
-            // TODO: 实现新的 MSIXVC 解压逻辑
             false
         } catch (e: Exception) {
             println("[BedrockDL] GDK 解压失败: ${e.message}")

@@ -33,9 +33,6 @@ import launcher.ui.layout.Navigator
 import launcher.ui.nav.Route
 import java.io.File
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  顶级双核 Tab：Java 版 / 基岩版
-// ═════════════════════════════════════════════════════════════════════════════
 private enum class EditionTab(val label: String) {
     Java("Java 版"),
     Bedrock("基岩版"),
@@ -62,7 +59,6 @@ fun BedrockVersionDetailScreen(version: WUDownloadClient.WUVersion) {
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // ── 顶部标题区 ────────────────────────────────────────────────────────
         Row(verticalAlignment = Alignment.CenterVertically) {
             FilledTonalIconButton(
                 onClick = { Navigator.back() },
@@ -85,7 +81,6 @@ fun BedrockVersionDetailScreen(version: WUDownloadClient.WUVersion) {
             }
         }
 
-        // ── 版本信息横幅 ──────────────────────────────────────────────────────
         ElevatedCard(
             shape = RoundedCornerShape(20.dp),
             modifier = Modifier.fillMaxWidth(),
@@ -143,7 +138,6 @@ fun BedrockVersionDetailScreen(version: WUDownloadClient.WUVersion) {
             }
         }
 
-        // ── 下载源选择 ────────────────────────────────────────────────────────
         ElevatedCard(
             shape = RoundedCornerShape(20.dp),
             modifier = Modifier.fillMaxWidth(),
@@ -188,7 +182,6 @@ fun BedrockVersionDetailScreen(version: WUDownloadClient.WUVersion) {
             }
         }
 
-        // ── 进度卡片 ──────────────────────────────────────────────────────────
         if (isDownloading && installProgress.versionKey == keyPreview && installProgress.phase.isNotBlank()) {
             ElevatedCard(
                 shape = RoundedCornerShape(18.dp),
@@ -231,7 +224,6 @@ fun BedrockVersionDetailScreen(version: WUDownloadClient.WUVersion) {
             }
         }
 
-        // ── 错误消息 ──────────────────────────────────────────────────────────
         if (localError.isNotBlank()) {
             Surface(
                 shape = RoundedCornerShape(12.dp),
@@ -247,7 +239,6 @@ fun BedrockVersionDetailScreen(version: WUDownloadClient.WUVersion) {
 
         Spacer(Modifier.weight(1f))
 
-        // ── 安装按钮 ──────────────────────────────────────────────────────────
         Button(
             onClick = {
                 val finalName = version.name
@@ -292,7 +283,6 @@ fun BedrockVersionDetailScreen(version: WUDownloadClient.WUVersion) {
     }
 }
 
-// ── Java 版分类 ──────────────────────────────────────────────────────────────
 private enum class JavaVersionTab(
     val label: String,
     val iconRes: String,
@@ -305,7 +295,6 @@ private enum class JavaVersionTab(
     AprilFool("愚人节", "icons/command_block.png", "Cmd", Color(0xFFDC9632)),
 }
 
-// ── 基岩版分类 ────────────────────────────────────────────────────────────────
 private enum class BedrockSubTab(val label: String) {
     Release("正式版 Release"),
     Preview("测试版 Preview"),
@@ -367,9 +356,6 @@ private fun BlockIcon(tab: JavaVersionTab, size: Int = 32) {
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  全局下载进度条（Java / 基岩共用）
-// ═════════════════════════════════════════════════════════════════════════════
 @Composable
 private fun DownloadProgressBanner() {
     val downloadProgress by DownloadManager.progress.collectAsState()
@@ -403,9 +389,6 @@ private fun DownloadProgressBanner() {
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  主入口
-// ═════════════════════════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -414,7 +397,6 @@ fun DownloadScreen() {
     var editionTab by DownloadScreenState.editionTab
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ── 标题区 + 内嵌版本切换 ──────────────────────────────────────────────
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier.size(44.dp).clip(RoundedCornerShape(16.dp))
@@ -469,9 +451,6 @@ fun DownloadScreen() {
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  Java 版下载内容（保持原有功能）
-// ═════════════════════════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -487,7 +466,6 @@ private fun JavaDownloadContent() {
         initialFirstVisibleItemIndex = DownloadScreenState.javaListFirstVisibleItemIndex.value,
         initialFirstVisibleItemScrollOffset = DownloadScreenState.javaListFirstVisibleItemScrollOffset.value,
     )
-    // 监听 Java 列表滚动位置，更新底栏淡出隐藏状态
     LaunchedEffect(listState) {
         snapshotFlow {
             val canScrollForward = listState.canScrollForward
@@ -498,7 +476,6 @@ private fun JavaDownloadContent() {
         }.collect { (canScrollForward, firstIdx, totalItems) ->
             NavBarScrollState.scrollFraction.value = when {
                 totalItems == 0 -> 0f
-                // 内容太少不足以滚动 → 保持导航栏可见
                 !canScrollForward && firstIdx == 0 -> 0f
                 !canScrollForward -> 1f
                 else -> (firstIdx.toFloat() / totalItems.toFloat()).coerceIn(0f, 0.99f)
@@ -533,7 +510,6 @@ private fun JavaDownloadContent() {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ── 分类Pills + 搜索框（合并卡片）────────────────────────────────────
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -591,7 +567,6 @@ private fun JavaDownloadContent() {
         }
         Spacer(Modifier.height(10.dp))
 
-        // ── 版本列表 ───────────────────────────────────────────────────────────
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -658,9 +633,6 @@ private fun JavaDownloadContent() {
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  基岩版下载内容 —— 全新双核下载链路
-// ═════════════════════════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -676,7 +648,6 @@ private fun BedrockDownloadContent() {
         initialFirstVisibleItemIndex = DownloadScreenState.bedrockListFirstVisibleItemIndex.value,
         initialFirstVisibleItemScrollOffset = DownloadScreenState.bedrockListFirstVisibleItemScrollOffset.value,
     )
-    // 监听基岩版列表滚动位置，更新底栏淡出隐藏状态
     LaunchedEffect(listState) {
         snapshotFlow {
             val canScrollForward = listState.canScrollForward
@@ -687,7 +658,6 @@ private fun BedrockDownloadContent() {
         }.collect { (canScrollForward, firstIdx, totalItems) ->
             NavBarScrollState.scrollFraction.value = when {
                 totalItems == 0 -> 0f
-                // 内容太少不足以滚动 → 保持导航栏可见
                 !canScrollForward && firstIdx == 0 -> 0f
                 !canScrollForward -> 1f
                 else -> (firstIdx.toFloat() / totalItems.toFloat()).coerceIn(0f, 0.99f)
@@ -729,7 +699,6 @@ private fun BedrockDownloadContent() {
             BedrockSubTab.Release -> v.isRelease
             BedrockSubTab.Preview -> v.isPreview
         }
-        // GDK 版本（>=1.21.120.21）没有 UWP 包，过滤掉错误条目
         val validPackage = !(v.isUwp && v.isGdkByVersion)
         matchesSearch && matchesTab && validPackage
     }.sortedWith(
@@ -741,7 +710,6 @@ private fun BedrockDownloadContent() {
     )
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ── 基岩版分类 Pills ───────────────────────────────────────────────
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BedrockSubTab.entries.forEach { tab ->
                 val sel = bedrockSubTab == tab
@@ -775,7 +743,6 @@ private fun BedrockDownloadContent() {
         }
         Spacer(Modifier.height(10.dp))
 
-        // ── 搜索栏 ───────────────────────────────────────────────────────────
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
@@ -789,7 +756,6 @@ private fun BedrockDownloadContent() {
         )
         Spacer(Modifier.height(10.dp))
 
-        // ── 版本列表 ───────────────────────────────────────────────────────
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {

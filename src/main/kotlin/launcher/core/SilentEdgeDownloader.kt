@@ -2,12 +2,6 @@ package launcher.core
 
 import java.io.File
 
-/**
- * 利用系统 Edge/Chrome 在后台完成下载（绕过 Cloudflare）。
- *
- * 模式 1: --headless=new（无窗口、无任务栏图标、不会触发 App Installer）
- * 模式 2: 屏幕外窗口 -32000,-32000（headless 被拦截时的兜底）
- */
 object SilentEdgeDownloader {
 
     private val BROWSER_CANDIDATES = listOf(
@@ -40,7 +34,6 @@ object SilentEdgeDownloader {
             "--user-data-dir=${tempProfile.absolutePath}",
         )
 
-        // 模式 1: headless（无任务栏图标）
         onStatus("正在启动下载引擎...")
         val args1 = mutableListOf(browserExe, "--headless=new") + commonArgs + url
         var proc = ProcessBuilder(args1).redirectErrorStream(true).start()
@@ -49,17 +42,14 @@ object SilentEdgeDownloader {
             var result = monitor(downloadDir, existing, expectedSize, 35_000, isCancelled, onStatus)
             if (result != null) return result
 
-            // headless 30 秒无活动 → 回退到屏幕外模式
             println("[EdgeDL] headless 无活动，切换到屏幕外模式")
             proc.destroyForcibly(); Thread.sleep(500)
 
-            // 模式 2: 窗口在屏幕外
             onStatus("正在切换下载模式...")
             val args2 = mutableListOf(browserExe,
                 "--window-position=-32000,-32000", "--window-size=1,1") + commonArgs + url
             proc = ProcessBuilder(args2).redirectErrorStream(true).start()
 
-            // 启动后立即用 PowerShell 隐藏窗口
             hideWindowAsync(proc)
 
             result = monitor(downloadDir, existing, expectedSize, timeoutMs - 40_000, isCancelled, onStatus)
@@ -71,7 +61,6 @@ object SilentEdgeDownloader {
     }
 
 
-    //  监控下载目录
 
     private fun monitor(
         dir: File, existing: Set<String>, expectedSize: Long,
@@ -85,7 +74,6 @@ object SilentEdgeDownloader {
             Thread.sleep(1500)
             val all = dir.listFiles() ?: continue
 
-            // 临时文件（正在下载）
             val tmp = all.filter { it.name !in existing &&
                 (it.name.endsWith(".crdownload") || it.name.endsWith(".tmp")) }
             if (tmp.isNotEmpty()) {
@@ -97,7 +85,6 @@ object SilentEdgeDownloader {
                 stableCount = 0
             }
 
-            // 完成的文件
             val done = all.filter { it.name !in existing &&
                 !it.name.endsWith(".crdownload") && !it.name.endsWith(".tmp") &&
                 !it.name.endsWith(".partial") && it.length() > 500_000 }
@@ -119,7 +106,6 @@ object SilentEdgeDownloader {
                 }
             }
 
-            // headless 模式下 30s 无活动 → 返回 null 让调用者切换
             if (!sawActivity && System.currentTimeMillis() - (deadline - timeoutMs) > 25_000) return null
         }
         onStatus("下载超时")
@@ -127,7 +113,6 @@ object SilentEdgeDownloader {
     }
 
 
-    //  写入 Edge/Chrome Preferences
 
     private fun writePrefs(profile: File, dlDir: File) {
         val d = File(profile, "Default"); d.mkdirs()
@@ -141,12 +126,11 @@ object SilentEdgeDownloader {
     }
 
 
-    //  用 PowerShell 隐藏窗口（彻底从任务栏消失）
 
     private fun hideWindowAsync(proc: Process) {
         Thread {
             try {
-                Thread.sleep(1500) // 等窗口出现
+                Thread.sleep(1500)
                 val pid = proc.pid()
                 ProcessBuilder(
                     "powershell", "-NoProfile", "-Command",

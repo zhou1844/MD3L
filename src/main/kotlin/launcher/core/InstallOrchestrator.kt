@@ -3,13 +3,6 @@ package launcher.core
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
 
-/**
- * 全局安装编排器 —— 在全局 scope 中运行，切换页面绝不中断。
- *
- * 流程：
- *   1. 将 vanilla 下载推送到 DownloadHub，桥接 DownloadManager.progress 实时更新
- *   2. vanilla 完成后，自动启动加载器安装（若有）
- */
 object InstallOrchestrator {
 
     private val globalScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -20,22 +13,18 @@ object InstallOrchestrator {
         val customName: String,
         val maxThreads: Int,
         val javaPath: String = "java",
-        val loaderType: String? = null,     // "Fabric" / "Forge" / "NeoForge"
+        val loaderType: String? = null,
         val loaderVersion: String? = null,
         val forgeBuild: Int = 0,
-        val optifineVersion: String? = null, // e.g. "HD_U_I7"
+        val optifineVersion: String? = null,
     )
 
-    /**
-     * 启动安装（全局 scope）。立即返回，不阻塞。
-     */
     fun launch(req: InstallRequest) {
         val taskId = "java_${req.version.id}_${System.currentTimeMillis()}"
         val taskName = "${req.version.id}${if (req.loaderType != null) " + ${req.loaderType}" else ""}"
 
         lateinit var installJob: Job
         installJob = globalScope.launch {
-            // 推送初始状态
             DownloadHub.upsert(DownloadHub.HubTask(
                 id = taskId, name = taskName,
                 type = DownloadHub.TaskType.JavaVersion,
@@ -62,7 +51,6 @@ object InstallOrchestrator {
                 },
             )
 
-            // 桥接 DownloadManager.progress → DownloadHub
             val bridgeJob = launch {
                 DownloadManager.progress.collectLatest { p ->
                     if (p.isRunning) {
@@ -76,7 +64,6 @@ object InstallOrchestrator {
                 }
             }
 
-            // Step 1: 安装原版
             val ok = try {
                 VersionManifest.installVersion(
                     version = req.version,
@@ -109,7 +96,6 @@ object InstallOrchestrator {
                 return@launch
             }
 
-            // 原版安装完成 —— 检查是否安装 OptiFine
             if (req.optifineVersion != null && req.loaderType == null) {
                 DownloadHub.upsert(DownloadHub.HubTask(
                     id = taskId, name = taskName,
@@ -145,7 +131,6 @@ object InstallOrchestrator {
                 return@launch
             }
 
-            // Step 2: 安装加载器
             DownloadHub.upsert(DownloadHub.HubTask(
                 id = taskId, name = taskName,
                 type = DownloadHub.TaskType.JavaVersion,
@@ -178,7 +163,6 @@ object InstallOrchestrator {
                 req.javaPath
             }
 
-            // 加载器通过 LoaderInstaller 自己的 emit 推送到 DownloadHub
             try {
                 when (req.loaderType) {
                     "Fabric" -> LoaderInstaller.installFabric(
@@ -203,7 +187,6 @@ object InstallOrchestrator {
                         javaPath = resolvedJavaPath,
                     )
                 }
-                // 加载器安装完成后，若同时选了 OptiFine 则继续安装
                 if (req.optifineVersion != null) {
                     DownloadHub.upsert(DownloadHub.HubTask(
                         id = taskId, name = taskName,

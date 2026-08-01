@@ -47,10 +47,6 @@ data class UpdateState(
 )
 
 object AutoUpdater {
-    /**
-     * 从内置资源文件 /version 读取当前版本号。
-     * 该文件位于 src/main/resources/version，构建时会被打包到 jar 中。
-     */
     val CURRENT_VERSION: String by lazy {
         runCatching {
             val url = AutoUpdater::class.java.classLoader.getResource("version")
@@ -168,7 +164,6 @@ object AutoUpdater {
                                 !cmd.contains("cmd.exe", ignoreCase = true)) return cmd
                             ph = ph?.parent()?.orElse(null)
                         }
-                        // fallback: 找 user.dir 下唯一的 .exe
                         val dir = File(System.getProperty("user.dir"))
                         val exes = dir.listFiles { f -> f.extension.equals("exe", ignoreCase = true) }
                         val best = exes?.firstOrNull { it.name.contains("MD3L", ignoreCase = true) }
@@ -185,7 +180,7 @@ object AutoUpdater {
                             File(cacheDir, "MD3LUpdater.exe"),
                         )
                         val updaterExe = updaterPaths.firstOrNull { it.exists() }
-                            ?: updaterPaths.first() // fallback 到第一个路径
+                            ?: updaterPaths.first()
 
                         val currentPid = ProcessHandle.current().pid()
                         val updaterPath = updaterExe.absolutePath
@@ -196,10 +191,10 @@ object AutoUpdater {
                             println("[AutoUpdater] 更新器不存在，尝试直接启动: $updaterPath")
                         }
 
-                       
+
                         val updaterArgs = "\"${destFile.absolutePath}\" \"${currentExePath}\" --wait-pid ${currentPid}"
 
-            
+
                         val psLaunched = runCatching {
                             val psCmd = "Start-Process -FilePath '${updaterPath}' -ArgumentList '${updaterArgs}' -Verb RunAs -WindowStyle Hidden"
                             ProcessBuilder(
@@ -269,7 +264,6 @@ object AutoUpdater {
 
     private suspend fun pickFastestMirror(mirrors: List<String>): String? =
         withContext(Dispatchers.IO) {
-            // 并发发起所有 HEAD 请求，取第一个成功的
             val deferreds = mirrors.map { url ->
                 async {
                     val ok = runCatching {
@@ -309,7 +303,6 @@ object AutoUpdater {
         dest.parentFile?.mkdirs()
         if (dest.exists()) dest.delete()
 
-        // 先用 HEAD 请求拿 Content-Length
         val totalBytes: Long = withContext(Dispatchers.IO) {
             runCatching {
                 val proc = ProcessBuilder(
@@ -324,7 +317,6 @@ object AutoUpdater {
             }.getOrDefault(-1L)
         }
 
-        // 启动 curl 静默下载
         val proc = withContext(Dispatchers.IO) {
             ProcessBuilder(
                 "curl.exe", "-L", "-s",
@@ -335,7 +327,6 @@ object AutoUpdater {
             ).redirectErrorStream(true).start()
         }
 
-        // 轮询文件大小更新进度
         val pollJob = scope.launch {
             var lastSize = 0L
             var lastTime = System.currentTimeMillis()

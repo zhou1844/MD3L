@@ -37,7 +37,6 @@ object WUDownloadClient {
         val isPreview: Boolean get() = type != 0
         val isGdk: Boolean get() = packageType.equals("GDK", ignoreCase = true) || isGdkByVersion
         val isUwp: Boolean get() = !isGdk
-        /** 版本号 >= 1.21.120.21 判定为 GDK（无 UWP 包） */
         val isGdkByVersion: Boolean get() {
             val threshold = listOf(1, 21, 120, 21)
             val parts = name.trim().split(".").mapNotNull { it.toIntOrNull() }
@@ -58,19 +57,17 @@ object WUDownloadClient {
         "https://raw.githubusercontent.com/MCMrARM/mc-w10-versiondb/master/versions.json.min",
         "https://raw.githubusercontent.com/ddf8196/mc-w10-versiondb-auto-update/master/versions.json.min",
     )
-    // LeviLauncher 版本数据库（主力源，覆盖 1.21.120+ 全部 GDK 版本）
     private val LEVI_GDK_URLS = listOf(
         "https://raw.githubusercontent.com/LiteLDev/minecraft-windows-gdk-version-db/main/historical_versions.json",
         "https://cdn.jsdelivr.net/gh/LiteLDev/minecraft-windows-gdk-version-db@main/historical_versions.json",
     )
-    // MinecraftBedrockArchiver/GdkLinks（备用源，覆盖部分 1.21.120+ 版本）
     private val GDK_VERSION_URLS = listOf(
         "https://raw.githubusercontent.com/MinecraftBedrockArchiver/GdkLinks/refs/heads/master/urls.min.json",
         "https://cdn.jsdelivr.net/gh/MinecraftBedrockArchiver/GdkLinks@master/urls.min.json",
         "https://github.bibk.top/MinecraftBedrockArchiver/GdkLinks/raw/refs/heads/master/urls.min.json",
     )
     private const val WU_URL = "https://fe3.delivery.mp.microsoft.com/ClientWebService/client.asmx/secured"
-    private const val CHUNK_SIZE = 5L * 1024L * 1024L  // 5MB 分块（BedrockBoot 标准）
+    private const val CHUNK_SIZE = 5L * 1024L * 1024L
     private const val MAX_THREADS = 8
     private const val CHUNK_STALL_TIMEOUT_MS = 15_000L
     private const val SPEED_WINDOW_MS = 3000L
@@ -124,7 +121,6 @@ object WUDownloadClient {
         val result = mutableListOf<WUVersion>()
         val seen = mutableSetOf<String>()
 
-        // LeviLauncher DB（最新版本最全）
         val leviCandidates = listOfNotNull(
             if (leviCache.exists() && leviCache.length() > 50) leviCache.readText() else null,
         )
@@ -162,7 +158,6 @@ object WUDownloadClient {
         val result = if (strict) mutableListOf() else loadLocal().toMutableList()
         val seen = result.mapTo(mutableSetOf()) { "${it.name}_${it.packageType}" }
 
-        // 优先 LeviLauncher 数据库（含 26.x 全部版本）
         val leviText = LEVI_GDK_URLS.firstNotNullOfOrNull { fetchText(it) }
         if (leviText != null) {
             val list = parseLeviVersions(leviText)
@@ -171,7 +166,6 @@ object WUDownloadClient {
                 for (version in list) if (seen.add("${version.name}_${version.packageType}")) result += version
             }
         }
-        // 备用：MinecraftBedrockArchiver/GdkLinks
         val gdkText = GDK_VERSION_URLS.firstNotNullOfOrNull { fetchText(it) }
         if (gdkText != null) {
             val list = parseGdkVersions(gdkText)
@@ -209,20 +203,13 @@ object WUDownloadClient {
         return cachedList
     }
 
-    /**
-     * 对于版本号 >= 1.21.120.21（即 isGdkByVersion=true）的版本：
-     * - 若同时存在 GDK 和 UWP 条目，丢弃 UWP 条目（UWP 包不存在）
-     * - 若只有 UWP 条目，将其升级为 GDK（packageType 改为 GDK），downloadUrls 保持空，
-     *   下游 chooseGdkDownloadUrl 返回 null 后走 Xbox catalog fallback
-     */
     private fun deduplicateGdkUwp(list: List<WUVersion>): List<WUVersion> {
         val gdkNames = list.filter { it.packageType.equals("GDK", ignoreCase = true) }.map { it.name }.toSet()
         return list.filter { it.name.startsWith("1.") }.mapNotNull { ver ->
-            if (!ver.isGdkByVersion) return@mapNotNull ver          // 真 UWP 版本，保留
-            if (ver.packageType.equals("GDK", ignoreCase = true)) return@mapNotNull ver  // 已是 GDK，保留
-            // UWP 条目但版本号属于 GDK 时代
-            if (ver.name in gdkNames) null   // 已有对应 GDK 条目，丢弃此 UWP 副本
-            else ver.copy(packageType = "GDK")  // 升级为 GDK，让下游走正确路径
+            if (!ver.isGdkByVersion) return@mapNotNull ver
+            if (ver.packageType.equals("GDK", ignoreCase = true)) return@mapNotNull ver
+            if (ver.name in gdkNames) null
+            else ver.copy(packageType = "GDK")
         }
     }
 
@@ -235,11 +222,6 @@ object WUDownloadClient {
             .toList()
     }
 
-    /**
-     * 解析 LiteLDev/minecraft-windows-gdk-version-db 格式：
-     * { "releaseVersions": [ { "version": "Release 1.26.13.01", "urls": [...] }, ... ],
-     *   "previewVersions": [ { "version": "Preview 1.26.40.05", "urls": [...] }, ... ] }
-     */
     private fun parseLeviVersions(json: String): List<WUVersion> {
         val result = mutableListOf<WUVersion>()
         fun parseSection(sectionKey: String, type: Int) {
@@ -247,17 +229,15 @@ object WUDownloadClient {
             if (sectionStart < 0) return
             val arrStart = json.indexOf('[', sectionStart)
             if (arrStart < 0) return
-            // 找匹配的 ]
             var depth = 0; var end = arrStart
             while (end < json.length) {
                 when (json[end]) { '[' -> depth++; ']' -> { depth--; if (depth == 0) break } }
                 end++
             }
             val section = json.substring(arrStart + 1, end)
-            // 逐个对象解析 "version" 和 "urls"
             val objRegex = Regex("""\{[^{}]*"version"\s*:\s*"([^"]+)"[^{}]*"urls"\s*:\s*\[(.*?)]""", RegexOption.DOT_MATCHES_ALL)
             for (m in objRegex.findAll(section)) {
-                val rawVersion = m.groupValues[1]  // e.g. "Release 1.26.13.01"
+                val rawVersion = m.groupValues[1]
                 val name = rawVersion.removePrefix("Release ").removePrefix("Preview ").trim()
                 if (name.isBlank()) continue
                 val urls = Regex(""""(https?://[^"]+)"""").findAll(m.groupValues[2]).map { it.groupValues[1] }.toList()
@@ -508,23 +488,18 @@ object WUDownloadClient {
         }
         onProgress(downloaded.get(), total, 0L)
 
-        // 滑动窗口测速：记录 (时间戳, 累计字节) 样本
         val speedSamples = CopyOnWriteArrayList<Pair<Long, Long>>()
         speedSamples.add(System.currentTimeMillis() to downloaded.get())
 
-        // 活跃chunk的临时文件集合，用于实时进度轮询
         val activeTmps = CopyOnWriteArrayList<File>()
 
-        // 进度上报协程：每300ms轮询一次
         val failedRanges = CopyOnWriteArrayList<LongRange>()
         val semaphore = Semaphore(MAX_THREADS)
         kotlinx.coroutines.coroutineScope {
-            // 实时进度轮询 job
             val progressJob = launch(Dispatchers.IO) {
                 var highWater = downloaded.get()
                 while (isActive) {
                     Thread.sleep(300)
-                    // 累计已完成 + 所有活跃tmp文件当前大小
                     val inFlight = activeTmps.sumOf { if (it.exists()) it.length() else 0L }
                     val raw = (downloaded.get() + inFlight).coerceAtMost(total)
                     val current = maxOf(raw, highWater)
@@ -533,7 +508,6 @@ object WUDownloadClient {
                         val lastReported = current
                         val now = System.currentTimeMillis()
                         speedSamples.add(now to current)
-                        // 保留窗口内的样本
                         val cutoff = now - SPEED_WINDOW_MS
                         while (speedSamples.size > 2 && speedSamples[0].first < cutoff) speedSamples.removeAt(0)
                         val speed = if (speedSamples.size >= 2) {

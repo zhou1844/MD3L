@@ -25,12 +25,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import launcher.core.DownloadHub
 
-/**
- * 全局下载悬浮球 — 在有任务时显示于右下角。
- *
- * - 圆形按钮，用描边弧度显示总体进度
- * - 点击后导航到下载管理页面
- */
 @Composable
 fun DownloadFab(
     modifier: Modifier = Modifier,
@@ -41,7 +35,6 @@ fun DownloadFab(
     val hasRunning = tasks.any { it.status == DownloadHub.TaskStatus.Running }
     val hasAny = tasks.isNotEmpty()
 
-    // 动画：弹入/弹出
     AnimatedVisibility(
         visible = hasAny,
         enter = scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy)) + fadeIn(),
@@ -52,13 +45,11 @@ fun DownloadFab(
         val fraction = if (running.isEmpty()) 1f
         else running.map { it.fraction }.average().toFloat()
 
-        // 动画化进度值
         val animFraction by animateFloatAsState(
             targetValue = fraction,
             animationSpec = tween(300),
         )
 
-        // 活跃任务数 badge
         val activeCount = running.size
 
         val primaryColor = MaterialTheme.colorScheme.primary
@@ -77,7 +68,6 @@ fun DownloadFab(
                     onClick = onClick,
                 )
                 .drawBehind {
-                    // 进度环（背景轨道）
                     drawArc(
                         color = trackColor,
                         startAngle = -90f,
@@ -87,7 +77,6 @@ fun DownloadFab(
                         size = Size(size.width - 8f, size.height - 8f),
                         style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round),
                     )
-                    // 进度环（前景）
                     if (hasRunning) {
                         drawArc(
                             color = primaryColor,
@@ -118,7 +107,6 @@ fun DownloadFab(
             }
         }
 
-        // badge
         if (activeCount > 0) {
             Box(modifier = Modifier.size(56.dp)) {
                 Badge(

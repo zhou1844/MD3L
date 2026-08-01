@@ -23,19 +23,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import launcher.ui.theme.ThemeState
 
-/**
- * Material Design 3 风格启动动画。
- *
- * 动画序列（总时长 ≈ 2200ms）：
- * 1. Logo 图标淡入 + 向上位移（0–500ms）— MD3 Emphasized Decelerate
- * 2. 圆形进度环旋转 + 描边动画（250–1600ms）
- * 3. 底部文字淡入（700–1200ms）
- * 4. 整体保持显示直到动画结束
- *
- * 动画结束后通过 [onAnimationEnd] 回调通知调用方。
- *
- * 使用 exe 同款图标（app_icon.png），背景圆角裁剪。
- */
 @Composable
 fun SplashScreen(
     onAnimationEnd: () -> Unit,
@@ -43,26 +30,18 @@ fun SplashScreen(
 ) {
     val isEn = ThemeState.language == "en"
 
-    // MD3 标准缓动曲线
-    // Emphasized Decelerate: 进场——从快到慢，感觉内容「落定」
     val md3EmphasizedDecelerate = remember { CubicBezierEasing(0.05f, 0.7f, 0.1f, 1.0f) }
-    // Emphasized Accelerate: 退场——从慢到快，感觉内容「飞走」
     val md3EmphasizedAccelerate = remember { CubicBezierEasing(0.3f, 0.0f, 0.8f, 0.15f) }
-    // Standard Decelerate: 用于淡入淡出，更柔和
     val md3StandardDecelerate = remember { CubicBezierEasing(0.0f, 0.0f, 0.2f, 1.0f) }
-    // Standard Accelerate
     val md3StandardAccelerate = remember { CubicBezierEasing(0.4f, 0.0f, 1.0f, 1.0f) }
 
-    // 动画状态
     val logoAlpha = remember { Animatable(0f) }
     val logoOffsetY = remember { Animatable(30f) }
     val rotation = remember { Animatable(0f) }
     val sweepAngle = remember { Animatable(0f) }
     val textAlpha = remember { Animatable(0f) }
 
-    // 启动动画序列
     LaunchedEffect(Unit) {
-        // 阶段1: Logo 淡入 + 上移（0–500ms）— MD3 Emphasized Decelerate
         launch {
             logoAlpha.animateTo(
                 targetValue = 1f,
@@ -76,10 +55,8 @@ fun SplashScreen(
             )
         }
 
-        // 阶段2: 进度环动画（250ms 后开始）
         delay(250)
         launch {
-            // 旋转持续旋转 — 使用更平滑的 1000ms 周期
             while (true) {
                 rotation.animateTo(
                     targetValue = 360f,
@@ -91,7 +68,6 @@ fun SplashScreen(
             }
         }
         launch {
-            // 描边先伸后缩 — MD3 Standard Decelerate/Accelerate
             sweepAngle.animateTo(
                 targetValue = 270f,
                 animationSpec = tween(650, easing = md3StandardDecelerate)
@@ -102,26 +78,21 @@ fun SplashScreen(
             )
         }
 
-        // 阶段3: 文字淡入（700ms 后开始）
         delay(700)
         textAlpha.animateTo(
             targetValue = 1f,
             animationSpec = tween(500, easing = md3EmphasizedDecelerate)
         )
 
-        // 等待动画全部完成
         delay(700)
-        // 保持一小段时间让用户看到完整画面
         delay(300)
 
-        // 通知动画结束
         onAnimationEnd()
     }
 
     val primaryColor = MaterialTheme.colorScheme.primary
     val onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant
 
-    // 加载 exe 同款图标
     val appIconPainter = painterResource("app_icon.png")
 
     Box(
@@ -137,7 +108,6 @@ fun SplashScreen(
                 .offset(y = logoOffsetY.value.dp)
                 .alpha(logoAlpha.value),
         ) {
-            // 使用 exe 同款图标
             Image(
                 painter = appIconPainter,
                 contentDescription = "MD3L Logo",
@@ -146,7 +116,6 @@ fun SplashScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 名称
             Text(
                 text = "MD3L",
                 style = MaterialTheme.typography.headlineMedium.copy(
@@ -158,7 +127,6 @@ fun SplashScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 副标题
             Text(
                 text = if (isEn) "Material Design 3 Launcher" else "Material Design 3 启动器",
                 style = MaterialTheme.typography.bodyMedium.copy(
@@ -169,7 +137,6 @@ fun SplashScreen(
 
             Spacer(modifier = Modifier.height(48.dp))
 
-            // 进度环
             Box(
                 modifier = Modifier.size(32.dp),
                 contentAlignment = Alignment.Center,
@@ -178,7 +145,6 @@ fun SplashScreen(
                     val strokeWidth = 2.5f
                     val sweep = sweepAngle.value.coerceAtLeast(5f)
 
-                    // 背景环
                     drawArc(
                         color = primaryColor.copy(alpha = 0.12f),
                         startAngle = 0f,
@@ -189,7 +155,6 @@ fun SplashScreen(
                         style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
                     )
 
-                    // 前景环
                     drawArc(
                         color = primaryColor,
                         startAngle = rotation.value - 90f,
@@ -204,7 +169,6 @@ fun SplashScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 加载提示文字
             Text(
                 text = if (isEn) "Loading…" else "正在加载…",
                 style = MaterialTheme.typography.labelMedium.copy(

@@ -31,15 +31,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import launcher.core.RemoteVersion
 
-/**
- * 二级树状版本选择器 —— 作为 ModalBottomSheet 的内容。
- *
- * 数据源是一个二级树状结构：
- *   Node.Java   → Release | Snapshot | Old Beta/Alpha
- *   Node.Bedrock → Release | Preview
- *
- * 点击全局版本锚点时弹出此 Sheet。
- */
 
 sealed class VersionTreeNode(val label: String, val icon: @Composable () -> Unit) {
     abstract val children: List<VersionCategory>
@@ -82,9 +73,6 @@ class BedrockVersionTree(
     )
 }
 
-/**
- * 将平坦的远程版本列表构建为二级树。
- */
 fun buildVersionTree(javaVersions: List<RemoteVersion>, bedrockVersions: List<RemoteVersion> = emptyList()): List<VersionTreeNode> {
     val tree = mutableListOf<VersionTreeNode>()
 
@@ -111,9 +99,6 @@ fun buildVersionTree(javaVersions: List<RemoteVersion>, bedrockVersions: List<Re
     return tree
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  本地版本树（数据源严格锁死为 VersionScanner 扫描结果）
-// ═════════════════════════════════════════════════════════════════════════════
 
 data class LocalVersionCategory(
     val label: String,
@@ -121,15 +106,6 @@ data class LocalVersionCategory(
     val versions: List<launcher.core.LocalVersion>,
 )
 
-/**
- * 将本地版本平坦列表构建为二级分类树：
- * - 正式版 (release)
- * - 快照 (snapshot)
- * - 远古 Beta (old_beta)
- * - 远古 Alpha (old_alpha)
- *
- * 数据源**严格**来自 VersionScanner，绝不混入远端 Manifest。
- */
 fun buildLocalVersionTree(
     localVersions: List<launcher.core.LocalVersion>,
     bedrockVersions: List<launcher.core.LocalVersion> = emptyList(),
@@ -185,15 +161,14 @@ fun LocalVersionTreeSheetContent(
                 categories.forEach { category ->
                     val catExpanded = expandedCategory == category.type
                     item(key = "lcat_group_${category.type}") {
-                        // MD3 Standard Decelerate 曲线
                         val md3StandardDecelerate = remember { CubicBezierEasing(0.0f, 0.0f, 0.2f, 1.0f) }
-                        
+
                         val containerColor by animateColorAsState(
                             if (catExpanded) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
                             else MaterialTheme.colorScheme.surfaceContainerHigh,
                             animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
                         )
-                        
+
                         Column(modifier = Modifier.fillMaxWidth().animateContentSize(tween(350, easing = md3StandardDecelerate))) {
                             ElevatedCard(
                                 onClick = { expandedCategory = if (catExpanded) null else category.type },
@@ -227,7 +202,7 @@ fun LocalVersionTreeSheetContent(
                                     )
                                 }
                             }
-                            
+
                             AnimatedVisibility(
                                 visible = catExpanded,
                                 enter = expandVertically(tween(350, easing = md3StandardDecelerate)) + fadeIn(),
@@ -285,9 +260,6 @@ fun LocalVersionTreeSheetContent(
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  远端版本树（仅用于下载中心，不在启动页使用）
-// ═════════════════════════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -298,7 +270,6 @@ fun VersionTreeSheetContent(
 ) {
     var expandedNode by remember { mutableStateOf<String?>(null) }
     var expandedCategory by remember { mutableStateOf<String?>(null) }
-    // 缓存 MD3 曲线，避免每次重组重新分配
     val md3StandardDecelerate = remember { CubicBezierEasing(0.0f, 0.0f, 0.2f, 1.0f) }
 
     Column(modifier = modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
@@ -318,7 +289,6 @@ fun VersionTreeSheetContent(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp),
         ) {
-            // 一级节点 (Java / Bedrock)
             tree.forEach { node ->
                 val nodeExpanded = expandedNode == node.label
                 item(key = "node_${node.label}") {
@@ -327,7 +297,7 @@ fun VersionTreeSheetContent(
                         else MaterialTheme.colorScheme.surfaceContainerHigh,
                         animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
                     )
-                    
+
                     ElevatedCard(
                         onClick = {
                             expandedNode = if (nodeExpanded) null else node.label
@@ -366,7 +336,6 @@ fun VersionTreeSheetContent(
                     }
                 }
 
-                // 二级分类 (Release / Snapshot / ...)
                 if (nodeExpanded) {
                     node.children.filter { it.versions.isNotEmpty() }.forEach { category ->
                         val catKey = "${node.label}_${category.label}"
@@ -382,7 +351,7 @@ fun VersionTreeSheetContent(
                                 targetValue = if (catExpanded) 180f else 0f,
                                 animationSpec = tween(200, easing = md3StandardDecelerate)
                             )
-                            
+
                             Column(modifier = Modifier.fillMaxWidth().animateContentSize(tween(350, easing = md3StandardDecelerate))) {
                                 Surface(
                                     onClick = { expandedCategory = if (catExpanded) null else catKey },

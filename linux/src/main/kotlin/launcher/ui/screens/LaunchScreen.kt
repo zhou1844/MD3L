@@ -89,7 +89,6 @@ import java.net.URI
 fun LaunchScreen() {
     val scope = rememberCoroutineScope()
     val isEn = launcher.ui.theme.ThemeState.language == "en"
-    // 使用全局持久化状态，确保切换页面后启动页状态不丢失
     var settings by LaunchScreenState.settings
     var versions by LaunchScreenState.versions
     var bedrockVersions by LaunchScreenState.bedrockVersions
@@ -101,7 +100,6 @@ fun LaunchScreen() {
     val processMsg by GameProcessManager.statusMessage.collectAsState()
     val gameProgress by GameProcessManager.launchProgress.collectAsState()
     val crashReport by GameProcessManager.crashReport.collectAsState()
-    // 使用 derivedStateOf 缓存计算值，避免每次重组都重新计算
     val gameRunning by remember { derivedStateOf { activeProcess != null } }
     val uiLocked by remember { derivedStateOf { globalLaunching || gameRunning } }
     var launchMessage by LaunchScreenState.launchMessage
@@ -109,28 +107,23 @@ fun LaunchScreen() {
     val bedrockDownloading by BedrockDownloadManager.downloadingVersions.collectAsState()
     val bedrockDownloadResults by BedrockDownloadManager.downloadResults.collectAsState()
 
-    // ── AccountRepository StateFlow 响应式绑定 ──────────────────────────────
     val accountList by AccountRepository.accounts.collectAsState()
     val activeAccount by AccountRepository.activeAccount.collectAsState()
     val refreshState by AccountRepository.refreshState.collectAsState()
 
-    // 登录状态
     var showLoginDialog by remember { mutableStateOf(false) }
     var editingOfflineName by remember { mutableStateOf(false) }
     var nameInput by remember { mutableStateOf("") }
     var nameError by remember { mutableStateOf("") }
 
-    // 微软 OAuth 状态
     var showMsAuthDialog by remember { mutableStateOf(false) }
     var deviceCodeInfo by remember { mutableStateOf<DeviceCodeInfo?>(null) }
     var authPolling by remember { mutableStateOf(false) }
     var authError by remember { mutableStateOf("") }
     var skinModelDialogForUuid by remember { mutableStateOf<String?>(null) }
 
-    // 皮肤导入成功提示（右下角弹窗）
     var skinToastData by remember { mutableStateOf<SkinToastInfo?>(null) }
 
-    // 监听皮肤导入事件 → 显示右下角弹窗（5秒后自动消失）
     LaunchedEffect(Unit) {
         AccountRepository.skinImportEvent.collect { event ->
             val modelLabel = if (isEn) event.model else if (event.model == "slim") "纤细(Alex)" else "经典(Steve)"
@@ -140,7 +133,6 @@ fun LaunchScreen() {
         }
     }
 
-    // 致命错误弹窗
     var showErrorDialog by remember { mutableStateOf(false) }
     var errorStackTrace by remember { mutableStateOf("") }
     var errorLogPath by remember { mutableStateOf("") }
@@ -148,7 +140,6 @@ fun LaunchScreen() {
     var protonInstalling by remember { mutableStateOf(false) }
     var protonPath_ by remember { mutableStateOf<String?>(null) }
 
-    // 第三方登录状态
     var showThirdPartyDialog by remember { mutableStateOf(false) }
     var tpAuthServerUrl by remember { mutableStateOf("") }
     var tpServerName by remember { mutableStateOf("") }
@@ -157,10 +148,8 @@ fun LaunchScreen() {
     var tpError by remember { mutableStateOf("") }
     var tpLoading by remember { mutableStateOf(false) }
     
-    // 自动更新状态
     val updateState by AutoUpdater.state.collectAsState()
 
-    // 版本树 Popup（悬浮选择器，绝不破坏底部布局流）
     var showVersionPopup by remember { mutableStateOf(false) }
     val versionPopupVisible = remember { MutableTransitionState(false) }
     LaunchedEffect(showVersionPopup) {
@@ -192,7 +181,6 @@ fun LaunchScreen() {
         rescanLocalVersions(loadedSettings, forceReselect = true)
     }
 
-    // ── 监听基岩版下载 —— 基岩版下载/安装完成后自动刷新本地版本列表 ──
     LaunchedEffect(bedrockDownloading, bedrockDownloadResults) {
         if (bedrockDownloading.isNotEmpty() || bedrockDownloadResults.isEmpty()) return@LaunchedEffect
         if (!LaunchScreenState.initialized) return@LaunchedEffect
@@ -201,7 +189,6 @@ fun LaunchScreen() {
         rescanLocalVersions(loadedSettings, forceReselect = false)
     }
 
-    // ── 监听版本修订号 —— 基岩版下载/导入、版本增删改后刷新 ──
     val versionRevision by VersionRepository.revision.collectAsState()
     LaunchedEffect(versionRevision) {
         if (!LaunchScreenState.initialized) return@LaunchedEffect
@@ -210,7 +197,6 @@ fun LaunchScreen() {
         rescanLocalVersions(loadedSettings, forceReselect = false)
     }
 
-    // ── 监听 DownloadHub —— Java 版下载完成后自动刷新本地版本列表 ──────
     var prevDoneJavaIds by remember { mutableStateOf(emptySet<String>()) }
     val hubTasks by DownloadHub.tasks.collectAsState()
     LaunchedEffect(hubTasks) {
@@ -240,11 +226,7 @@ fun LaunchScreen() {
         showErrorDialog = true
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // 主布局：Row 左 45% 右 55%
-    // ══════════════════════════════════════════════════════════════════════════
 
-    // MD3 缓动曲线（定义在 Row 外部顶层作用域，供底部 Column 和版本 Popup 共用）
     val md3EmphasizedDecelerate = remember { CubicBezierEasing(0.05f, 0.7f, 0.1f, 1.0f) }
     val md3StandardDecelerate = remember { CubicBezierEasing(0.0f, 0.0f, 0.2f, 1.0f) }
     val md3StandardAccelerate = remember { CubicBezierEasing(0.4f, 0.0f, 1.0f, 1.0f) }
@@ -252,9 +234,7 @@ fun LaunchScreen() {
     Box(modifier = Modifier.fillMaxSize()) {
     Row(modifier = Modifier.fillMaxSize()) {
 
-        // ── 左区：玩家仪表盘 ────────────────────────────────────────
         val stats by PlayerStats.data.collectAsState()
-        // 使用 derivedStateOf 缓存统计数据计算，避免每次重组都重新计算
         val statsData by remember {
             derivedStateOf {
                 val totalLaunches = stats.javaLaunchCount
@@ -267,7 +247,6 @@ fun LaunchScreen() {
         val totalSec = statsData.totalSec
         val javaFrac = statsData.javaFrac
 
-        // 格式化游玩时长
         fun fmtTime(sec: Long): String = when {
             sec < 60 -> "${sec}s"
             sec < 3600 -> "${sec / 60}m"
@@ -281,7 +260,6 @@ fun LaunchScreen() {
         val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
 
         val statsScrollState = rememberScrollState()
-        // 监听统计面板滚动位置，更新底栏淡出隐藏状态
         LaunchedEffect(statsScrollState) {
             snapshotFlow { statsScrollState.value to statsScrollState.maxValue }
                 .collect { (value, max) ->
@@ -298,7 +276,6 @@ fun LaunchScreen() {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            // ── 标题 ──
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
@@ -314,20 +291,17 @@ fun LaunchScreen() {
                 }
             }
 
-            // ── 圆环图：启动次数分布 ──
             Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    // Canvas 圆环
                     Box(modifier = Modifier.size(88.dp), contentAlignment = Alignment.Center) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             val stroke = 10.dp.toPx()
                             val inset = stroke / 2f
                             val sweepJ = if (totalLaunches == 0) 0f else 360f
-                            // track
                             drawArc(trackColor, 0f, 360f, false, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke), topLeft = androidx.compose.ui.geometry.Offset(inset, inset), size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke))
                             if (totalLaunches > 0) {
                                 drawArc(primaryColor, -90f, sweepJ, false, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round), topLeft = androidx.compose.ui.geometry.Offset(inset, inset), size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke))
@@ -338,7 +312,6 @@ fun LaunchScreen() {
                             Text(if (isEn) "times" else "次", style = MaterialTheme.typography.labelSmall, color = onSurfaceVariant)
                         }
                     }
-                    // 图例 + 数值
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f)) {
                         Text(if (isEn) "Total Launches" else "总启动次数", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold), color = onSurface)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -350,7 +323,6 @@ fun LaunchScreen() {
                 }
             }
 
-            // ── 游玩时长卡片 ──
             Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(14.dp),
@@ -370,9 +342,7 @@ fun LaunchScreen() {
                 }
             }
 
-            // ── 小数据卡片 2×2 ──
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // 崩溃次数
                 Surface(modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Icon(Icons.Filled.BugReport, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
@@ -381,7 +351,6 @@ fun LaunchScreen() {
                         Text(if (isEn) "Crashes" else "次崩溃", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.75f))
                     }
                 }
-                // 最长单次
                 Surface(modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Icon(Icons.Filled.EmojiEvents, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.secondary)
@@ -392,7 +361,6 @@ fun LaunchScreen() {
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // 已安装版本
                 val totalInstalled = versions.size + bedrockVersions.size
                 Surface(modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -402,7 +370,6 @@ fun LaunchScreen() {
                         Text(if (isEn) "Installed" else "已安装版本", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.75f))
                     }
                 }
-                // Mod版本数
                 val modCount = versions.count { it.loaderType != LoaderType.Vanilla }
                 Surface(modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f)) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -414,7 +381,6 @@ fun LaunchScreen() {
                 }
             }
 
-            // ── 上次游玩 ──
             if (stats.lastPlayedVersion.isNotBlank()) {
                 Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f), modifier = Modifier.fillMaxWidth()) {
                     Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -431,7 +397,6 @@ fun LaunchScreen() {
                 }
             }
 
-            // ── 运行状态条 ──
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = if (gameRunning) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
@@ -455,22 +420,17 @@ fun LaunchScreen() {
 
         Spacer(Modifier.width(12.dp))
 
-        // ── 右区 (Control Node) ─── Column 堆叠，杜绝错位 ──────────
         Column(
             modifier = Modifier
                 .weight(0.382f)
                 .fillMaxHeight()
                 .padding(top = 8.dp),
         ) {
-            // ════════════════════════════════════════════════════════════════
-            //  顶部区域 —— 账号切换 + 按钮 + 进度条 + 离线名编辑
-            // ════════════════════════════════════════════════════════════════
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .wrapContentHeight(),
             ) {
-                // ── Windows 风格账号卡片 ──────────────────────────────────
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -481,13 +441,11 @@ fun LaunchScreen() {
 
                     Spacer(Modifier.height(8.dp))
 
-                    // 头像（圆角方）
                     Box(modifier = Modifier.size(96.dp)
                         .clip(RoundedCornerShape(22.dp))
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
                         if (acct != null && acct.avatarUri.isNotBlank()) {
                             if (acct.avatarUri.startsWith("http")) {
-                                // 网络头像（crafatar 等）
                                 KamelImage(
                                     resource = asyncPainterResource(data = acct.avatarUri),
                                     contentDescription = "头像",
@@ -497,7 +455,6 @@ fun LaunchScreen() {
                                     onFailure = { AvatarPlaceholder(acct.username, 96) },
                                 )
                             } else {
-                                // 本地文件头像
                                 val avatarFile = File(acct.avatarUri)
                                 val avatarBitmap = remember(acct.avatarUri, acct.uuid, avatarFile.lastModified()) {
                                     try {
@@ -524,7 +481,6 @@ fun LaunchScreen() {
 
                     Spacer(Modifier.height(10.dp))
 
-                    // 玩家名 + 左右切换箭头
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center,
@@ -573,7 +529,6 @@ fun LaunchScreen() {
 
                     Spacer(Modifier.height(6.dp))
 
-                    // 操作按钮行
                     Row(horizontalArrangement = Arrangement.Center) {
                         FilledTonalButton(
                             onClick = { showLoginDialog = true },
@@ -586,7 +541,6 @@ fun LaunchScreen() {
                             Text(if (isEn) (if (accountList.isEmpty()) "Login" else "Add") else (if (accountList.isEmpty()) "登录" else "添加"), style = MaterialTheme.typography.labelSmall)
                         }
                         if (acct != null) {
-                            // 离线账号：头像 + 换皮肤；第三方：头像 + 刷新皮肤；正版：刷新皮肤
                             if (acct.type == AccountType.Offline || acct.type == AccountType.ThirdParty) {
                                 Spacer(Modifier.width(6.dp))
                                 FilledTonalButton(
@@ -744,13 +698,7 @@ fun LaunchScreen() {
                 }
             }
 
-            // ════════════════════════════════════════════════════════════════
-            //  中间区域 —— 启动圆环 / 面部皮肤预览（条件切换）
-            //  launchProgress > 0 时显示居中的加载圆环 + 下方文字，
-            //  否则显示紧凑型面部皮肤预览（已导入/默认 Steve）
-            // ════════════════════════════════════════════════════════════════
 
-            // 将 displayMsg / launchProgress 定义提前，供中间区域使用
             val displayMsg by remember {
                 derivedStateOf {
                     when {
@@ -779,7 +727,6 @@ fun LaunchScreen() {
                     .wrapContentHeight(align = Alignment.CenterVertically),
             ) {
                 if (launchProgress > 0) {
-                    // ── 启动中：居中圆环 + 下方启动文字 ──
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -852,11 +799,9 @@ fun LaunchScreen() {
                         }
                     }
                 } else {
-                    // ── 未启动：紧凑型皮肤预览 ──
                     val acct = activeAccount
                     val isOffline = acct?.type == AccountType.Offline
                     val isMsaOrThirdParty = acct?.type == AccountType.MSA || acct?.type == AccountType.ThirdParty
-                    // 离线账户取本地路径，正版/第三方取URL（可能是 https://textures.minecraft.net/...）
                     val skinUri = acct?.skinUri.orEmpty()
                     val skinModelStr = if (isOffline) acct?.skinModel.orEmpty() else "classic"
                     val offlineUuid = acct?.uuid.orEmpty()
@@ -867,7 +812,6 @@ fun LaunchScreen() {
                         if (hasSkinFile) loadSkinFaceBitmap(skinUri, 64) else null
                     }
 
-                    // 对正版/第三方账户：从URL下载皮肤图，提取面部像素，缓存到内存
                     var networkFaceBmp by remember(skinUri) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
                     LaunchedEffect(skinUri) {
                         if (!hasSkinUrl) return@LaunchedEffect
@@ -908,7 +852,6 @@ fun LaunchScreen() {
                             ),
                     ) {
                         if (hasSkinFile && faceBmp != null) {
-                            // ── 离线账户：本地皮肤文件预览 ──
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
@@ -941,7 +884,6 @@ fun LaunchScreen() {
                                 }
                             }
                         } else if (hasSkinUrl) {
-                            // ── 正版/第三方账户：网络皮肤预览 ──
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
@@ -954,7 +896,6 @@ fun LaunchScreen() {
                                         contentScale = ContentScale.Crop,
                                     )
                                 } else {
-                                    // 加载中：使用头像 crafatar 预览
                                     val avatarUrl = acct?.avatarUri.orEmpty()
                                     if (avatarUrl.startsWith("http")) {
                                         KamelImage(
@@ -1054,15 +995,11 @@ fun LaunchScreen() {
                 }
             }
 
-            // ════════════════════════════════════════════════════════════════
-            //  底部区域 —— 状态消息 + 版本锚点 + 启动按钮
-            // ════════════════════════════════════════════════════════════════
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .wrapContentHeight(),
             ) {
-                // 底部仅在不启动时显示状态消息，启动时的状态已挪到中间区域
                 if (displayMsg.isNotBlank() && launchProgress == 0) {
                     Text(
                         displayMsg,
@@ -1190,7 +1127,6 @@ fun LaunchScreen() {
                                 return@Button
                             }
 
-                            // ── Java 版启动 ──
                             LaunchState.begin("正在检测 Java 环境…")
                             LaunchState.updateProgress(15)
                             scope.launch {
@@ -1342,13 +1278,10 @@ fun LaunchScreen() {
 
             }
         }
-    } // ← Row 结束
+    }
 
-    } // ← Box 结束
+    }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // 版本选择 Popup —— 悬浮于界面上方，绝对禁止破坏底部布局流
-    // ══════════════════════════════════════════════════════════════════════════
     if (versionPopupVisible.currentState || versionPopupVisible.targetState) {
         Popup(
             alignment = Alignment.BottomCenter,
@@ -1398,9 +1331,6 @@ fun LaunchScreen() {
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // 登录方式选择弹窗
-    // ══════════════════════════════════════════════════════════════════════════
     if (showLoginDialog) {
         AlertDialog(
             onDismissRequest = { showLoginDialog = false },
@@ -1491,9 +1421,6 @@ fun LaunchScreen() {
         )
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // 微软 OAuth Device Code 验证弹窗
-    // ══════════════════════════════════════════════════════════════════════════
     if (showMsAuthDialog) {
         val clipboard = LocalClipboardManager.current
         AlertDialog(
@@ -1556,7 +1483,6 @@ fun LaunchScreen() {
                                     scope.launch {
                                         try {
                                             val profile = AuthManager.fullLogin(deviceCodeInfo!!.deviceCode, deviceCodeInfo!!.interval)
-                                            // 通过 AccountRepository 持久化 MSA 账号
                                             AccountRepository.addMsaAccount(
                                                 msAccessToken = profile.msAccessToken,
                                                 refreshToken = profile.refreshToken,
@@ -1603,9 +1529,6 @@ fun LaunchScreen() {
         )
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // 第三方登录 (Authlib Injector / LittleSkin) 验证弹窗
-    // ══════════════════════════════════════════════════════════════════════════
     if (showThirdPartyDialog) {
         AlertDialog(
             onDismissRequest = { if (!tpLoading) showThirdPartyDialog = false },
@@ -1766,9 +1689,6 @@ fun LaunchScreen() {
         )
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // 自动更新弹窗
-    // ══════════════════════════════════════════════════════════════════════════
     if (updateState.hasUpdate && updateState.releaseInfo != null) {
         AlertDialog(
             onDismissRequest = {
@@ -1843,9 +1763,6 @@ fun LaunchScreen() {
         )
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // 致命错误 StackTrace 弹窗
-    // ══════════════════════════════════════════════════════════════════════════
     if (showErrorDialog) {
         AlertDialog(
             onDismissRequest = { showErrorDialog = false },
@@ -1907,9 +1824,6 @@ fun LaunchScreen() {
         )
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // 皮肤导入成功右下角弹窗（5秒自动消失）
-    // ══════════════════════════════════════════════════════════════════════════
     skinToastData?.let { info ->
         val animAlpha by animateFloatAsState(
             targetValue = if (skinToastData != null) 1f else 0f,
@@ -1968,10 +1882,8 @@ fun LaunchScreen() {
     }
 }
 
-/** 皮肤导入成功时右下角弹窗的数据 */
 private data class SkinToastInfo(val username: String, val modelLabel: String)
 
-/** 缓存统计数据的数据类，避免在 derivedStateOf 中返回 Pair/Triple */
 private data class StatsData(
     val totalLaunches: Int,
     val totalSec: Long,

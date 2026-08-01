@@ -497,7 +497,6 @@ object ModpackManager {
         onProgress: (String, Float) -> Unit,
     ): Boolean {
         val originalMirror = DownloadManager.activeMirror
-        // 彻底只用镜像源：安装原版不再回退官方源，仅使用 BMCLAPI 镜像（一次尝试）。
         val attempts = listOf("bmclapi")
 
         try {
@@ -675,21 +674,18 @@ object ModpackManager {
                         val nameMatch = dir.name == "$mcVersion-fabric-$loaderVersion" ||
                             ("net.fabricmc" in text && loaderVersion in text && mcVersion in text)
                         if (!nameMatch) return@mapNotNull null
-                        // 验证 fabric-loader JAR 存在，防止复用残缺安装
                         val loaderJar = File(minecraftDir, "libraries/net/fabricmc/fabric-loader/$loaderVersion/fabric-loader-$loaderVersion.jar")
                         if (loaderJar.isFile && loaderJar.length() > 0) dir.name else null
                     }
                     "NeoForge" -> {
                         val nameMatch = ("net.neoforged" in text || "neoforge" in dir.name.lowercase()) && loaderVersion in text
                         if (!nameMatch) return@mapNotNull null
-                        // 验证 universal JAR 存在
                         val uniJar = File(minecraftDir, "libraries/net/neoforged/neoforge/$loaderVersion/neoforge-$loaderVersion-universal.jar")
                         if (uniJar.isFile && uniJar.length() > 0) dir.name else null
                     }
                     "Forge" -> {
                         val nameMatch = ("net.minecraftforge" in text || "forge" in dir.name.lowercase()) && loaderVersion in text && mcVersion in text
                         if (!nameMatch) return@mapNotNull null
-                        // 验证 Forge 核心 JAR 存在，防止复用残缺安装
                         val forgeJarCandidates = listOf(
                             File(minecraftDir, "libraries/net/minecraftforge/forge/$mcVersion-$loaderVersion/forge-$mcVersion-$loaderVersion-universal.jar"),
                             File(minecraftDir, "libraries/net/minecraftforge/forge/$mcVersion-$loaderVersion/forge-$mcVersion-$loaderVersion-client.jar"),
@@ -904,9 +900,6 @@ object ModpackManager {
         val targetJson = File(targetDir, "$targetId.json")
         if (!sourceJson.isFile) return
 
-        // 覆盖前：确保原版 mcVersion 目录存在，否则 inheritsFrom 链会断裂。
-        // 原版 JSON/jar 可能只存在于 targetId 目录下（installBaseVersionRobust 以 customName 安装），
-        // 需要在覆盖前将其复制到 versions/<mcVersion>/ 下。
         ensureVanillaVersionExists(minecraftDir, mcVersion, targetId)
 
         val root = json.parseToJsonElement(sourceJson.readText(Charsets.UTF_8)).jsonObject.toMutableMap()
@@ -921,7 +914,6 @@ object ModpackManager {
         val vanillaJson = File(vanillaDir, "$mcVersion.json")
         val vanillaJar = File(vanillaDir, "$mcVersion.jar")
 
-        // 如果原版目录已完整则无需处理
         if (vanillaJson.isFile && vanillaJar.isFile && vanillaJar.length() > 0L) return
 
         val donorDir = File(minecraftDir, "versions/$donorVersionId")
@@ -930,7 +922,6 @@ object ModpackManager {
 
         vanillaDir.mkdirs()
 
-        // 复制 JSON（改 id 为 mcVersion，去掉 inheritsFrom）
         if (!vanillaJson.isFile && donorJson.isFile) {
             runCatching {
                 val root = json.parseToJsonElement(donorJson.readText(Charsets.UTF_8)).jsonObject.toMutableMap()
@@ -942,7 +933,6 @@ object ModpackManager {
             }
         }
 
-        // 复制或硬链接 jar
         if ((!vanillaJar.isFile || vanillaJar.length() <= 0L) && donorJar.isFile && donorJar.length() > 0L) {
             runCatching {
                 donorJar.copyTo(vanillaJar, overwrite = true)
@@ -1014,12 +1004,6 @@ object ModpackManager {
         logger.info("释放通用 ZIP 文件完成: $extracted 个")
     }
 
-    /**
-     * 下载 CurseForge 整合包 manifest 声明的模组/资源文件：
-     * 逐个解析 projectID/fileID 得到直链（分发受限时回退 forgecdn edge 地址），
-     * 按 classId 分流到 mods/resourcepacks/shaderpacks，再走统一并发下载引擎。
-     * 返回需要展示给用户的警告文本（无警告时为 null）。
-     */
     private suspend fun downloadCurseForgeFiles(
         definition: PackDefinition,
         instanceDir: File,
@@ -1153,7 +1137,6 @@ object ModpackManager {
         logger.info("并发下载 $total 个资源（PCL 风格：全局池 + 速度自适应扩容 + 多源竞速）")
         onProgress("并发下载整合包资源 0/$total", 0f)
         try {
-            // PCL 风格引擎：按实时速度动态扩容线程，直到带宽饱和；慢源快速失败切镜像
             DownloadManager.downloadModpackFiles(tasks) { done, _, currentFile ->
                 onProgress("并发下载整合包资源 $done/$total: $currentFile", done.toFloat() / total)
             }
@@ -1163,31 +1146,19 @@ object ModpackManager {
         }
     }
 
-    /**
-     * 构建候选 URL 列表 — 强制镜像
-     *
-     * 所有 Modrinth/CurseForge 直链都经 BMCLAPIDownloadProvider 注入为
-     * MCIM（mod.mcimirror.top）镜像，且不保留任何官方源兜底。
-     * 无对应镜像的非标准第三方直链会记录告警（标准整合包不会出现）。
-     *
-     * SHA-1 精准下载链接作为高优先级候选（镜像化后同样指向 mcimirror）。
-     */
     private fun buildModrinthCandidateUrls(entry: ModrinthRemoteFile, logger: ImportLogger): List<String> {
         val rawUrls = linkedSetOf<String>()
 
-        // SHA-1 精准下载 URL — 最高优先级（不依赖 CDN 重定向，更快更稳定）
         entry.sha1?.takeIf { it.isNotBlank() }?.let { sha1 ->
             rawUrls.add("https://api.modrinth.com/v2/version_file/$sha1/download?algorithm=sha1")
         }
 
-        // mrpack 内 CDN 直链
         entry.urls.forEach { raw ->
             if (raw.isNotBlank()) {
                 rawUrls.add(raw)
             }
         }
 
-        // 强制镜像化：命中镜像规则 → 只返回 mcimirror 镜像（无官方兜底）
         val mirrored = DownloadManager.downloadProvider.injectURLsWithCandidates(rawUrls.toList())
         mirrored.forEach { url ->
             if (!url.contains("mcimirror.top")) {
@@ -1342,11 +1313,6 @@ object ModpackManager {
         }
     }
 
-    /**
-     * 打开 ZIP 文件，自动检测编码。
-     * 优先 UTF-8，失败后尝试 GB18030。
-     * 对齐 PCL 的整合包解压策略。
-     */
     private fun openZipWithFallbackEncoding(file: File): ZipFile {
         fun openAndScan(charset: Charset): ZipFile {
             val zf = ZipFile(file, charset)

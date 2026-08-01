@@ -91,7 +91,6 @@ fun SettingsScreen() {
     }
 
     val scrollState = rememberScrollState()
-    // 监听页面滚动位置，更新底栏淡出隐藏状态
     LaunchedEffect(scrollState) {
         snapshotFlow { scrollState.value to scrollState.maxValue }
             .collect { (value, max) ->
@@ -101,7 +100,6 @@ fun SettingsScreen() {
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // ── 标题区 ────────────────────────────────────────────────────────────
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier.size(44.dp).clip(RoundedCornerShape(14.dp))
@@ -126,7 +124,6 @@ fun SettingsScreen() {
             }
             Spacer(Modifier.height(14.dp))
 
-            // ── 分类切换 Pills ────────────────────────────────────────────────────
             Row(
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -162,9 +159,7 @@ fun SettingsScreen() {
             Box(modifier = Modifier.weight(1f)) {
                 Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState).padding(end = 8.dp)) {
                     when (selectedTab) {
-                        // ════════════════════════════════════════ 通用 ═══
                         0 -> {
-                            // ── 语言 ─────────────────────────────────────
                             SettingsSection(if (isEn) "Language" else "语言", Icons.Filled.Language) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                     listOf("zh" to "中文", "en" to "English").forEach { (code, label) ->
@@ -190,7 +185,6 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            // ── 外观 ────────────────────────────────────
                             SettingsSection(if (isEn) "Appearance" else "外观", Icons.Filled.Palette) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                     listOf(
@@ -218,7 +212,6 @@ fun SettingsScreen() {
                                     }
                                 }
                                 Spacer(Modifier.height(12.dp))
-                                // ── 强调色 ─────────────────────────────────
                                 val accentNames = AccentNames
                                 val accentNamesEn = AccentNamesEn
                                 val currentAccentIdx = AllAccents.indexOf(ThemeState.accent).let { if (it < 0) 0 else it }
@@ -259,7 +252,6 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            // ── 背景图片 ─────────────────────────────────
                             var showBgPicker by remember { mutableStateOf(false) }
                             SettingsSection(if (isEn) "Background" else "背景图片", Icons.Filled.Wallpaper) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -325,7 +317,6 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            // ── 界面微调 ─────────────────────────────────
                             SettingsSection(if (isEn) "UI Tuning" else "界面微调", Icons.Filled.Tune) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -347,7 +338,6 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            // ── 导航设置 ─────────────────────────────────
                             var navModeExpanded by remember { mutableStateOf(false) }
                             val navModeOptions = if (isEn) listOf("sidebar" to "Sidebar", "floating" to "Floating Bottom Bar") else listOf("sidebar" to "侧边栏", "floating" to "浮动底栏")
                             SettingsSection(if (isEn) "Navigation" else "导航设置", Icons.Filled.DirectionsBoat) {
@@ -397,7 +387,6 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            // ── 下载设置 ─────────────────────────────────
                             var mirrorExpanded by remember { mutableStateOf(false) }
                             val mirrorOptions = if (isEn)
                                 listOf("bmclapi" to "BMCLAPI", "mojang" to "Mojang Official")
@@ -435,7 +424,6 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            // ── 启动行为 ─────────────────────────────────
                             var startupPageExpanded by remember { mutableStateOf(false) }
                             val startupPageOptions = if (isEn)
                                 listOf("launch" to "Launch", "versions" to "Versions", "download" to "Downloads")
@@ -470,7 +458,6 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            // ── 网络代理 ─────────────────────────────────
                             SettingsSection(if (isEn) "Network Proxy" else "网络代理", Icons.Filled.NetworkCheck) {
                                 Text(if (isEn) "All HTTP requests (downloads, login, news) route through proxy when set" else "配置后所有 HTTP 请求（下载/登录/资讯）均经过代理，空则直连", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(Modifier.height(8.dp))
@@ -485,7 +472,6 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            // ── 恢复默认 ─────────────────────────────────
                             OutlinedButton(
                                 onClick = {
                                     scope.launch {
@@ -517,7 +503,6 @@ fun SettingsScreen() {
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                             Spacer(Modifier.height(16.dp))
                             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                                // 使用 Box+clickable 替代直接 Text.clickable，避免滚动容器中点击事件被拦截
                                 Box(modifier = Modifier.clickable { openExternalUrl("https://md3l.top") }) {
                                     Text("MD3L", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black), color = MaterialTheme.colorScheme.primary)
                                 }
@@ -537,7 +522,6 @@ fun SettingsScreen() {
                             Spacer(Modifier.height(24.dp))
                         }
 
-                        // ════════════════════════════════════════ Java 版 ═
                         1 -> {
                             SettingsSection("Java 运行环境", Icons.Filled.Code) {
                                 ExposedDropdownMenuBox(expanded = javaDropdownExpanded, onExpandedChange = { javaDropdownExpanded = it }) {
@@ -641,7 +625,6 @@ fun SettingsScreen() {
                                                     }
                                                 },
                                                 onClick = {
-                                                    // 双向同步：GC 策略变更 → 更新 customJvmArgs 中的 GC 标志
                                                     val oldGcFlag = "-XX:+Use${settings.gcPolicy}"
                                                     val newGcFlag = when (gc) {
                                                         "G1GC" -> "-XX:+UseG1GC -XX:+UnlockExperimentalVMOptions"
@@ -664,7 +647,6 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            // ── 动态 GC 精细调节面板 ────────────────────────────────
                             when (settings.gcPolicy) {
                                 "G1GC" -> {
                                     SettingsSection("G1GC 精细调节", Icons.Filled.Tune) {
@@ -855,12 +837,10 @@ private fun SettingsToggleRow(
 
 private fun openExternalUrl(url: String) {
     runCatching {
-        // 优先使用 java.awt.Desktop（Windows/macOS）
         if (Desktop.isDesktopSupported()) {
             Desktop.getDesktop().browse(URI(url))
             return
         }
-        // Linux 回退：xdg-open
         val os = System.getProperty("os.name").lowercase()
         if (os.contains("linux") || os.contains("nix") || os.contains("nux")) {
             Runtime.getRuntime().exec(arrayOf("xdg-open", url))
@@ -909,9 +889,6 @@ private fun SettingsSection(
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// 调整教程对话框
-// ═══════════════════════════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -929,7 +906,6 @@ private fun SettingsTutorialDialog(onDismiss: () -> Unit) {
             modifier = Modifier.widthIn(max = 800.dp).fillMaxHeight(0.92f),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // ── 标题栏 ────────────────────────────────────────────────────────
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 4.dp, top = 8.dp, bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -951,7 +927,6 @@ private fun SettingsTutorialDialog(onDismiss: () -> Unit) {
                         Icon(Icons.Filled.Close, contentDescription = null)
                     }
                 }
-                // ── 标签切换 ──────────────────────────────────────────────────────
                 TabRow(
                     selectedTabIndex = tab,
                     containerColor = MaterialTheme.colorScheme.surface,
@@ -967,14 +942,11 @@ private fun SettingsTutorialDialog(onDismiss: () -> Unit) {
                     }
                 }
                 HorizontalDivider()
-                // ── 内容区域 ────────────────────────────────────────────────────────
                 Box(modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp)) {
                     val scrollState = rememberScrollState()
                     Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState).padding(vertical = 12.dp, horizontal = 4.dp)) {
                         when (tab) {
-                            // ════════════════════════════════════════════ 通用 ═══
                             0 -> GeneralTutorial(isEn)
-                            // ════════════════════════════════════════════ Java 版 ═══
                             1 -> JavaTutorial(isEn)
                         }
                         Spacer(Modifier.height(80.dp))
@@ -985,7 +957,6 @@ private fun SettingsTutorialDialog(onDismiss: () -> Unit) {
     }
 }
 
-// ── 通用设置教程 ─────────────────────────────────────────────────────────────
 @Composable
 private fun GeneralTutorial(isEn: Boolean) {
     TutorialGroup(icon = Icons.Filled.Palette, title = if (isEn) "Appearance" else "外观") {
@@ -1268,7 +1239,6 @@ private fun GeneralTutorial(isEn: Boolean) {
     }
 }
 
-// ── Java 版设置教程 ─────────────────────────────────────────────────────────
 @Composable
 private fun JavaTutorial(isEn: Boolean) {
     TutorialGroup(icon = Icons.Filled.FolderOpen, title = if (isEn) "Basic" else "基础") {
@@ -1536,7 +1506,6 @@ private fun JavaTutorial(isEn: Boolean) {
     }
 }
 
-// ── 辅助组件 ────────────────────────────────────────────────────────────────
 
 @Composable
 private fun TutorialGroup(

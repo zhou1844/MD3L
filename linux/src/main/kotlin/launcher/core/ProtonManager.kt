@@ -213,7 +213,6 @@ object ProtonManager {
                                 continue
                             }
 
-                            // 优先用 GitHub API 返回的 releaseSize 作为总大小（代理响应头可能缺失 Content-Length）
                             val contentLen = response.headers().firstValue("Content-Length").map { it.toLong() }.orElse(-1L)
                             val totalSize = if (contentLen > 0) contentLen else targetVersion.releaseSize
                             downloadPath.deleteRecursively()
@@ -228,11 +227,9 @@ object ProtonManager {
                                         ensureActive()
                                         output.write(buffer, 0, len)
                                         downloaded += len
-                                        // 实时汇报：每 ~256KB 或下载完成时更新一次
                                         if (downloaded - lastEmit >= 256 * 1024 || downloaded == totalSize) {
                                             lastEmit = downloaded
                                             val pct = if (totalSize > 0) (downloaded * 100 / totalSize).toInt().coerceIn(0, 100) else -1
-                                            // pct<0（总大小未知）时也照常汇报字节数，避免 lastPercent 去重导致永不更新
                                             if (pct != lastPercent || pct < 0) {
                                                 lastPercent = pct
                                                 val frac = if (totalSize > 0) (0.1f + (downloaded.toFloat() / totalSize) * 0.5f).coerceIn(0.1f, 0.6f) else 0.3f
@@ -245,7 +242,6 @@ object ProtonManager {
                                                     fraction = frac,
                                                     isRunning = true,
                                                 )
-                                                // 启动流程中自动安装时同步到 LaunchState，实现启动页实时进度
                                                 if (LaunchState.isLaunching.value) {
                                                     LaunchState.updateProgress(
                                                         (40 + (frac - 0.1f) / 0.5f * 50).toInt().coerceIn(40, 90),

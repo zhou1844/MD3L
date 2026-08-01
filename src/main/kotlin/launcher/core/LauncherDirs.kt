@@ -2,16 +2,6 @@ package launcher.core
 
 import java.io.File
 
-/**
- * 启动器数据目录管理。
- * 所有持久化数据存储在启动器 EXE/JAR 同目录下的 "data" 子文件夹，
- * 而非用户主目录，保证便携性。
- *
- * 日志目录结构：
- *   <launcherDir>/log/          ← 启动器自身日志（渲染、启动事件等）
- *   <launcherDir>/log/Java/     ← Java 版游戏相关日志
- *   <launcherDir>/log/bedrock/  ← 基岩版游戏相关日志
- */
 object LauncherDirs {
 
 
@@ -80,7 +70,6 @@ object LauncherDirs {
     }
 
     private fun resolveExeDir(): File? {
-        // 1. 当前进程自身（打包 EXE 时有效）
         val own = runCatching {
             ProcessHandle.current().info().command().orElse("")
         }.getOrNull().orEmpty()
@@ -91,7 +80,6 @@ object LauncherDirs {
             return File(own).parentFile?.takeIf { it.isDirectory }
         }
 
-        // 2. 父进程链（某些打包方式下进程名为 wrapper）
         var ph: ProcessHandle? = runCatching {
             ProcessHandle.current().parent().orElse(null)
         }.getOrNull()
@@ -107,7 +95,6 @@ object LauncherDirs {
             ph = runCatching { ph?.parent()?.orElse(null) }.getOrNull()
         }
 
-        // 3. JAR 自身路径
         val jarUrl = LauncherDirs::class.java.protectionDomain?.codeSource?.location
         if (jarUrl != null) {
             val jarFile = runCatching { File(jarUrl.toURI()) }.getOrNull()

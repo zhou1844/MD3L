@@ -37,10 +37,6 @@ object ModpackManager {
         val curseFiles: List<CurseFileRef> = emptyList(),
     )
 
-    /**
-     * CurseForge 整合包 manifest.json 中的文件引用。
-     * 每个条目对应一个需要从 CurseForge 下载的模组文件。
-     */
     private data class CurseFileRef(
         val projectID: Int,
         val fileID: Int,
@@ -257,7 +253,6 @@ object ModpackManager {
                 val name = manifest["name"]?.jsonPrimitive?.contentOrNull ?: packFile.nameWithoutExtension
                 val overrides = manifest["overrides"]?.jsonPrimitive?.contentOrNull?.normalizeRootPrefix()
                     ?: "overrides/"
-                // 解析 CurseForge files 数组 — 每个元素包含 projectID 和 fileID
                 val curseFiles = manifest["files"]?.jsonArray?.mapNotNull { el ->
                     val obj = el.jsonObject
                     val projectID = obj["projectID"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
@@ -691,21 +686,18 @@ object ModpackManager {
                         val nameMatch = dir.name == "$mcVersion-fabric-$loaderVersion" ||
                             ("net.fabricmc" in text && loaderVersion in text && mcVersion in text)
                         if (!nameMatch) return@mapNotNull null
-                        // 验证 fabric-loader JAR 存在，防止复用残缺安装
                         val loaderJar = File(minecraftDir, "libraries/net/fabricmc/fabric-loader/$loaderVersion/fabric-loader-$loaderVersion.jar")
                         if (loaderJar.isFile && loaderJar.length() > 0) dir.name else null
                     }
                     "NeoForge" -> {
                         val nameMatch = ("net.neoforged" in text || "neoforge" in dir.name.lowercase()) && loaderVersion in text
                         if (!nameMatch) return@mapNotNull null
-                        // 验证 universal JAR 存在
                         val uniJar = File(minecraftDir, "libraries/net/neoforged/neoforge/$loaderVersion/neoforge-$loaderVersion-universal.jar")
                         if (uniJar.isFile && uniJar.length() > 0) dir.name else null
                     }
                     "Forge" -> {
                         val nameMatch = ("net.minecraftforge" in text || "forge" in dir.name.lowercase()) && loaderVersion in text && mcVersion in text
                         if (!nameMatch) return@mapNotNull null
-                        // 验证 Forge 核心 JAR 存在，防止复用残缺安装
                         val forgeJarCandidates = listOf(
                             File(minecraftDir, "libraries/net/minecraftforge/forge/$mcVersion-$loaderVersion/forge-$mcVersion-$loaderVersion-universal.jar"),
                             File(minecraftDir, "libraries/net/minecraftforge/forge/$mcVersion-$loaderVersion/forge-$mcVersion-$loaderVersion-client.jar"),
@@ -924,9 +916,6 @@ object ModpackManager {
         val targetJson = File(targetDir, "$targetId.json")
         if (!sourceJson.isFile) return
 
-        // 覆盖前：确保原版 mcVersion 目录存在，否则 inheritsFrom 链会断裂。
-        // 原版 JSON/jar 可能只存在于 targetId 目录下（installBaseVersionRobust 以 customName 安装），
-        // 需要在覆盖前将其复制到 versions/<mcVersion>/ 下。
         ensureVanillaVersionExists(minecraftDir, mcVersion, targetId)
 
         val root = json.parseToJsonElement(sourceJson.readText(Charsets.UTF_8)).jsonObject.toMutableMap()
@@ -941,7 +930,6 @@ object ModpackManager {
         val vanillaJson = File(vanillaDir, "$mcVersion.json")
         val vanillaJar = File(vanillaDir, "$mcVersion.jar")
 
-        // 如果原版目录已完整则无需处理
         if (vanillaJson.isFile && vanillaJar.isFile && vanillaJar.length() > 0L) return
 
         val donorDir = File(minecraftDir, "versions/$donorVersionId")
@@ -950,7 +938,6 @@ object ModpackManager {
 
         vanillaDir.mkdirs()
 
-        // 复制 JSON（改 id 为 mcVersion，去掉 inheritsFrom）
         if (!vanillaJson.isFile && donorJson.isFile) {
             runCatching {
                 val root = json.parseToJsonElement(donorJson.readText(Charsets.UTF_8)).jsonObject.toMutableMap()
@@ -962,7 +949,6 @@ object ModpackManager {
             }
         }
 
-        // 复制或硬链接 jar
         if ((!vanillaJar.isFile || vanillaJar.length() <= 0L) && donorJar.isFile && donorJar.length() > 0L) {
             runCatching {
                 donorJar.copyTo(vanillaJar, overwrite = true)
@@ -1108,23 +1094,13 @@ object ModpackManager {
         }
     }
 
-    /**
-     * 构建候选 URL 列表 — HMCL 风格
-     *
-     * 返回原始 URL（raw），由 DownloadManager 通过
-     * DownloadProvider.injectURLsWithCandidates 自动注入镜像。
-     *
-     * 额外加上 SHA-1 精准下载 URL 作为高优先级候选。
-     */
     private fun buildModrinthCandidateUrls(entry: ModrinthRemoteFile): List<String> {
         val candidates = linkedSetOf<String>()
 
-        // SHA-1 精准下载 URL — 最高优先级（不依赖 CDN 重定向，更快更稳定）
         entry.sha1?.takeIf { it.isNotBlank() }?.let { sha1 ->
             candidates.add("https://api.modrinth.com/v2/version_file/$sha1/download?algorithm=sha1")
         }
 
-        // 原始 CDN URLs — DownloadProvider.injectURLsWithCandidates 自动注入镜像
         entry.urls.forEach { raw ->
             if (raw.isNotBlank()) {
                 candidates.add(raw)
@@ -1158,15 +1134,6 @@ object ModpackManager {
         return md.digest().joinToString("") { "%02x".format(it) }
     }
 
-    /**
-     * 下载 CurseForge 整合包中的模组文件（参照 HMCL CurseCompletionTask）。
-     *
-     * 策略：
-     * 1. 逐文件调用 API 获取 fileName 和 downloadUrl（使用 ModrinthApi Ktor 客户端 + api.curse.tools 代理）
-     * 2. 并发查询（Semaphore(16) 限流，与 HMCL 一致）
-     * 3. 优先使用 CDN 直连 URL（edge.forgecdn.net，使用真实文件名），API 返回的 downloadUrl 作为备用
-     * 4. 通过 DownloadManager.downloadAllIsolated 并发下载
-     */
     private suspend fun downloadCurseForgeFiles(
         curseFiles: List<CurseFileRef>,
         instanceDir: File,
@@ -1233,7 +1200,6 @@ object ModpackManager {
         logger.info("CurseForge 文件查询完成: 成功 ${resolved.size}/$total, 失败 ${failed.get()}")
         println("[ModpackImport] CurseForge: 查询完成，成功 ${resolved.size}/$total ${if (failed.get() > 0) "(失败 ${failed.get()})" else ""}")
 
-        // 构建下载任务（参照 HMCL CurseCompletionTask.guessFilePath + FileDownloadTask）
         val tasks = resolved.mapNotNull { r ->
             val effectiveFileName = r.fileName.ifBlank {
                 r.downloadUrl.substringAfterLast('/').substringBefore('?')
@@ -1282,34 +1248,18 @@ object ModpackManager {
         }
     }
 
-    /**
-     * 构建 CurseForge 文件下载的候选 URL 列表（参照 HMCL CurseManifestFile.url()）。
-     *
-     * 优先级：
-     * 1. CDN 直连 URL（edge.forgecdn.net / media.forgecdn.net，使用 API 返回的真实文件名）— 最快
-     * 2. API 代理返回的 downloadUrl — 备用
-     * 3. 未知文件名时用 projectID-fileID.jar 兜底 — 最后的尝试
-     * 4. 镜像 URL（由 DownloadProvider.injectURLsWithCandidates 自动注入）
-     */
     private fun buildCurseForgeCandidateUrls(downloadUrl: String, projectID: Int, fileID: Int, fileName: String = ""): List<String> {
         val candidates = linkedSetOf<String>()
 
-        // 方法 1（CDN 直连 — 优先级最高，最快）：
-        //   使用 API 返回的真实文件名构造 edge/media.forgecdn.net URL。
-        //   HMCL 同样使用此公式：fileID/1000 / fileID%1000 / fileName
         if (fileName.isNotBlank()) {
             candidates.add("https://edge.forgecdn.net/files/${fileID / 1000}/${fileID % 1000}/$fileName")
             candidates.add("https://media.forgecdn.net/files/${fileID / 1000}/${fileID % 1000}/$fileName")
         }
 
-        // 方法 2（API 直接下载 — 备用）：
-        //   使用 API 代理返回的 downloadUrl。
         if (downloadUrl.isNotBlank()) {
             candidates.add(downloadUrl)
         }
 
-        // 方法 3（最后的兜底 — 文件名未知时用 projectID-fileID 尝试）：
-        //   此 URL 大概率不可达，但万一原始 CDN 使用的是这类命名格式则仍然有效
         if (candidates.isEmpty()) {
             candidates.add("https://edge.forgecdn.net/files/${fileID / 1000}/${fileID % 1000}/$projectID-$fileID.jar")
             candidates.add("https://media.forgecdn.net/files/${fileID / 1000}/${fileID % 1000}/$projectID-$fileID.jar")
@@ -1439,11 +1389,6 @@ object ModpackManager {
         }
     }
 
-    /**
-     * 打开 ZIP 文件，自动检测编码。
-     * 优先 UTF-8，失败后尝试 GB18030。
-     * 对齐 PCL 的整合包解压策略。
-     */
     private fun openZipWithFallbackEncoding(file: File): ZipFile {
         fun openAndScan(charset: Charset): ZipFile {
             val zf = ZipFile(file, charset)

@@ -86,7 +86,6 @@ fun BedrockWorldManagerScreen(versionId: String, versionDir: String) {
     LaunchedEffect(versionId) { refresh() }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // 顶部栏
         Row(verticalAlignment = Alignment.CenterVertically) {
             FilledTonalIconButton(
                 onClick = { Navigator.back() },
@@ -254,7 +253,6 @@ fun BedrockWorldManagerScreen(versionId: String, versionDir: String) {
                                         overflow = TextOverflow.Ellipsis,
                                     )
                                 }
-                                // 导出按钮
                                 val isExporting = exportingWorld == world.name
                                 IconButton(
                                     onClick = {
@@ -282,7 +280,6 @@ fun BedrockWorldManagerScreen(versionId: String, versionDir: String) {
                                         )
                                     }
                                 }
-                                // 删除按钮
                                 IconButton(
                                     onClick = { confirmDeleteTarget = world },
                                     modifier = Modifier.size(36.dp),
@@ -306,7 +303,6 @@ fun BedrockWorldManagerScreen(versionId: String, versionDir: String) {
         }
     }
 
-    // 删除确认对话框
     val target = confirmDeleteTarget
     if (target != null) {
         AlertDialog(
@@ -364,7 +360,6 @@ private fun doImportWorld(versionDir: String, versionId: String): String {
                     candidate
                 }
                 dest.mkdirs()
-                // First pass: detect single top-level wrapper dir (mctemplate pattern)
                 val allEntries = mutableListOf<String>()
                 java.util.zip.ZipFile(f).use { zf -> zf.entries().asSequence().forEach { allEntries += it.name } }
                 val topDirs = allEntries.mapNotNull { it.split('/').firstOrNull()?.takeIf { d -> d.isNotBlank() } }.toSet()
@@ -419,7 +414,6 @@ private fun doExportWorld(worldDir: File, levelName: String): String {
     } catch (e: Exception) { "导出失败: ${e.message}" }
 }
 
-// 尝试从 levelname.txt 读取地图显示名，如不存在则返回 null 
 private fun readLevelName(worldDir: File): String? {
     val nameFile = File(worldDir, "levelname.txt")
     if (nameFile.isFile) {

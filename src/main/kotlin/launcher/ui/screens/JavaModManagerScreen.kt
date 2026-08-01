@@ -162,7 +162,6 @@ fun JavaModManagerScreen(versionId: String, versionDir: String) {
                 val enabledCount = mods.count { it.isEnabled }
                 val totalCount = mods.size
 
-                // Summary bar
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -216,7 +215,6 @@ fun JavaModManagerScreen(versionId: String, versionDir: String) {
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    // File icon
                                     Box(
                                         modifier = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp))
                                             .background(MaterialTheme.colorScheme.secondaryContainer),
@@ -256,7 +254,6 @@ fun JavaModManagerScreen(versionId: String, versionDir: String) {
                                                 MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
                                         )
                                     }
-                                    // Enable/Disable toggle
                                     Switch(
                                         checked = mod.isEnabled,
                                         onCheckedChange = { checked ->
@@ -270,7 +267,6 @@ fun JavaModManagerScreen(versionId: String, versionDir: String) {
                                         modifier = Modifier.size(width = 40.dp, height = 24.dp),
                                     )
                                     Spacer(Modifier.width(4.dp))
-                                    // Delete button
                                     IconButton(
                                         onClick = { confirmDeleteTarget = mod },
                                         modifier = Modifier.size(32.dp),
@@ -295,7 +291,6 @@ fun JavaModManagerScreen(versionId: String, versionDir: String) {
         }
     }
 
-    // 删除确认对话框
     val target = confirmDeleteTarget
     if (target != null) {
         AlertDialog(

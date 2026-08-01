@@ -65,7 +65,6 @@ fun VersionScreen() {
     val bedrockDownloading by BedrockDownloadManager.downloadingVersions.collectAsState()
     val bedrockDownloadResults by BedrockDownloadManager.downloadResults.collectAsState()
 
-    // BottomSheet 状态
     var selectedVersion by remember { mutableStateOf<LocalVersion?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showSheet by remember { mutableStateOf(false) }
@@ -87,7 +86,6 @@ fun VersionScreen() {
         if (bedrockDownloading.isNotEmpty() || bedrockDownloadResults.isEmpty()) return@LaunchedEffect
         refresh()
     }
-    // 监听所有下载任务完成，当 Java 版本安装完成时自动刷新版本列表
     val downloadTasks by DownloadHub.tasks.collectAsState()
     LaunchedEffect(downloadTasks) {
         val hasJustCompletedJava = downloadTasks.any { t ->
@@ -99,7 +97,6 @@ fun VersionScreen() {
         }
     }
 
-    // 使用 derivedStateOf 缓存过滤结果，避免每次重组都重新计算
     val filteredVersions by remember {
         derivedStateOf {
             val allVersions = when {
@@ -115,7 +112,6 @@ fun VersionScreen() {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // 标题区
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier.size(44.dp).clip(RoundedCornerShape(14.dp))
@@ -132,7 +128,6 @@ fun VersionScreen() {
         }
         Spacer(Modifier.height(16.dp))
 
-        // 搜索栏
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
@@ -146,7 +141,6 @@ fun VersionScreen() {
         )
         Spacer(Modifier.height(10.dp))
 
-        // 过滤 Pills + 操作按钮
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             val filterTypes = listOf(null to "全部", LoaderType.Vanilla to "原版", LoaderType.Forge to "Forge", LoaderType.NeoForge to "NeoForge", LoaderType.Fabric to "Fabric", null to "基岩版")
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f)) {
@@ -185,16 +179,13 @@ fun VersionScreen() {
                                     runCatching { refresh() }
                                 }
                             } else if (ext == "md3l") {
-                                // .md3l 需要目标版本：弹出提示让用户先选中版本后从版本管理面板导入
                                 sheetMessage = "请在版本管理面板中选择目标基岩版版本后使用导入功能，或将 .md3l 文件拖入版本列表"
                             } else if (ext in setOf("appx", "msixvc", "msixbundle", "appxbundle", "msix")) {
-                                // 直接导入基岩版包文件 — 解压至 bedrock_versions/<version>
                                 val versionName = file.nameWithoutExtension
                                     .replace(Regex("^Minecraft[-.]"), "")
                                     .replace(Regex("^Microsoft\\.MinecraftUWP[-_]"), "")
                                     .replace(Regex("_(?:x64|x86|arm64|neutral)__[0-9a-fA-F]+\$"), "")
                                 sheetMessage = "正在导入基岩版包 $versionName ..."
-                                // installFromFile 内部通过 emit() 自动更新 DownloadHub 进度（含逐文件百分比提示）
                                 val result = BedrockDownloadManager.installFromFile(file, versionName)
                                 sheetMessage = result
                                 runCatching { refresh() }
@@ -228,7 +219,6 @@ fun VersionScreen() {
         }
         Spacer(Modifier.height(12.dp))
 
-        // 版本列表
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -248,7 +238,6 @@ fun VersionScreen() {
             }
         } else {
             val gridState = rememberLazyGridState()
-            // 监听网格滚动位置，更新底栏淡出隐藏状态
             LaunchedEffect(gridState) {
                 snapshotFlow {
                     val canScrollForward = gridState.canScrollForward
@@ -259,7 +248,6 @@ fun VersionScreen() {
                 }.collect { (canScrollForward, firstIdx, totalItems) ->
                     NavBarScrollState.scrollFraction.value = when {
                         totalItems == 0 -> 0f
-                        // 内容太少不足以滚动 → 保持导航栏可见
                         !canScrollForward && firstIdx == 0 -> 0f
                         !canScrollForward -> 1f
                         else -> (firstIdx.toFloat() / totalItems.toFloat()).coerceIn(0f, 0.99f)
@@ -294,7 +282,6 @@ fun VersionScreen() {
         }
     }
 
-    // ModalBottomSheet: 版本管理面板
     if (showSheet && selectedVersion != null) {
         val ver = selectedVersion!!
         ModalBottomSheet(
@@ -305,12 +292,10 @@ fun VersionScreen() {
         ) {
             val sheetScrollState = rememberScrollState()
             Column(modifier = Modifier.fillMaxWidth().verticalScroll(sheetScrollState).padding(horizontal = 24.dp, vertical = 8.dp)) {
-                // 标题
                 Text(ver.id, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
                 Text("${ver.loaderType.name} · ${ver.type}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(20.dp))
 
-                // 重命名（仅 Java 版支持）
                 if (ver.type != "bedrock") {
                     Text(if (isEn) "Rename Version" else "重命名版本", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
                     Spacer(Modifier.height(8.dp))
@@ -350,7 +335,6 @@ fun VersionScreen() {
                     Spacer(Modifier.height(16.dp))
                 }
 
-                // 自定义 Java 路径（仅 Java 版支持）
                 if (ver.type != "bedrock") {
                     Text(if (isEn) "Custom Java Path (optional)" else "自定义 Java 路径（可选）", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
                     Spacer(Modifier.height(8.dp))
@@ -359,7 +343,6 @@ fun VersionScreen() {
                             value = ver.customJavaPath,
                             onValueChange = { newPath ->
                                 selectedVersion = ver.copy(customJavaPath = newPath)
-                                // 自动保存到 .md3l_java 文件
                                 scope.launch(Dispatchers.IO) {
                                     val javaCfgFile = File(ver.versionDir, ".md3l_java")
                                     if (newPath.isBlank()) {
@@ -393,7 +376,6 @@ fun VersionScreen() {
                                     }
                                     if (chosen != null) {
                                         selectedVersion = ver.copy(customJavaPath = chosen)
-                                        // 自动保存
                                         withContext(Dispatchers.IO) {
                                             File(ver.versionDir, ".md3l_java").writeText(chosen, Charsets.UTF_8)
                                         }
@@ -410,7 +392,6 @@ fun VersionScreen() {
                             FilledTonalIconButton(
                                 onClick = {
                                     selectedVersion = ver.copy(customJavaPath = "")
-                                    // 自动清除
                                     scope.launch(Dispatchers.IO) {
                                         File(ver.versionDir, ".md3l_java").delete()
                                     }
@@ -425,7 +406,6 @@ fun VersionScreen() {
                     Spacer(Modifier.height(16.dp))
                 }
 
-                // 操作按钮
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     FilledTonalButton(
                         onClick = {
@@ -467,7 +447,6 @@ fun VersionScreen() {
                     }
                 }
 
-                // Java 模组管理
                 if (ver.type != "bedrock") {
                     Spacer(Modifier.height(16.dp))
                     FilledTonalButton(
@@ -506,7 +485,6 @@ fun VersionScreen() {
                     }
                 }
 
-                // 基岩版: 包管理
                 if (ver.type == "bedrock") {
                     Spacer(Modifier.height(16.dp))
                     Text(if (isEn) "Pack Management" else "包管理", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
@@ -642,7 +620,6 @@ fun VersionScreen() {
                     }
                 }
 
-                // 消息
                 if (sheetMessage.isNotBlank()) {
                     Spacer(Modifier.height(12.dp))
                     Text(sheetMessage, style = MaterialTheme.typography.bodySmall,
@@ -655,9 +632,6 @@ fun VersionScreen() {
     }
 }
 
-/**
- * 版本卡片——使用自定义 interactionSource + ripple 消除桌面端白色 Focus Ring。
- */
 @Composable
 private fun VersionCard(version: LocalVersion, onClick: () -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -707,16 +681,7 @@ private fun VersionCard(version: LocalVersion, onClick: () -> Unit) {
     }
 }
 
-// 重命名和删除操作已委托给 VersionRepository，
-// 使用 java.nio.file.Files.move 原子操作 + invalidateCache() 驱动 UI 重组。
 
-/**
- * 选择并导入基岩版包文件（行为包/资源包/addon）到版本目录。
- * @param versionDir 基岩版版本目录
- * @param subFolder  子目录名: behavior_packs / resource_packs / addon
- * @param extension  文件扩展名: mcpack / mcaddon
- * @param label      显示名
- */
 private fun importBedrockPack(
     versionDir: String,
     versionId: String,
@@ -744,7 +709,6 @@ private fun importBedrockPack(
             ?: throw RuntimeException("无法解析 Minecraft 根目录")
 
         val engine = BedrockLaunchEngine()
-        // 通过引擎获取正确的 profile 路径（与 UWP 包同盘，避免跨盘 junction 配额问题）
         val profileDir = engine.resolveVersionProfilePublic(minecraftDir, versionId)
         var success = 0
         val failed = mutableListOf<String>()
@@ -784,7 +748,6 @@ private fun chooseFileDialog(title: String, pattern: String, load: Boolean, defa
     }
 }
 
-// 模组管理面板（Java 版 + 基岩版通用）
 @Composable
 private fun ModToggleSection(ver: LocalVersion, isEn: Boolean, scope: kotlinx.coroutines.CoroutineScope, sheetMessage: (String) -> Unit) {
     var mods by remember { mutableStateOf<List<ModToggleManager.ModItem>>(emptyList()) }
@@ -839,7 +802,6 @@ private fun ModToggleSection(ver: LocalVersion, isEn: Boolean, scope: kotlinx.co
                                         ModToggleManager.toggleJavaMod(ver.versionDir, mod.filePath, checked)
                                     }
                                     if (ok) {
-                                        // 重新扫描
                                         mods = if (ver.type == "bedrock") {
                                             ModToggleManager.scanBedrockPacks(ver.versionDir)
                                         } else {

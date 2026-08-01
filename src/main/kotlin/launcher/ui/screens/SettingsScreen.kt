@@ -94,7 +94,6 @@ fun SettingsScreen() {
     }
 
     val scrollState = rememberScrollState()
-    // 监听页面滚动位置，更新底栏淡出隐藏状态
     LaunchedEffect(scrollState) {
         snapshotFlow { scrollState.value to scrollState.maxValue }
             .collect { (value, max) ->
@@ -104,7 +103,6 @@ fun SettingsScreen() {
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // 标题区
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier.size(44.dp).clip(RoundedCornerShape(14.dp))
@@ -129,7 +127,6 @@ fun SettingsScreen() {
             }
             Spacer(Modifier.height(14.dp))
 
-            // 分类切换 Pills
             Row(
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -165,9 +162,7 @@ fun SettingsScreen() {
             Box(modifier = Modifier.weight(1f)) {
                 Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState).padding(end = 8.dp)) {
                     when (selectedTab) {
-                        // ════════════════════════════════════════ 通用 ═══
                         0 -> {
-                            // 语言
                             SettingsSection(if (isEn) "Language" else "语言", Icons.Filled.Language) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                     listOf("zh" to "中文", "en" to "English").forEach { (code, label) ->
@@ -193,7 +188,6 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            // 外观
                             SettingsSection(if (isEn) "Appearance" else "外观", Icons.Filled.Palette) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -226,7 +220,6 @@ fun SettingsScreen() {
                                     "Monet Purple","Geek Blue","Mint Green","Amber Orange","Coral Red","Celadon Cyan","Graphite Blue",
                                     "Stardust Rose","Abyss Indigo","Jade Moss","Warm Sand","Moonlight","Aurora"
                                 )
-                                // 第一行 7 个 + 第二行 6 个
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     listOf(0..6, 7..12).forEach { range ->
                                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -321,7 +314,6 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            // 导航方式
                             SettingsSection(if (isEn) "Navigation" else "导航方式", Icons.Filled.Explore) {
                                 Text(if (isEn) "Navigation style" else "导航样式", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
                                 Spacer(Modifier.height(8.dp))
@@ -353,9 +345,7 @@ fun SettingsScreen() {
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                                 Spacer(Modifier.height(16.dp))
 
-                                // 根据导航方式显示不同微调选项
                                 if (settings.navigationMode == "sidebar") {
-                                    // 侧边导航微调
                                     Text(if (isEn) "Sidebar width: ${settings.uiSidebarWidth} dp" else "侧边栏宽度: ${settings.uiSidebarWidth} dp", style = MaterialTheme.typography.bodySmall)
                                     Slider(value = settings.uiSidebarWidth.toFloat(), onValueChange = { v ->
                                         val iv = v.toInt(); ThemeState.uiSidebarWidth = iv; autoSave(settings.copy(uiSidebarWidth = iv))
@@ -380,7 +370,6 @@ fun SettingsScreen() {
                                         onCheckedChange = { ThemeState.showLogSidebar = it; autoSave(settings.copy(showLogSidebar = it)) },
                                     )
                                 } else {
-                                    // 浮动导航微调
                                     Text(if (isEn) "Bottom margin: ${settings.navFloatingMarginBottom} dp" else "底部边距: ${settings.navFloatingMarginBottom} dp", style = MaterialTheme.typography.bodySmall)
                                     Slider(value = settings.navFloatingMarginBottom.toFloat(), onValueChange = { v ->
                                         val iv = v.toInt(); ThemeState.navFloatingMarginBottom = iv; autoSave(settings.copy(navFloatingMarginBottom = iv))
@@ -414,7 +403,6 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            // 界面布局（通用）
                             SettingsSection(if (isEn) "Layout" else "界面布局", Icons.Filled.Dashboard) {
                                 Text(if (isEn) "Corner radius: ${settings.uiCornerRadius} dp" else "全局圆角: ${settings.uiCornerRadius} dp", style = MaterialTheme.typography.bodySmall)
                                 Slider(value = settings.uiCornerRadius.toFloat(), onValueChange = { v ->
@@ -425,7 +413,6 @@ fun SettingsScreen() {
                                     ThemeState.uiFontScale = v; autoSave(settings.copy(uiFontScale = v))
                                 }, valueRange = 0.8f..1.4f, steps = 11, modifier = Modifier.fillMaxWidth())
 
-                                // 自定义字体导入
                                 Spacer(Modifier.height(12.dp))
                                 Text(if (isEn) "Custom Font" else "自定义字体", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
                                 Spacer(Modifier.height(8.dp))
@@ -473,7 +460,6 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            // 动效
                             SettingsSection(if (isEn) "Animation" else "动效", Icons.Filled.SlowMotionVideo) {
                                 Text(
                                     if (isEn) "Animation speed: ${when { settings.uiAnimationSpeed == 0f -> "Off"; settings.uiAnimationSpeed < 0.8f -> "${"%.1f".format(settings.uiAnimationSpeed)}× (Reduced)"; settings.uiAnimationSpeed > 1.2f -> "${"%.1f".format(settings.uiAnimationSpeed)}× (Fast)"; else -> "${"%.1f".format(settings.uiAnimationSpeed)}×" }}"
@@ -488,7 +474,6 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            // 游戏目录
                             SettingsSection(if (isEn) "Game Directory" else "游戏目录", Icons.Filled.Folder) {
                                 OutlinedTextField(
                                     value = settings.minecraftDir,
@@ -499,9 +484,7 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            // 下载设置
                             var mirrorExpanded by remember { mutableStateOf(false) }
-                            // 彻底只允许镜像源：已移除 Mojang 官方源选项。
                             val mirrorOptions = if (isEn)
                                 listOf("bmclapi" to "BMCLAPI Mirror (China)")
                             else
@@ -538,7 +521,6 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            // 启动行为
                             var startupPageExpanded by remember { mutableStateOf(false) }
                             val startupPageOptions = if (isEn)
                                 listOf("launch" to "Launch", "versions" to "Versions", "download" to "Downloads")
@@ -573,7 +555,6 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            // 网络代理
                             SettingsSection(if (isEn) "Network Proxy" else "网络代理", Icons.Filled.NetworkCheck) {
                                 Text(if (isEn) "All HTTP requests (downloads, login, news) route through proxy when set" else "配置后所有 HTTP 请求（下载/登录/资讯）均经过代理，空则直连", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(Modifier.height(8.dp))
@@ -588,7 +569,6 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            // 恢复默认
                             OutlinedButton(
                                 onClick = {
                                     scope.launch {
@@ -621,7 +601,6 @@ fun SettingsScreen() {
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                             Spacer(Modifier.height(16.dp))
                             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                                // 使用 Box+clickable 替代直接 Text.clickable，避免滚动容器中点击事件被拦截
                                 Box(modifier = Modifier.clickable { openExternalUrl("https://md3l.top") }) {
                                     Text("MD3L", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black), color = MaterialTheme.colorScheme.primary)
                                 }
@@ -641,7 +620,6 @@ fun SettingsScreen() {
                             Spacer(Modifier.height(24.dp))
                         }
 
-                        // ════════════════════════════════════════ Java 版 ═
                         1 -> {
                             SettingsSection("Java 运行环境", Icons.Filled.Code) {
                                 ExposedDropdownMenuBox(expanded = javaDropdownExpanded, onExpandedChange = { javaDropdownExpanded = it }) {
@@ -745,7 +723,6 @@ fun SettingsScreen() {
                                                     }
                                                 },
                                                 onClick = {
-                                                    // 双向同步：GC 策略变更 → 更新 customJvmArgs 中的 GC 标志
                                                     val oldGcFlag = "-XX:+Use${settings.gcPolicy}"
                                                     val newGcFlag = when (gc) {
                                                         "G1GC" -> "-XX:+UseG1GC -XX:+UnlockExperimentalVMOptions"
@@ -768,7 +745,6 @@ fun SettingsScreen() {
                             }
                             Spacer(Modifier.height(12.dp))
 
-                            // 动态 GC 精细调节面板
                             when (settings.gcPolicy) {
                                 "G1GC" -> {
                                     SettingsSection("G1GC 精细调节", Icons.Filled.Tune) {
@@ -922,7 +898,6 @@ fun SettingsScreen() {
                             Spacer(Modifier.height(24.dp))
                         }
 
-                        // ════════════════════════════════════════ 基岩版 ═
                         2 -> {
                             SettingsSection("启动优化", Icons.Filled.RocketLaunch) {
                                 SettingsToggleRow(
@@ -1182,9 +1157,6 @@ private fun SettingsSection(
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// 调整教程对话框
-// ═══════════════════════════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1202,7 +1174,6 @@ private fun SettingsTutorialDialog(onDismiss: () -> Unit) {
             modifier = Modifier.widthIn(max = 800.dp).fillMaxHeight(0.92f),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // 标题栏
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 4.dp, top = 8.dp, bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1224,7 +1195,6 @@ private fun SettingsTutorialDialog(onDismiss: () -> Unit) {
                         Icon(Icons.Filled.Close, contentDescription = null)
                     }
                 }
-                // 标签切换
                 TabRow(
                     selectedTabIndex = tab,
                     containerColor = MaterialTheme.colorScheme.surface,
@@ -1240,16 +1210,12 @@ private fun SettingsTutorialDialog(onDismiss: () -> Unit) {
                     }
                 }
                 HorizontalDivider()
-                // 内容区域
                 Box(modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp)) {
                     val scrollState = rememberScrollState()
                     Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState).padding(vertical = 12.dp, horizontal = 4.dp)) {
                         when (tab) {
-                            // ════════════════════════════════════════════ 通用 ═══
                             0 -> GeneralTutorial(isEn)
-                            // ════════════════════════════════════════════ Java 版 ═══
                             1 -> JavaTutorial(isEn)
-                            // ════════════════════════════════════════════ 基岩版 ═══
                             2 -> BedrockTutorial(isEn)
                         }
                         Spacer(Modifier.height(80.dp))
@@ -1260,7 +1226,6 @@ private fun SettingsTutorialDialog(onDismiss: () -> Unit) {
     }
 }
 
-// 通用设置教程
 @Composable
 private fun GeneralTutorial(isEn: Boolean) {
     TutorialGroup(icon = Icons.Filled.Palette, title = if (isEn) "Appearance" else "外观") {
@@ -1543,7 +1508,6 @@ private fun GeneralTutorial(isEn: Boolean) {
     }
 }
 
-// Java 版设置教程
 @Composable
 private fun JavaTutorial(isEn: Boolean) {
     TutorialGroup(icon = Icons.Filled.FolderOpen, title = if (isEn) "Basic" else "基础") {
@@ -1811,7 +1775,6 @@ private fun JavaTutorial(isEn: Boolean) {
     }
 }
 
-// 基岩版设置教程
 @Composable
 private fun BedrockTutorial(isEn: Boolean) {
     TutorialGroup(icon = Icons.Filled.FolderOpen, title = if (isEn) "Version Management" else "版本管理") {
@@ -2031,7 +1994,6 @@ private fun BedrockTutorial(isEn: Boolean) {
     }
 }
 
-// 辅助组件
 @Composable
 private fun TutorialGroup(
     icon: androidx.compose.ui.graphics.vector.ImageVector,

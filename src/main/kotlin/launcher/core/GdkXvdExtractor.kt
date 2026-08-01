@@ -10,33 +10,21 @@ import javax.crypto.spec.SecretKeySpec
 object GdkXvdExtractor {
 
     private const val PAGE_SIZE = 0x1000
-    private const val CACHE_SIZE = 0x100000        // 1 MB 读缓存，与 C# 实现一致
-    private const val HASH_ENTRY_SIZE = 0x18       // 每个哈希条目 24 字节
-    private const val HASH_ENTRIES_IN_PAGE = 0xAA  // 每页 170 个哈希条目
+    private const val CACHE_SIZE = 0x100000
+    private const val HASH_ENTRY_SIZE = 0x18
+    private const val HASH_ENTRIES_IN_PAGE = 0xAA
     private const val XVD_HEADER_INCL_SIGNATURE_SIZE = 0x3000L
 
-    // XVD Volume flags (MsiXVDVolumeAttributes)
     private const val FLAG_ENCRYPTION_DISABLED = 0x02
     private const val FLAG_DATA_INTEGRITY_DISABLED = 0x04
     private const val FLAG_RESILIENCY_ENABLED = 0x10
 
-    // 进度回调，与既有调用方（BedrockDownloadManager / BedrockLaunchEngine）保持一致。 
     fun interface ExtractProgress {
         fun onProgress(current: Int, total: Int, fileName: String)
     }
 
 
-    // 公共入口
 
-    /**
-     * 从 .msixvc (XVD) 容器解压出全部文件。
-     *
-     * @param msixvcFile XVD 容器文件（.msixvc）
-     * @param outputDir  输出目录
-     * @param guidHex    CIK GUID（32 位 hex，仅用于日志/校验，解密不需要）
-     * @param keyHex     64 位 hex：前 32 位为 TKey，后 32 位为 DKey
-     * @return 是否解压出至少一个文件
-     */
     fun extract(
         msixvcFile: File,
         outputDir: File,
@@ -62,13 +50,7 @@ object GdkXvdExtractor {
         }
     }
 
-    // AES-128-XTS 解密器
 
-    /**
-     * AES-128-XTS 解密器。
-     * tweak = AES_Enc(TKey, tweakIv)；每块：P = AES_Dec(DKey, C xor tweak) xor tweak；
-     * 块间 tweak 以 GF(2^128) 乘 α 推进。等价于 C# MsiXVDDecoder。
-     */
     internal class XtsDecryptor(tKey: ByteArray, dKey: ByteArray) {
         private val encTweak = Cipher.getInstance("AES/ECB/NoPadding").apply {
             init(Cipher.ENCRYPT_MODE, SecretKeySpec(tKey, "AES"))
@@ -78,7 +60,6 @@ object GdkXvdExtractor {
         }
         private val tmp = ByteArray(16)
 
-        // 原地解密 buf[off, off+0x1000) 一整页，使用给定 tweakIv。 
         fun decryptPage(buf: ByteArray, off: Int, tweakIv: ByteArray) {
             var tweak = encTweak.doFinal(tweakIv)
             var p = off
@@ -93,10 +74,6 @@ object GdkXvdExtractor {
         }
     }
 
-    /**
-     * GF(2^128) 乘 α（XTS 小端约定，等价于 C# 的 SSE Gf128Mul）：
-     * 整体左移 1 位；bit63→bit64 的跨字进位注入 byte8；bit127 溢出则 byte0 ^= 0x87。
-     */
     internal fun gf128MulAlpha(iv: ByteArray): ByteArray {
         val r = ByteArray(16)
         var carry = 0
@@ -109,12 +86,10 @@ object GdkXvdExtractor {
         return r
     }
 
-    // XVD 流解析 + 提取
 
     private class MsiXvdStream(file: File) : AutoCloseable {
         private val raf = RandomAccessFile(file, "r")
 
-        // 头部字段
         private var volumes = 0
         private var kind = 0
         private var driveSize = 0L
@@ -130,14 +105,12 @@ object GdkXvdExtractor {
         private var resiliency = false
         private var hashEntryLength = 0x18
 
-        // 派生偏移
         private var hashTreePageCount = 0L
         private var hashTreeLevels = 0L
         private var hashTreePageOffset = 0L
         private var xvdUserDataOffset = 0L
         private var numberOfHashedPages = 0L
 
-        // 解析结果
         private val userDataContents = LinkedHashMap<String, ByteArray>()
         private lateinit var segments: List<Segment>
         private lateinit var segmentPaths: List<String>
@@ -207,7 +180,6 @@ object GdkXvdExtractor {
             val buf = ByteArray(userDataLength)
             readFullyAt(xvdUserDataOffset, buf, buf.size)
 
-            // UserDataHeader: Length(4) Version(4) Type(4) Unknown(4)
             val udLength = readLE32(buf, 0)
             val udType = readLE32(buf, 8)
             if (udType != 0) {
@@ -215,13 +187,11 @@ object GdkXvdExtractor {
                 return
             }
 
-            // UserDataPackageFilesHeader: Version(4) + PackageFullName(260 UTF-16 = 520) + FileCount(4)
             var pos = udLength
-            pos += 4 // Version
-            pos += 260 * 2 // PackageFullName
+            pos += 4
+            pos += 260 * 2
             val fileCount = readLE32(buf, pos); pos += 4
 
-            // UserDataPackageFileEntry[]: FilePath(260 UTF-16 = 520) + Size(4) + Offset(4) = 528
             val entries = ArrayList<Triple<String, Int, Int>>(fileCount)
             for (i in 0 until fileCount) {
                 if (pos + 528 > buf.size) break
@@ -243,12 +213,10 @@ object GdkXvdExtractor {
             val meta = userDataContents["SegmentMetadata.bin"]
                 ?: throw IllegalStateException("未找到 SegmentMetadata.bin")
 
-            // SegmentMetadataHeader: Magic(4) Version0(4) Version1(4) HeaderLength(4)
-            //   SegmentCount(4) FilePathsLength(4) PDUID(16) Unknown(0x3C) = 0x40 头部
             val headerLength = readLE32(meta, 12)
             val segmentCount = readLE32(meta, 16)
 
-            val headerSize = 4 * 6 + 0x10 + 0x3C // = 0x64
+            val headerSize = 4 * 6 + 0x10 + 0x3C
             val segList = ArrayList<Segment>(segmentCount)
             var pos = headerSize
             for (i in 0 until segmentCount) {
@@ -279,30 +247,25 @@ object GdkXvdExtractor {
             val buf = ByteArray(xvcDataLength)
             readFullyAt(xvcInfoOffset, buf, buf.size)
 
-            // XvcInfo: ContentID(16) EncryptionKeyIds(0xC0*16=0xC00) Description(0x100)
-            //   Version(4) RegionCount(4) Flags(4) Padding(2) KeyCount(2) UnknownD20(4)
-            //   InitialPlayRegionId(4) InitialPlayOffset(8) FileTimeCreated(8) PreviewRegionId(4)
-            //   UpdateSegmentCount(4) PreviewOffset(8) UnusedSpace(8) RegionSpecifierCount(4) ReservedD54(0x54)
             var pos = 16 + 0xC00 + 0x100
             val version = readLE32(buf, pos); pos += 4
             val regionCount = readLE32(buf, pos); pos += 4
-            pos += 4 // Flags
-            pos += 2 // Padding
-            pos += 2 // KeyCount
-            pos += 4 // UnknownD20
-            pos += 4 // InitialPlayRegionId
-            pos += 8 // InitialPlayOffset
-            pos += 8 // FileTimeCreated
-            pos += 4 // PreviewRegionId
+            pos += 4
+            pos += 2
+            pos += 2
+            pos += 4
+            pos += 4
+            pos += 8
+            pos += 8
+            pos += 4
             val updateSegmentCount = readLE32(buf, pos); pos += 4
-            pos += 8 // PreviewOffset
-            pos += 8 // UnusedSpace
-            pos += 4 // RegionSpecifierCount
-            pos += 0x54 // ReservedD54
+            pos += 8
+            pos += 8
+            pos += 4
+            pos += 0x54
 
             val regionList = ArrayList<Region>(regionCount)
             if (version >= 1) {
-                // XvcRegionHeader (0x80 bytes)
                 for (i in 0 until regionCount) {
                     if (pos + 0x80 > buf.size) break
                     val id = readLE32(buf, pos)
@@ -314,7 +277,6 @@ object GdkXvdExtractor {
                     regionList.add(Region(id, keyId, flags, firstSeg, offset, length))
                     pos += 0x80
                 }
-                // XvcUpdateSegment (PageNum(4) + Hash(8) = 12)
                 if (updateSegmentCount > 0 && pos + 12 <= buf.size) {
                     firstUpdateSegmentPageNum = readLE32(buf, pos).toLong() and 0xFFFFFFFFL
                     hasUpdateSegments = true
@@ -354,8 +316,8 @@ object GdkXvdExtractor {
         ): Int {
             val tweakIv = ByteArray(16)
             if (shouldDecrypt) {
-                writeLE32(tweakIv, 4, region.id)          // tweakIv[1] (uint) = regionId
-                System.arraycopy(vdUid, 0, tweakIv, 8, 8)  // tweakIv[8..16] = VdUid[0..8]
+                writeLE32(tweakIv, 4, region.id)
+                System.arraycopy(vdUid, 0, tweakIv, 8, 8)
             }
 
             var shouldRefreshPageCache = true
@@ -445,9 +407,7 @@ object GdkXvdExtractor {
             return (hashTreePageOffset + pageToOffset(hashBlockPage)) to entryId
         }
 
-        // --- 文件读取 ---
 
-        // 从绝对偏移读取，最多 len 字节；不足则以 0 填充剩余，不抛 EOF。 
         private fun readFullyAt(pos: Long, buf: ByteArray, len: Int) {
             raf.seek(pos)
             var read = 0
@@ -465,10 +425,9 @@ object GdkXvdExtractor {
     }
 
 
-    // 哈希树几何计算
 
     private fun calculateNumberHashPages(hashedPagesCount: Long, resilient: Boolean): Pair<Long, Long> {
-        val perPage = HASH_ENTRIES_IN_PAGE.toLong() // 0xAA
+        val perPage = HASH_ENTRIES_IN_PAGE.toLong()
         val lvl0 = perPage
         val lvl1 = perPage * lvl0
         val lvl2 = perPage * lvl1
@@ -494,7 +453,6 @@ object GdkXvdExtractor {
         return hashTreePageCount to hashTreeLevels
     }
 
-    // level=0 版本的 ComputeHashBlockIndexForDataBlock，返回 (hashBlockIndex, entryIndexInHashBlock)。 
     private fun computeHashBlockIndexForDataBlockLevel0(
         imageType: Int,
         hashTreeDepthIn: Long,
@@ -526,7 +484,6 @@ object GdkXvdExtractor {
         return hashBlockIndex to entryIndex
     }
 
-    // 工具函数
 
     private fun pageToOffset(pages: Long): Long = pages * PAGE_SIZE
     private fun getPageOffset(value: Long): Long = value / PAGE_SIZE

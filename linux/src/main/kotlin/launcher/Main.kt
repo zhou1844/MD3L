@@ -47,12 +47,10 @@ import java.net.URI
 fun main() {
     launcher.core.AppLogger.installSystemStreams()
 
-    // ── 全局异常处理器（安全兜底）──────────────────────────────────────────
     Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
         val msg = throwable.message ?: ""
         println("[FATAL] 线程 [${thread.name}] 未捕获异常: $msg")
         throwable.printStackTrace()
-        // 渲染相关异常 → 写标记文件，下次启动强制 SOFTWARE
         if (msg.contains("skiko", ignoreCase = true) ||
             msg.contains("render", ignoreCase = true) ||
             msg.contains("OpenGL", ignoreCase = true) ||
@@ -66,12 +64,10 @@ fun main() {
         }
     }
 
-    // 初始化系统托盘
     launcher.core.TrayManager.init()
     LauncherDirs.migrateFromLegacyIfNeeded()
     val md3lDir = LauncherDirs.dataDir
 
-    // ── 启动前预加载导航模式 ────────────────────────────────────────────────
     runCatching {
         val settingsFile = java.io.File(md3lDir, "settings.json")
         if (settingsFile.exists()) {
@@ -83,8 +79,6 @@ fun main() {
         }
     }
 
-    // ── Linux 渲染配置：优先 OpenGL，回退 SOFTWARE ──────────────────────────
-    // 在 Linux 下 Skiko 默认使用 OpenGL，如果 OpenGL 初始化失败则回退 SOFTWARE
     if (File(md3lDir, "software_render").exists() || File(md3lDir, "software_render.txt").exists()) {
         System.setProperty("skiko.renderApi", "SOFTWARE")
         println("[Render] 检测到 software_render 标记，使用 SOFTWARE")
@@ -92,7 +86,6 @@ fun main() {
         System.setProperty("skiko.renderApi", "SOFTWARE")
         println("[Render] 检测到上次渲染崩溃记录，使用 SOFTWARE")
     } else {
-        // Linux 下优先使用 OpenGL
         System.setProperty("skiko.renderApi", "OPENGL")
         println("[Render] Linux 渲染 API: OPENGL")
     }
@@ -114,7 +107,6 @@ private fun runLauncherApp() = application {
         onCloseRequest = {
             if (ThemeState.confirmBeforeClose) showCloseConfirm = true
             else {
-                // 最小化到托盘而不是直接退出
                 windowState.isMinimized = true
             }
         },
@@ -130,16 +122,13 @@ private fun runLauncherApp() = application {
         var currentSettings by remember { mutableStateOf(AppSettings()) }
         var showUpdateSuccess by remember { mutableStateOf<String?>(null) }
 
-        // ── 首次启动 ProtonGDK 检测 ──────────────────────────────────────────
         var showProtonDialog by remember { mutableStateOf(false) }
         var protonInstalling by remember { mutableStateOf(false) }
         var protonInstallResult by remember { mutableStateOf<String?>(null) }
 
         LaunchedEffect(Unit) {
-            // 检查 ProtonGDK 是否已安装
             val protonInstalled = ProtonManager.isInstalled()
             if (!protonInstalled) {
-                // 未安装，显示对话框
                 showProtonDialog = true
             }
         }
@@ -153,7 +142,6 @@ private fun runLauncherApp() = application {
             }
         }
 
-        // 窗口背景设为透明
         LaunchedEffect(Unit) {
             window.background = java.awt.Color(0, 0, 0, 0)
         }
@@ -251,7 +239,6 @@ private fun runLauncherApp() = application {
                                     AppSettings.save(updated)
                                     currentSettings = updated
                                     eulaAccepted = true
-                                    // 协议同意后，检查 ProtonGDK
                                     val protonInstalled = ProtonManager.isInstalled()
                                     if (!protonInstalled) {
                                         showProtonDialog = true
@@ -262,7 +249,6 @@ private fun runLauncherApp() = application {
                         )
                     }
                     true -> {
-                        // 主窗口仅在 ProtonGDK 已安装或用户选择下载后显示
                         if (!showProtonDialog) {
                             AppWindow(windowState, ::exitApplication)
                         }
@@ -298,12 +284,10 @@ private fun runLauncherApp() = application {
                             )
                         }
 
-                        // ── ProtonGDK 下载对话框 ──────────────────────────────────────────
                         if (showProtonDialog) {
                             AlertDialog(
                                 onDismissRequest = {
                                     if (!protonInstalling) {
-                                        // 不下载就退出软件
                                         exitApplication()
                                     }
                                 },
@@ -424,7 +408,6 @@ private fun FrameWindowScope.AppWindow(
                     "md3lbackup" -> {
                         val importTaskId = "drag_restore_${packFile.absolutePath.hashCode()}_${System.currentTimeMillis()}"
                         DownloadHub.upsert(DownloadHub.HubTask(id = importTaskId, name = "恢复备份 ${packFile.name}", type = DownloadHub.TaskType.ResourceDownload, step = "准备恢复备份", fraction = 0f))
-                        // md3lbackup 是基岩版备份，Linux 版暂不支持
                         DownloadHub.upsert(DownloadHub.HubTask(id = importTaskId, name = "恢复备份 ${packFile.name}", type = DownloadHub.TaskType.ResourceDownload, status = DownloadHub.TaskStatus.Error, step = "Linux 版暂不支持基岩版备份恢复", fraction = 0f, error = "Linux 版暂不支持基岩版备份恢复"))
                         dropMessage = "Linux 版暂不支持基岩版备份恢复"
                     }
@@ -445,7 +428,6 @@ private fun FrameWindowScope.AppWindow(
         }
     }
 
-    // Linux 版使用 Compose 原生拖拽 API（无需 AWT DropTarget + JNA）
     val surfaceDragModifier = Modifier.onExternalDrag(
         onDragStart = { _ -> },
         onDrag = { _ -> },
@@ -465,7 +447,6 @@ private fun FrameWindowScope.AppWindow(
         }
     )
 
-    // 最大化/还原
     fun applyMaximized() {
         val ge = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment()
         val screen = ge.defaultScreenDevice.defaultConfiguration.bounds

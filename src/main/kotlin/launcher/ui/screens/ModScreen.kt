@@ -96,7 +96,6 @@ fun ModScreen() {
         initialFirstVisibleItemIndex = ModScreenState.listFirstVisibleItemIndex.value,
         initialFirstVisibleItemScrollOffset = ModScreenState.listFirstVisibleItemScrollOffset.value,
     )
-    // 监听 Mod 列表滚动位置，更新底栏淡出隐藏状态
     LaunchedEffect(listState) {
         snapshotFlow {
             val canScrollForward = listState.canScrollForward
@@ -107,7 +106,6 @@ fun ModScreen() {
         }.collect { (canScrollForward, firstIdx, totalItems) ->
             NavBarScrollState.scrollFraction.value = when {
                 totalItems == 0 -> 0f
-                // 内容太少不足以滚动 → 保持导航栏可见
                 !canScrollForward && firstIdx == 0 -> 0f
                 !canScrollForward -> 1f
                 else -> (firstIdx.toFloat() / totalItems.toFloat()).coerceIn(0f, 0.99f)
@@ -116,7 +114,6 @@ fun ModScreen() {
     }
     var javaVersionsState by ModScreenState.javaVersions
     var bedrockVersionsState by ModScreenState.bedrockVersions
-    // Java 版本筛选下拉：动态版本（含最新 26.x）+ 内置静态回退；始终保留“全部”空项在最前
     val mcVersions = remember(javaVersionsState) {
         val dynamic = javaVersionsState
         if (dynamic.isNotEmpty()) listOf("") + dynamic else buildMcVersionFilters()
@@ -197,7 +194,6 @@ fun ModScreen() {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // 标题区 + 版本切换
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier.size(44.dp).clip(RoundedCornerShape(16.dp))
@@ -211,7 +207,6 @@ fun ModScreen() {
                 Text(if (isEn) "Resource Center" else "资源中心", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
                 Text("Modrinth · CurseForge", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            // 版本切换内嵌到标题行右侧
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -260,7 +255,6 @@ fun ModScreen() {
         }
         Spacer(Modifier.height(14.dp))
 
-        // 搜索框（卡片式）
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -355,7 +349,6 @@ fun ModScreen() {
         }
         Spacer(Modifier.height(10.dp))
 
-        // 过滤 Pills
         if (selectedEdition == "java") {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(end = 8.dp)) {
                 val types = if (isEn)
@@ -393,7 +386,6 @@ fun ModScreen() {
         }
         Spacer(Modifier.height(10.dp))
 
-        // 内容列表
         AnimatedContent(
             targetState = isLoading,
             transitionSpec = { fadeIn() togetherWith fadeOut() },
@@ -599,9 +591,6 @@ private fun MetaChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text
     }
 }
 
-/**
- * 全局 LRU 内存缓存 —— 512 张图，滑出屏幕再滑回 0ms 复用，绝不二次网络请求。
- */
 private object IconLruCache {
     private const val MAX_SIZE = 512
     private val cache = object : LinkedHashMap<String, ImageBitmap>(MAX_SIZE, 0.75f, true) {
@@ -621,9 +610,6 @@ private object IconLruCache {
     fun clearInflight(key: String) { inflight.remove(key) }
 }
 
-/**
- * 异步加载模组网络图标。LRU 内存缓存注入，彻底消灭 LazyColumn 滑动闪烁。
- */
 @Composable
 internal fun ModIconAsync(iconUrl: String, projectType: String, size: Int = 48) {
     var bitmap by remember(iconUrl) { mutableStateOf(IconLruCache.get(iconUrl)) }

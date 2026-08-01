@@ -47,10 +47,6 @@ data class UpdateState(
 )
 
 object AutoUpdater {
-    /**
-     * 从内置资源文件 /version 读取当前版本号。
-     * 该文件位于 src/main/resources/version，构建时会被打包到 jar 中。
-     */
     val CURRENT_VERSION: String by lazy {
         runCatching {
             val url = AutoUpdater::class.java.classLoader.getResource("version")
@@ -144,7 +140,6 @@ object AutoUpdater {
 
                 if (destFile.exists()) destFile.delete()
 
-                // Gitee 附件是国内直连，直接用原始 URL
                 val downloadUrl = asset.browser_download_url
                 println("[AutoUpdater] 下载: $downloadUrl")
 
@@ -162,7 +157,6 @@ object AutoUpdater {
                     try { File(LauncherDirs.dataDir, "update_success").writeText(release.tag_name) } catch (_: Exception) {}
 
                     if (isWindows) {
-                        // ── Windows 更新流程 ──────────────────────────────────
                         fun resolveCurrentExe(): String {
                             val own = ProcessHandle.current().info().command().orElse("") ?: ""
                             if (own.endsWith(".exe", ignoreCase = true) &&
@@ -314,13 +308,8 @@ object AutoUpdater {
         return 0
     }
 
-    /**
-     * 并发竞速：同时对所有镜像发 HEAD 请求，返回最先响应 200 的 URL。
-     * 比串行测试快数倍。
-     */
     private suspend fun pickFastestMirror(mirrors: List<String>): String? =
         withContext(Dispatchers.IO) {
-            // 并发发起所有 HEAD 请求，取第一个成功的
             val deferreds = mirrors.map { url ->
                 async {
                     val ok = runCatching {
@@ -352,10 +341,6 @@ object AutoUpdater {
             winner
         }
 
-    /**
-     * 用 curl.exe 静默下载，另起协程轮询文件大小来计算进度和速度。
-     * 不依赖 stderr 解析，100% 可靠。
-     */
     private suspend fun downloadWithCurl(
         url: String,
         dest: File,
@@ -364,7 +349,6 @@ object AutoUpdater {
         dest.parentFile?.mkdirs()
         if (dest.exists()) dest.delete()
 
-        // 先用 HEAD 请求拿 Content-Length
         val totalBytes: Long = withContext(Dispatchers.IO) {
             runCatching {
                 val proc = ProcessBuilder(
@@ -379,7 +363,6 @@ object AutoUpdater {
             }.getOrDefault(-1L)
         }
 
-        // 启动 curl 静默下载
         val proc = withContext(Dispatchers.IO) {
             ProcessBuilder(
                 LauncherDirs.curlCmd(), "-L", "-s",
@@ -390,7 +373,6 @@ object AutoUpdater {
             ).redirectErrorStream(true).start()
         }
 
-        // 轮询文件大小更新进度（独立协程，直接在调用者 scope 里运行）
         val pollJob = scope.launch {
             var lastSize = 0L
             var lastTime = System.currentTimeMillis()

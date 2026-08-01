@@ -42,17 +42,11 @@ import javax.imageio.ImageReader
 import javax.imageio.metadata.IIOMetadataNode
 import kotlin.math.roundToInt
 
-/**
- * GIF 帧数据：位图 + 该帧应显示的毫秒数。
- */
 private data class GifFrame(
     val bitmap: ImageBitmap,
     val delayMs: Int,
 )
 
-/**
- * 使用 Java ImageIO 解码 GIF 所有帧。
- */
 private fun decodeGifFrames(file: File): List<GifFrame> {
     val frames = mutableListOf<GifFrame>()
     try {
@@ -64,7 +58,6 @@ private fun decodeGifFrames(file: File): List<GifFrame> {
             val count = reader.getNumImages(true)
             for (i in 0 until count) {
                 val bufImg = reader.read(i)
-                // 转为 ARGB 避免色彩问题
                 val rgb = java.awt.image.BufferedImage(
                     bufImg.width, bufImg.height, java.awt.image.BufferedImage.TYPE_INT_ARGB
                 )
@@ -90,11 +83,6 @@ private fun toPngBytes(bufImg: java.awt.image.BufferedImage): ByteArray {
     return out.toByteArray()
 }
 
-/**
- * 读取 GIF 指定帧的延迟时间（毫秒）。
- * GIF 规范：delayTime 单位是 1/100 秒；0 表示"默认"→ 100ms（10 fps）。
- * 不低于 10ms 防止瞬时闪过。
- */
 private fun getFrameDelayMs(reader: ImageReader, idx: Int): Int {
     return try {
         val meta = reader.getImageMetadata(idx) ?: return 100
@@ -109,9 +97,6 @@ private fun getFrameDelayMs(reader: ImageReader, idx: Int): Int {
     } catch (_: Exception) { 100 }
 }
 
-/**
- * 可拖拽贴纸覆盖层。支持 GIF 动画、右键调整大小/速度/删除。
- */
 @Composable
 fun StickerBoard(
     stickers: List<StickerData>,
@@ -145,7 +130,6 @@ fun StickerBoard(
             }
         }
 
-        // 首次导入提示（浮在左下角）
         if (showFirstImportHint) {
             Surface(
                 modifier = Modifier.align(Alignment.BottomStart).padding(16.dp),
@@ -159,7 +143,7 @@ fun StickerBoard(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                 ) {
                     Text(
-                        text = "右键贴纸可打开菜单：调整大小、速度或删除",  // TODO i18n
+                        text = "右键贴纸可打开菜单：调整大小、速度或删除",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.inverseOnSurface,
                     )
@@ -193,8 +177,6 @@ private fun StickerItem(
     var currentScale by remember { mutableStateOf(sticker.scale) }
     var currentSpeed by remember { mutableStateOf(sticker.playbackSpeed) }
 
-    // 仅在首次加载（board 尺寸就绪）时从 sticker 初始值设置位置；
-    // 后续拖拽等操作后的位置不会被 prop 变化覆盖。
     var positionReady by remember { mutableStateOf(false) }
     LaunchedEffect(boardW, boardH) {
         if (!positionReady && boardW > 1f && boardH > 1f) {
@@ -211,16 +193,12 @@ private fun StickerItem(
     val file = remember(sticker.fileName) { File(StickerManager.stickersDir, sticker.fileName) }
     val isGif = remember(sticker.fileName) { sticker.fileName.lowercase().endsWith(".gif") }
 
-    // GIF 帧数据（只在文件变化时解析一次）
     val gifFrames = remember(sticker.fileName) {
         if (isGif && file.exists()) decodeGifFrames(file) else emptyList()
     }
 
-    // GIF 当前帧索引
     var gifFrameIdx by remember { mutableStateOf(0) }
 
-    // GIF 帧播放循环（使用 playbackSpeed 调整播放速度）
-    // GIF 帧播放循环（使用本地 currentSpeed 即时响应速度调整）
     LaunchedEffect(gifFrames.size, currentSpeed) {
         if (gifFrames.isNotEmpty()) {
             gifFrameIdx = 0
@@ -234,7 +212,6 @@ private fun StickerItem(
         }
     }
 
-    // 非 GIF 图片用 Skia 解码为静态位图
     val staticBitmap = remember(sticker.fileName) {
         if (!isGif) {
             try {
@@ -245,14 +222,12 @@ private fun StickerItem(
         } else null
     }
 
-    // 确定要显示的位图
     val currentBitmap: ImageBitmap? = if (isGif) {
         if (gifFrames.isNotEmpty()) gifFrames[gifFrameIdx].bitmap else null
     } else staticBitmap
 
     if (currentBitmap == null) return
 
-    // 计算显示尺寸
     val imgW = currentBitmap.width.toFloat()
     val imgH = currentBitmap.height.toFloat()
 
@@ -269,7 +244,6 @@ private fun StickerItem(
         onMoved(xFrac, yFrac)
     }
 
-    // ── 右键菜单：缩放 + 速度 + 删除 ──
     if (showMenu) {
         Popup(
             alignment = Alignment.TopStart,
@@ -284,7 +258,6 @@ private fun StickerItem(
                 tonalElevation = 3.dp,
             ) {
                 Column(modifier = Modifier.padding(horizontal = 2.dp, vertical = 1.dp)) {
-                    // ── 缩放行 ──
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(
                             onClick = {
@@ -306,7 +279,6 @@ private fun StickerItem(
                             Icon(Icons.Filled.Add, "放大", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Spacer(Modifier.width(2.dp))
-                        // 删除
                         IconButton(
                             onClick = { showMenu = false; onRemove() },
                             modifier = Modifier.size(32.dp),
@@ -315,12 +287,10 @@ private fun StickerItem(
                         }
                     }
 
-                    // ── 速度行（仅 GIF） ──
                     if (isGif) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.SlowMotionVideo, "速度", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                             Spacer(Modifier.width(4.dp))
-                            // 减速
                             IconButton(
                                 onClick = {
                                     val ns = (currentSpeed - 0.25f).coerceIn(0.25f, 4.0f)
@@ -331,7 +301,6 @@ private fun StickerItem(
                                 Icon(Icons.Filled.Remove, "减速", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Text("${"%.1f".format(currentSpeed)}x", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            // 加速
                             IconButton(
                                 onClick = {
                                     val ns = (currentSpeed + 0.25f).coerceIn(0.25f, 4.0f)
@@ -341,7 +310,6 @@ private fun StickerItem(
                             ) {
                                 Icon(Icons.Filled.Add, "加速", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            // 重置速度
                             IconButton(
                                 onClick = {
                                     currentSpeed = 1.0f; onPlaybackSpeedChanged(1.0f)
@@ -357,13 +325,11 @@ private fun StickerItem(
         }
     }
 
-    // ── 贴纸本体 ──
     Box(
         modifier = Modifier
             .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
             .size(displayDpW, displayDpH)
             .clip(RoundedCornerShape(6.dp))
-            // 拖拽（拖拽结束时保存位置）
             .pointerInput(sticker.id) {
                 detectDragGestures(
                     onDrag = { change, dragAmount ->
@@ -376,7 +342,6 @@ private fun StickerItem(
                     onDragEnd = { savePosition() },
                 )
             }
-            // 右键弹出菜单（AWT nativeEvent 兜底）
             .onPointerEvent(PointerEventType.Press) { event ->
                 val awtEvent = event.nativeEvent as? java.awt.event.MouseEvent
                 if (awtEvent?.button == java.awt.event.MouseEvent.BUTTON3) {
@@ -392,7 +357,6 @@ private fun StickerItem(
         )
     }
 
-    // 组件销毁时自动保存位置
     DisposableEffect(sticker.id) {
         onDispose { savePosition() }
     }

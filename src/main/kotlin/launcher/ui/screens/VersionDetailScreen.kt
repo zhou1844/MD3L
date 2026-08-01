@@ -33,9 +33,6 @@ private enum class LoaderOption(val label: String) {
     NeoForge("NeoForge"),
 }
 
-/**
- * 单个 Loader 版本信息
- */
 private data class LoaderVersionItem(
     val version: String,
     val label: String = version,
@@ -56,19 +53,16 @@ fun VersionDetailScreen(version: RemoteVersion) {
     val loaderProgress by LoaderInstaller.progress.collectAsState()
     val scrollState = rememberScrollState()
 
-    // Loader 版本列表
     var loaderVersions by remember { mutableStateOf<List<LoaderVersionItem>>(emptyList()) }
     var selectedLoaderVersion by remember { mutableStateOf<LoaderVersionItem?>(null) }
     var isLoadingLoaderVersions by remember { mutableStateOf(false) }
     var loaderDropdownExpanded by remember { mutableStateOf(false) }
 
-    // OptiFine 版本列表
     var optifineVersions by remember { mutableStateOf<List<LoaderVersionItem>>(emptyList()) }
     var selectedOptiFineVersion by remember { mutableStateOf<LoaderVersionItem?>(null) }
     var isLoadingOptiFine by remember { mutableStateOf(false) }
     var optifineDropdownExpanded by remember { mutableStateOf(false) }
 
-    // 当用户切换 Loader 类型时，网络获取可用 Loader 版本
     LaunchedEffect(selectedLoader) {
         if (selectedLoader == LoaderOption.None) {
             loaderVersions = emptyList()
@@ -93,7 +87,6 @@ fun VersionDetailScreen(version: RemoteVersion) {
         }
     }
 
-    // 当用户开启 OptiFine 时，加载版本列表
     LaunchedEffect(installOptiFine) {
         if (!installOptiFine) return@LaunchedEffect
         if (optifineVersions.isNotEmpty()) return@LaunchedEffect
@@ -119,7 +112,6 @@ fun VersionDetailScreen(version: RemoteVersion) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
 
-            // 顶部标题区
             Row(verticalAlignment = Alignment.CenterVertically) {
                 FilledTonalIconButton(
                     onClick = { Navigator.back() },
@@ -145,7 +137,6 @@ fun VersionDetailScreen(version: RemoteVersion) {
                 }
             }
 
-            // 版本信息横幅
             ElevatedCard(
                 shape = RoundedCornerShape(20.dp),
                 modifier = Modifier.fillMaxWidth(),
@@ -186,7 +177,6 @@ fun VersionDetailScreen(version: RemoteVersion) {
                 }
             }
 
-            // 自定义版本名称
             ElevatedCard(
                 shape = RoundedCornerShape(20.dp),
                 modifier = Modifier.fillMaxWidth(),
@@ -228,7 +218,6 @@ fun VersionDetailScreen(version: RemoteVersion) {
                 }
             }
 
-            // 模组加载器
             ElevatedCard(
                 shape = RoundedCornerShape(20.dp),
                 modifier = Modifier.fillMaxWidth(),
@@ -254,7 +243,6 @@ fun VersionDetailScreen(version: RemoteVersion) {
                     }
                     Spacer(Modifier.height(14.dp))
 
-                    // 加载器选项行
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         LoaderOption.entries.forEach { option ->
                             val selected = selectedLoader == option
@@ -275,7 +263,6 @@ fun VersionDetailScreen(version: RemoteVersion) {
                         }
                     }
 
-                    // 版本选择器
                     if (selectedLoader != LoaderOption.None) {
                         Spacer(Modifier.height(14.dp))
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -330,7 +317,6 @@ fun VersionDetailScreen(version: RemoteVersion) {
                 }
             }
 
-            // OptiFine 选项
             ElevatedCard(
                 shape = RoundedCornerShape(20.dp),
                 modifier = Modifier.fillMaxWidth(),
@@ -371,7 +357,6 @@ fun VersionDetailScreen(version: RemoteVersion) {
                         )
                     }
 
-                    // OptiFine 版本选择
                     if (installOptiFine) {
                         Spacer(Modifier.height(14.dp))
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -445,7 +430,6 @@ fun VersionDetailScreen(version: RemoteVersion) {
                 }
             }
 
-            // 安装总览摘要
             if (selectedLoader != LoaderOption.None || installOptiFine) {
                 Surface(
                     shape = RoundedCornerShape(14.dp),
@@ -467,7 +451,6 @@ fun VersionDetailScreen(version: RemoteVersion) {
                 }
             }
 
-            // 加载器安装进度
             if (loaderProgress.isRunning || loaderProgress.done || loaderProgress.error.isNotBlank()) {
                 ElevatedCard(
                     shape = RoundedCornerShape(18.dp),
@@ -508,7 +491,6 @@ fun VersionDetailScreen(version: RemoteVersion) {
                 }
             }
 
-            // 下载进度
             if (downloadProgress.isRunning) {
                 ElevatedCard(
                     shape = RoundedCornerShape(18.dp),
@@ -541,7 +523,6 @@ fun VersionDetailScreen(version: RemoteVersion) {
                 }
             }
 
-            // 消息提示
             if (installMessage.isNotBlank()) {
                 val isSuccess = "成功" in installMessage
                 Surface(
@@ -569,7 +550,6 @@ fun VersionDetailScreen(version: RemoteVersion) {
 
             Spacer(Modifier.height(4.dp))
 
-            // 确认安装按钮
             Button(
                 onClick = {
                     isInstalling = true
@@ -643,9 +623,6 @@ fun VersionDetailScreen(version: RemoteVersion) {
     }
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// 网络获取 Loader 版本列表
-// ══════════════════════════════════════════════════════════════════════════════
 
 private val httpJson = Json { ignoreUnknownKeys = true }
 
@@ -658,9 +635,7 @@ private suspend fun fetchLoaderVersions(mcVersion: String, loader: LoaderOption)
     }
 }
 
-// 通用 HTTP GET：先 curl.exe，后 HttpURLConnection（解决 JVM SSL 问题） 
 private fun loaderHttpGet(url: String): String {
-    // curl 优先（Fabric 响应很大，给充足超时）
     try {
         val proc = ProcessBuilder(
             "curl.exe", "-sL", "--connect-timeout", "15", "--max-time", "60", url
@@ -669,7 +644,6 @@ private fun loaderHttpGet(url: String): String {
         val ok = proc.waitFor(65, java.util.concurrent.TimeUnit.SECONDS)
         if (ok && proc.exitValue() == 0 && text.isNotBlank()) {
             val trimmed = text.trim()
-            // 基本 JSON 验证：以 [ 或 { 开头
             if (trimmed.startsWith("[") || trimmed.startsWith("{")) return trimmed
         }
         println("[LoaderFetch] curl 失败 url=$url exitCode=${if (ok) proc.exitValue() else "timeout"}")
@@ -677,7 +651,6 @@ private fun loaderHttpGet(url: String): String {
         println("[LoaderFetch] curl 异常: ${e.message}")
     }
 
-    // fallback: HttpURLConnection
     try {
         val conn = java.net.URI(url).toURL().openConnection() as java.net.HttpURLConnection
         conn.connectTimeout = 15_000
@@ -700,7 +673,6 @@ private fun loaderHttpGet(url: String): String {
 
 private suspend fun fetchFabricVersions(mcVersion: String): List<LoaderVersionItem> = withContext(Dispatchers.IO) {
     try {
-        // BMCLAPI 镜像优先，官方备选
         val urls = listOf(
             "https://bmclapi2.bangbang93.com/fabric-meta/v2/versions/loader/$mcVersion",
             "https://meta.fabricmc.net/v2/versions/loader/$mcVersion",
@@ -740,7 +712,6 @@ private suspend fun fetchForgeVersions(mcVersion: String): List<LoaderVersionIte
             if (items.isNotEmpty()) return@withContext items
         }
 
-        // fallback：Forge maven metadata（不包含 build，但可用于直接 maven 安装器下载）
         val metadataUrls = listOf(
             "https://bmclapi2.bangbang93.com/maven/net/minecraftforge/forge/maven-metadata.xml",
             "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml",
@@ -800,9 +771,6 @@ private suspend fun fetchOptiFineVersions(mcVersion: String): List<LoaderVersion
     } catch (_: Exception) { emptyList() }
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// 内部子组件
-// ══════════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun VdChip(text: String, containerColor: androidx.compose.ui.graphics.Color) {

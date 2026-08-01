@@ -71,7 +71,6 @@ object VersionScanner {
                 return null
             }
 
-            // 读取自定义 Java 路径（存储在版本目录下的 .md3l_java 文件）
             val customJavaPath = runCatching {
                 val javaCfgFile = File(versionDir, ".md3l_java")
                 if (javaCfgFile.isFile) javaCfgFile.readText(Charsets.UTF_8).trim() else ""

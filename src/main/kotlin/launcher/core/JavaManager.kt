@@ -24,24 +24,15 @@ object JavaManager {
     private val javaMajorCache = ConcurrentHashMap<String, Int>()
     private val javaModuleCache = ConcurrentHashMap<String, Set<String>>()
 
-    /**
-     * 根据 Minecraft 版本号判断所需的 Java 大版本。
-     * Alpha / Beta / 1.0~1.16.x → Java 8
-     * 1.17.x → Java 16
-     * 1.18~1.20.4 → Java 17
-     * 1.20.5+ / 1.21+ → Java 21
-     */
     fun requiredJavaMajor(mcVersionId: String): Int {
         val v = mcVersionId.lowercase().trim()
 
-        // 远古版本强制 Java 8
         if (v.startsWith("b1.") || v.startsWith("a1.") ||
             v.startsWith("inf-") || v.startsWith("c0.") ||
             v.startsWith("rd-") || v.contains("combat") ||
             v.endsWith("pre-classic")
         ) return 8
 
-        // 快照格式 (YYwXXa) 近似映射
         val snapshotMatch = Regex("""^(\d{2})w(\d{2})[a-z]$""").matchEntire(v)
         if (snapshotMatch != null) {
             val year = snapshotMatch.groupValues[1].toIntOrNull() ?: 99
@@ -55,13 +46,12 @@ object JavaManager {
             }
         }
 
-        // 正式版 X.Y.Z 解析
         val parts = v.split(".")
         val major = parts.getOrNull(0)?.toIntOrNull()
         val minor = parts.getOrNull(1)?.toIntOrNull()
         val patch = parts.getOrNull(2)?.split("-")?.firstOrNull()?.toIntOrNull() ?: 0
 
-        if (major == null || minor == null) return 8  // 无法识别的版本一律 Java 8
+        if (major == null || minor == null) return 8
 
         return when {
             major == 1 && minor <= 16 -> 8
@@ -74,9 +64,6 @@ object JavaManager {
         }
     }
 
-    /**
-     * 从已安装列表中查找匹配大版本的 Java。
-     */
     fun findLocalJava(requiredMajor: Int, javaInstallations: List<JavaInstallation>): JavaInstallation? {
         return javaInstallations.firstOrNull { parseJavaMajor(it.version) == requiredMajor }
             ?: javaInstallations
@@ -84,13 +71,6 @@ object JavaManager {
                 .minByOrNull { parseJavaMajor(it.version) }
     }
 
-    /**
-     * 一站式启动前 Java 解析：
-     * 1. 判断所需 Java 大版本
-     * 2. 在本地查找
-     * 3. 如缺失，自动下载到 <启动器目录>/data/java-{ver}
-     * 返回 java.exe 的完整路径。
-     */
     suspend fun resolveJavaForLaunch(
         mcVersionId: String,
         userJavaPath: String,
@@ -106,7 +86,6 @@ object JavaManager {
         }
         onProgress("版本 $mcVersionId 需要 Java $required")
 
-        // 检查用户手动设置的 Java 是否版本匹配
         val userMajor = probeJavaMajor(userJavaPath)
         if (userMajor == required || (required >= 17 && userMajor > required)) {
             val exe = normalizeJavaExe(userJavaPath)
@@ -118,7 +97,6 @@ object JavaManager {
             onProgress("用户 Java 缺少完整运行时模块，已跳过")
         }
 
-        // 扫描全局 Java
         onProgress("扫描本地 Java $required ...")
         val allJavas = JavaScanner.findAll()
         val match = findLocalJava(required, allJavas)
@@ -132,7 +110,6 @@ object JavaManager {
             onProgress("本地 Java $required 运行时不完整，尝试其他来源")
         }
 
-        // 检查之前下载的
         val md3lDir = LauncherDirs.dataDir
         val cachedExe = findJavaExeInDir(File(md3lDir, "java-$required"))
         if (cachedExe != null && cachedExe.exists()) {
@@ -145,7 +122,6 @@ object JavaManager {
             onProgress("缓存 Java $required 运行时不完整，重新下载")
         }
 
-        // 下载
         onProgress("本地未找到 Java $required，正在自动下载...")
         val downloaded = downloadJre(required, md3lDir, onProgress)
         val downloadedPath = downloaded?.absolutePath
@@ -164,7 +140,6 @@ object JavaManager {
     ): String {
         val required = resolveRequiredJavaMajor(version)
         val displayId = version.inheritsFrom ?: version.id
-        // 优先使用版本自定义 Java 路径
         val effectiveUserPath = version.customJavaPath.takeIf { it.isNotBlank() } ?: userJavaPath
         if (version.customJavaPath.isNotBlank()) {
             onProgress("使用版本自定义 Java: $effectiveUserPath")
@@ -249,7 +224,7 @@ object JavaManager {
             if (jsonObject != null) {
                 jsonObject["javaVersion"]?.jsonObject?.get("majorVersion")?.jsonPrimitive?.intOrNull?.let { return it }
                 jsonObject["releaseTarget"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }?.let { return requiredJavaMajor(it) }
-                
+
                 val parentId = jsonObject["inheritsFrom"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 if (parentId != null) {
                     currentId = parentId
@@ -258,7 +233,7 @@ object JavaManager {
             }
             break
         }
-        
+
         return requiredJavaMajor(currentId ?: version.id)
     }
 
@@ -297,7 +272,6 @@ object JavaManager {
                 proc.destroyForcibly()
                 return 0
             }
-            // Parse: "1.8.0_xxx" → 8, "17.0.x" → 17
             val verLine = output.lines().firstOrNull { "version" in it } ?: return 0
             val verMatch = Regex(""""(\d+)([.\d_]*)"""").find(verLine) ?: return 0
             val first = verMatch.groupValues[1].toIntOrNull() ?: return 0
@@ -573,7 +547,6 @@ object JavaManager {
                 val proc = pb.start()
                 proc.inputStream.bufferedReader().use { reader ->
                     while (reader.readLine() != null) {
-                        // consume installer output to avoid blocking
                     }
                 }
                 if (!proc.waitFor(15, TimeUnit.MINUTES)) {

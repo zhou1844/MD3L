@@ -59,7 +59,7 @@ data class ModrinthProject(
 data class ModrinthDependency(
     val versionId: String = "",
     val projectId: String = "",
-    val dependencyType: String = "", // "required", "optional", "incompatible", "embedded"
+    val dependencyType: String = "",
 )
 
 @Serializable
@@ -397,11 +397,6 @@ object ModrinthApi {
         }
     }
 
-    /**
-     * 解析 version 的所有 required 依赖，返回每个依赖的 (项目名, 下载文件)。
-     * 仅递归 required 类型，最多两层，避免无限循环。
-     * gameVersions / loaders 用于匹配最佳版本。
-     */
     suspend fun resolveDependencyFiles(
         version: ModrinthVersion,
         preferGameVersion: String = "",
@@ -414,7 +409,6 @@ object ModrinthApi {
             if (depth > 2) return
             if (dep.dependencyType != "required") return
 
-            // 优先直接用 versionId
             val depVersion: ModrinthVersion? = if (dep.versionId.isNotBlank()) {
                 runCatching {
                     val resp = client.get("$BASE/version/${dep.versionId}") {
@@ -453,7 +447,6 @@ object ModrinthApi {
             } else if (dep.projectId.isNotBlank()) {
                 if (dep.projectId in visited) return
                 visited.add(dep.projectId)
-                // 取该项目的版本列表，选最佳匹配
                 val versions = getProjectVersions(dep.projectId)
                 versions.firstOrNull { v ->
                     (preferGameVersion.isBlank() || preferGameVersion in v.gameVersions) &&
@@ -465,7 +458,6 @@ object ModrinthApi {
             if (file != null && depVersion != null) {
                 val name = depVersion.name.ifBlank { file.filename }
                 result.add(name to file)
-                // 递归
                 depVersion.dependencies.forEach { fetchDep(it, depth + 1) }
             }
         }
@@ -474,9 +466,6 @@ object ModrinthApi {
         result
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    //  中文自动翻译 — MyMemory 免费 API（无需 API Key）
-    // ═══════════════════════════════════════════════════════════════════════════
 
     private val chineseRegex = Regex("[\u4e00-\u9fff]")
 
@@ -500,7 +489,6 @@ object ModrinthApi {
         try {
             targetDir.mkdirs()
             val dest = File(targetDir, file.filename)
-            // use single download with a simple scope
             val resp = client.get(file.url) {
                 header("User-Agent", "MD3L/1.1")
             }
@@ -511,9 +499,6 @@ object ModrinthApi {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // CurseForge Java / Java-like resources
-    // ─────────────────────────────────────────────────────────────────────
 
     private fun cfClassIdFor(projectType: String): Int = when (projectType) {
         "resourcepack" -> CF_CLASS_RESOURCEPACK

@@ -34,7 +34,6 @@ data class AppSettings(
     val backgroundBlurRadius: Int = 20,
     val backgroundBrightness: Float = 0.75f,
     val uiPanelOpacity: Float = 0.75f,
-    // 基岩版专项设置
     val bedrockPreheatEnabled: Boolean = true,
     val bedrockVersionIsolation: Boolean = true,
     val bedrockFastSwitchEnabled: Boolean = true,
@@ -43,7 +42,6 @@ data class AppSettings(
     val bedrockPackageCacheTtlMinutes: Int = 5,
     val bedrockAutoMigrateOnFirstLaunch: Boolean = true,
     val bedrockShowRegistrationLog: Boolean = false,
-    // Java版高级设置 — GC 调优
     val jvmMetaspaceSize: Int = 256,
     val jvmReservedCodeCache: Int = 256,
     val jvmG1NewSizePercent: Int = 20,
@@ -57,15 +55,11 @@ data class AppSettings(
     val jvmEnableAggressiveOpts: Boolean = false,
     val jvmStringDedup: Boolean = true,
     val jvmUseZGC: Boolean = false,
-    // GC 精细调节 — ZGC
-    val jvmZUncommitDelay: Int = 60,        // -XX:ZUncommitDelay (秒)
-    val jvmConcGCThreads: Int = 0,          // -XX:ConcGCThreads, 0=auto
-    // GC 精细调节 — Shenandoah
-    val jvmShenandoahMode: String = "iu",   // -XX:ShenandoahGCMode (iu/passive)
-    val jvmShenandoahHeapSizePercent: Int = 10, // -XX:ShenandoahHeapSizePercent
-    // GC 精细调节 — Parallel
-    val jvmParallelGCThreads: Int = 0,      // -XX:ParallelGCThreads, 0=auto
-    // Java版高级设置 — 启动行为
+    val jvmZUncommitDelay: Int = 60,
+    val jvmConcGCThreads: Int = 0,
+    val jvmShenandoahMode: String = "iu",
+    val jvmShenandoahHeapSizePercent: Int = 10,
+    val jvmParallelGCThreads: Int = 0,
     val launchDemoMode: Boolean = false,
     val skipVersionCheck: Boolean = false,
     val javaGameWidth: Int = 0,
@@ -77,64 +71,53 @@ data class AppSettings(
     val javaQuickPlaySingleplayer: String = "",
     val javaQuickPlayMultiplayer: String = "",
     val javaExtraGameArgs: String = "",
-    // Java版高级设置 — JVM 运行时
-    val jvmThreadStackSize: Int = 0,       // -Xss, KB; 0=default
+    val jvmThreadStackSize: Int = 0,
     val jvmEnableJit: Boolean = true,
     val jvmTieredCompilation: Boolean = true,
-    val jvmInlineSize: Int = 325,           // -XX:MaxInlineSize
-    val jvmFreqInlineSize: Int = 325,       // -XX:FreqInlineSize
-    val jvmLoopUnrollingLimit: Int = 60,    // -XX:LoopUnrollingLimit
-    val jvmEnableIEEE: Boolean = false,     // -XX:+UseStrictFP
+    val jvmInlineSize: Int = 325,
+    val jvmFreqInlineSize: Int = 325,
+    val jvmLoopUnrollingLimit: Int = 60,
+    val jvmEnableIEEE: Boolean = false,
     val jvmNativeMemoryTracking: Boolean = false,
-    // 基岩版高级设置 — 版本管理
     val bedrockMigrateFromProfilesOnOpen: Boolean = true,
     val bedrockMaxParallelInstalls: Int = 2,
     val bedrockSkipHashVerify: Boolean = false,
     val bedrockKeepCacheAfterInstall: Boolean = true,
     val bedrockJunctionFallbackCopy: Boolean = false,
-    // 基岩版高级设置 — 游戏行为
-    val bedrockFpsLimit: Int = 0,           // 0=unlimited
-    val bedrockRenderDistance: Int = 0,     // 0=default
+    val bedrockFpsLimit: Int = 0,
+    val bedrockRenderDistance: Int = 0,
     val bedrockGraphicsMode: String = "fancy",
     val bedrockShowCoordinates: Boolean = false,
     val bedrockHideHud: Boolean = false,
     val bedrockSimulationDistance: Int = 0,
     val bedrockAllowCheats: Boolean = false,
     val bedrockMuteSounds: Boolean = false,
-    val bedrockExtraEnvArgs: String = "",   // 额外环境变量，KEY=VAL 换行分隔
-    // 基岩版 — 存档路径
-    val bedrockProfilesDir: String = "",    // 空=自动（与版本同盘）
-    // Java版 — 额外环境变量
-    val javaExtraEnvVars: String = "",      // KEY=VAL 换行分隔
-    // 通用 — 启动行为
+    val bedrockExtraEnvArgs: String = "",
+    val bedrockProfilesDir: String = "",
+    val javaExtraEnvVars: String = "",
     val closeAfterLaunch: Boolean = false,
     val checkUpdateOnStartup: Boolean = true,
     val logRetentionDays: Int = 7,
-    val startupPage: String = "launch",     // launch / versions / download
+    val startupPage: String = "launch",
     val showConsoleOnLaunch: Boolean = false,
     val confirmBeforeClose: Boolean = true,
-    // 通用 — 网络
     val httpProxyHost: String = "",
     val httpProxyPort: Int = 0,
     val networkTimeoutSec: Int = 30,
-    // 通用 — 语言 & 外观
-    val language: String = "zh",            // zh / en
-    val uiSidebarWidth: Int = 80,           // dp，侧边栏宽度
-    val uiAnimationSpeed: Float = 1.0f,     // 1.0=正常，0.5=减半，0=关
-    val uiFontScale: Float = 1.0f,          // 字体缩放倍率
-    val uiCompactMode: Boolean = false,     // 减少各组件间距
-    val uiShowVersionBadge: Boolean = true, // 侧边栏底部显示版本号
-    val uiCornerRadius: Int = 16,           // dp，全局圆角半径
-    val showLogSidebar: Boolean = false,    // 侧边栏显示日志入口（需手动开启）
-    // 通用 — 导航方式 (sidebar / floating)
+    val language: String = "zh",
+    val uiSidebarWidth: Int = 80,
+    val uiAnimationSpeed: Float = 1.0f,
+    val uiFontScale: Float = 1.0f,
+    val uiCompactMode: Boolean = false,
+    val uiShowVersionBadge: Boolean = true,
+    val uiCornerRadius: Int = 16,
+    val showLogSidebar: Boolean = false,
     val navigationMode: String = "sidebar",
-    // 浮动导航专属设置
-    val navFloatingMarginBottom: Int = 12,  // dp，浮动导航距窗口底部距离
-    val navFloatingMarginSide: Int = 16,    // dp，浮动导航距窗口左右距离
-    val navFloatingCornerRadius: Int = 24,  // dp，浮动导航自身圆角
-    val navFloatingHeight: Int = 64,        // dp，浮动导航高度
+    val navFloatingMarginBottom: Int = 12,
+    val navFloatingMarginSide: Int = 16,
+    val navFloatingCornerRadius: Int = 24,
+    val navFloatingHeight: Int = 64,
     val navFloatingShowLabels: Boolean = true,
-    // 自定义字体
     val customFontPath: String = "",
 ) {
     companion object {

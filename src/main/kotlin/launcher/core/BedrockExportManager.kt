@@ -12,10 +12,6 @@ object BedrockExportManager {
 
     private val json = Json { prettyPrint = true; encodeDefaults = true; ignoreUnknownKeys = true }
 
-    // 1. 导出 Addon（.mcaddon）
-    /**
-     * 将版本 profile 目录内所有行为包和资源包合并打包为标准 .mcaddon ZIP。
-     */
     fun exportAddon(versionId: String, versionDir: String, minecraftDir: String, outputFile: File): String {
         return try {
             val engine = BedrockLaunchEngine()
@@ -58,7 +54,6 @@ object BedrockExportManager {
         }
     }
 
-    // 2. 导出 .md3l 整合包
     @Serializable
     data class Md3lPackMeta(
         val formatVersion: Int = 1,
@@ -75,9 +70,6 @@ object BedrockExportManager {
         val sizeBytes: Long = 0,
     )
 
-    /**
-     * 创建 .md3l 整合包：包含版本信息 JSON + 行为包 + 资源包，不含用户个人设置。
-     */
     fun exportMd3lPack(versionId: String, versionDir: String, minecraftDir: String, outputFile: File): String {
         return try {
             val engine = BedrockLaunchEngine()
@@ -134,10 +126,6 @@ object BedrockExportManager {
         }
     }
 
-    // 3. 备份版本（.md3lbackup）
-    /**
-     * 整个版本目录（含 profile 数据）的完整 ZIP 备份，后缀 .md3lbackup。
-     */
     fun backupVersion(versionId: String, versionDir: String, minecraftDir: String, outputFile: File,
                       onProgress: ((String) -> Unit)? = null): String {
         return try {
@@ -161,7 +149,6 @@ object BedrockExportManager {
                 if (vd.isDirectory) addDirToZip(vd, "version")
                 onProgress?.invoke("正在备份存档数据…")
                 if (profileDir.isDirectory) addDirToZip(profileDir, "profile")
-                // 写入备份元信息
                 zos.putNextEntry(ZipEntry("backup_meta.json"))
                 zos.write("""{"versionId":"$versionId","backedUpAt":${System.currentTimeMillis()},"formatVersion":1}""".toByteArray(Charsets.UTF_8))
                 zos.closeEntry()
@@ -174,10 +161,6 @@ object BedrockExportManager {
         }
     }
 
-    // 4. 导入 .md3l 整合包
-    /**
-     * 读取 .md3l 整合包，将行为包/资源包注入到指定版本，并输出元信息描述。
-     */
     fun importMd3lPack(packFile: File, versionId: String, versionDir: String, minecraftDir: String): String {
         return try {
             val engine = BedrockLaunchEngine()
@@ -225,10 +208,6 @@ object BedrockExportManager {
         }
     }
 
-    // 5. 导入 .md3lbackup 备份
-    /**
-     * 将 .md3lbackup 恢复到目标游戏目录，恢复版本文件和 profile 数据。
-     */
     fun restoreBackup(backupFile: File, minecraftDir: String, onProgress: ((String) -> Unit)? = null): String {
         return try {
             var backupMeta: Map<String, String> = emptyMap()
@@ -283,7 +262,6 @@ object BedrockExportManager {
         }
     }
 
-    // 工具函数
     private fun readPackDisplayNameFromDir(packDir: File): String? {
         return try {
             val manifest = File(packDir, "manifest.json")

@@ -498,8 +498,6 @@ private fun SidebarNavItem(
     compact: Boolean = false,
     onClick: () -> Unit,
 ) {
-    // 与 Windows 版相同，此处省略大量重复代码
-    // 完整实现请参考 Windows 版
     val interactionSource = remember { MutableInteractionSource() }
     var isHovered by remember { mutableStateOf(false) }
 
@@ -607,7 +605,6 @@ private fun ScreenContent(route: Route) {
     }
 }
 
-// ── Floating nav item（紧凑版）─────────────────────────────────────────────────
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 private fun FloatingNavItem(

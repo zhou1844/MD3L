@@ -26,25 +26,8 @@ import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import javax.imageio.ImageIO
 
-/**
- * 本地 Yggdrasil 认证 + 纹理服务器，用于离线账户皮肤加载。
- *
- *   - 启动一个嵌入式的 HTTP 服务器（Ktor Netty）
- *   - 实现 Yggdrasil API 的 /、/status、/api/profiles/minecraft、
- *     /sessionserver/session/minecraft/hasJoined、/sessionserver/session/minecraft/profile/{uuid}、
- *     /textures/{hash} 路由
- *   - 皮肤纹理用 SHA-256 哈希标识，通过 /textures/{hash} 提供 PNG
- *   - RSA 密钥对用于 properties 签名
- *   - 配合 authlib-injector Java Agent 注入到 MC 启动参数
- *
- * 相比资源包方案的优势：
- *   - 完全绕过资源包兼容性检查（pack_format、supported_formats、known_packs.json）
- *   - 对所有 MC 版本（包括 1.21.11+、快照版 26w06a 等）通用
- *   - MC 通过原生认证管线加载皮肤，不会出现"不兼容的资源包"提示
- */
 class OfflineSkinServer {
 
-    // ── 角色数据结构 ──────────────────────────────────────────────────
 
     data class CharacterData(
         val uuid: UUID,
@@ -54,15 +37,11 @@ class OfflineSkinServer {
         val isSlim: Boolean
     )
 
-    // ── 纹理缓存 ──────────────────────────────────────────────────────
-    // hash → PNG bytes
     private val textureCache = ConcurrentHashMap<String, ByteArray>()
 
-    // ── 角色注册表 ────────────────────────────────────────────────────
     private val charactersByUuid = ConcurrentHashMap<UUID, CharacterData>()
     private val charactersByName = ConcurrentHashMap<String, CharacterData>()
 
-    // ── RSA 密钥对 ────────────────────────────────────────────────────
     private val keyPair: KeyPair = generateRsaKeyPair()
 
     private fun generateRsaKeyPair(): KeyPair {
@@ -77,7 +56,6 @@ class OfflineSkinServer {
         return "-----BEGIN PUBLIC KEY-----\n${encoded.chunked(64).joinToString("\n")}\n-----END PUBLIC KEY-----"
     }
 
-    // ── SHA-256 纹理哈希────────────────────────
 
     private fun computeTextureHash(imageBytes: ByteArray): String {
         val img = ImageIO.read(ByteArrayInputStream(imageBytes))
@@ -101,7 +79,6 @@ class OfflineSkinServer {
             for (y in 0 until height) {
                 val argb = img.getRGB(x, y)
                 putInt(buf, pos, argb)
-                // alpha=0 → 所有通道清零
                 if (buf[pos + 0] == 0.toByte()) {
                     buf[pos + 1] = 0
                     buf[pos + 2] = 0
@@ -120,7 +97,6 @@ class OfflineSkinServer {
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
-    // ── 注册离线角色 ──────────────────────────────────────────────────
 
     fun addCharacter(uuid: String, name: String, skinFile: File, isSlim: Boolean) {
         val imageBytes = skinFile.readBytes()
@@ -138,7 +114,6 @@ class OfflineSkinServer {
         println("[OfflineSkinServer] 已注册角色: $name (uuid=$uuid, hash=$hash, slim=$isSlim, size=${imageBytes.size})")
     }
 
-    // ── RSA 签名 ──────────────────────────────────────────────────────
 
     private fun sign(data: String): String {
         val sig = Signature.getInstance("SHA1withRSA")
@@ -147,7 +122,6 @@ class OfflineSkinServer {
         return Base64.getEncoder().encodeToString(sig.sign())
     }
 
-    // ── Ktor 服务器 ───────────────────────────────────────────────────
 
     private var server: ApplicationEngine? = null
     @Volatile var port: Int = 0
@@ -160,7 +134,6 @@ class OfflineSkinServer {
 
         val engine = embeddedServer(Netty, port = 0, host = "127.0.0.1") {
             routing {
-                // ── 根路径：Yggdrasil 元数据 ──────────────────────────
                 get("/") {
                     val responseJson = Json.encodeToString(
                         buildJsonObject {
@@ -180,7 +153,6 @@ class OfflineSkinServer {
                     call.respondText(responseJson, ContentType.Application.Json)
                 }
 
-                // ── /status ──────────────────────────────────────────
                 get("/status") {
                     val responseJson = Json.encodeToString(
                         buildJsonObject {
@@ -192,7 +164,6 @@ class OfflineSkinServer {
                     call.respondText(responseJson, ContentType.Application.Json)
                 }
 
-                // ── /api/profiles/minecraft ──────────────────────────
                 post("/api/profiles/minecraft") {
                     val body = call.receiveText()
                     val names = try {
@@ -213,7 +184,6 @@ class OfflineSkinServer {
                     call.respondText(Json.encodeToString(profilesArray), ContentType.Application.Json)
                 }
 
-                // ── /sessionserver/session/minecraft/hasJoined ───────
                 get("/sessionserver/session/minecraft/hasJoined") {
                     val username = call.request.queryParameters["username"]
                     if (username == null) {
@@ -228,12 +198,10 @@ class OfflineSkinServer {
                     }
                 }
 
-                // ── /sessionserver/session/minecraft/join ────────────
                 post("/sessionserver/session/minecraft/join") {
                     call.respondText("", status = HttpStatusCode.NoContent)
                 }
 
-                // ── /sessionserver/session/minecraft/profile/<uuid> ──
                 get("/sessionserver/session/minecraft/profile/{uuid}") {
                     val uuidStr = call.parameters["uuid"] ?: ""
                     val uuid = try {
@@ -250,7 +218,6 @@ class OfflineSkinServer {
                     }
                 }
 
-                // ── /textures/{hash} ─────────────────────────────────
                 get("/textures/{hash}") {
                     val hash = call.parameters["hash"] ?: ""
                     val data = textureCache[hash]
@@ -278,12 +245,10 @@ class OfflineSkinServer {
         println("[OfflineSkinServer] 已停止")
     }
 
-    // ── 构建完整角色响应（含 textures 属性）──────────────────────────
 
     private fun buildCompleteResponse(character: CharacterData): JsonObject {
         val skinUrl = "$rootUrl/textures/${character.skinHash}"
 
-        // 构建内层 textures JSON（将嵌入到 sign 中）
         val innerTexturesJson = Json.encodeToString(
             buildJsonObject {
                 put("timestamp", System.currentTimeMillis())
@@ -310,7 +275,6 @@ class OfflineSkinServer {
             innerTexturesJson.toByteArray(Charsets.UTF_8)
         )
 
-        // 构建完整响应
         return buildJsonObject {
             put("id", character.uuid.toString().replace("-", ""))
             put("name", character.name)

@@ -13,9 +13,6 @@ import kotlinx.serialization.json.*
 import java.awt.Desktop
 import java.net.URI
 
-/**
- * curl.exe fallback HTTP helper for Windows machines where JVM SSL fails.
- */
 private fun curlPost(url: String, headers: Map<String, String> = emptyMap(), body: String = "", formData: Map<String, String> = emptyMap()): String? {
     return try {
         val cmd = mutableListOf(LauncherDirs.curlCmd(), "-sL", "--connect-timeout", "15", "--max-time", "30")
@@ -70,7 +67,6 @@ data class MinecraftProfile(
 
 object AuthManager {
 
-    // Microsoft OAuth endpoints (使用 MSA 端点，与主项目一致)
     private const val DEVICE_CODE_URL = "https://login.live.com/oauth20_connect.srf"
     private const val TOKEN_URL = "https://login.live.com/oauth20_token.srf"
     private const val CLIENT_ID = "00000000402b5328"
@@ -112,24 +108,20 @@ object AuthManager {
     }
 
     fun openBrowser(url: String) {
-        // 方式 1: Desktop API
         try {
             if (Desktop.isDesktopSupported()) {
                 Desktop.getDesktop().browse(URI(url))
                 return
             }
         } catch (_: Exception) { }
-        // 方式 2: cmd start
         try {
             ProcessBuilder("cmd", "/c", "start", url.replace("&", "^&")).start()
             return
         } catch (_: Exception) { }
-        // 方式 3: rundll32
         try {
             ProcessBuilder("rundll32", "url.dll,FileProtocolHandler", url).start()
             return
         } catch (_: Exception) { }
-        // 方式 4: powershell
         try {
             ProcessBuilder("powershell", "-NoProfile", "-Command", "Start-Process '${url.replace("'", "''")}'")
                 .start()

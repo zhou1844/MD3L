@@ -30,16 +30,12 @@ object VersionScanner {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    //扫描缓存
     private data class VersionCacheEntry(
         val version: LocalVersion,
         val jsonLastModified: Long,
     )
     private val versionCache = ConcurrentHashMap<String, VersionCacheEntry>()
 
-    /**
-     * 清除扫描缓存
-     */
     fun clearCache() {
         versionCache.clear()
     }
@@ -54,20 +50,17 @@ object VersionScanner {
         val dirs = versionsDir.listFiles()?.filter { it.isDirectory } ?: emptyList()
         val currentPaths = dirs.map { it.absolutePath }.toSet()
 
-        // 清除已不存在版本的缓存条目（如已删除的版本）
         versionCache.keys.removeAll { it !in currentPaths }
 
         dirs.mapNotNull { dir ->
             val jsonFile = findVersionJsonFile(dir) ?: return@mapNotNull null
 
-            // 缓存命中：JSON 文件未修改则复用缓存结果，避免重复 I/O
             val mtime = jsonFile.lastModified()
             val cached = versionCache[dir.absolutePath]
             if (cached != null && cached.jsonLastModified == mtime) {
                 return@mapNotNull cached.version
             }
 
-            // 缓存未命中，从磁盘解析
             val parsed = parseVersionJson(jsonFile, dir.absolutePath)
             if (parsed != null) {
                 versionCache[dir.absolutePath] = VersionCacheEntry(parsed, mtime)
@@ -104,7 +97,6 @@ object VersionScanner {
                 return null
             }
 
-            // 读取自定义 Java 路径（存储在版本目录下的 .md3l_java 文件）
             val customJavaPath = runCatching {
                 val javaCfgFile = File(versionDir, ".md3l_java")
                 if (javaCfgFile.isFile) javaCfgFile.readText(Charsets.UTF_8).trim() else ""

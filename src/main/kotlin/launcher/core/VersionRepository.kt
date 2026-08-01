@@ -10,12 +10,6 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 
-/**
- * 版本仓库 —— 管理本地版本列表的 StateFlow 驱动缓存。
- *
- * 所有版本突变操作（重命名、删除）完成后必须调用 [invalidateCache]
- * 强制刷新 StateFlow，驱动 UI 重组 (Recomposition)。
- */
 object VersionRepository {
 
     private val _versions = MutableStateFlow<List<LocalVersion>>(emptyList())
@@ -26,43 +20,19 @@ object VersionRepository {
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
-    /**
-     * 通知本地版本列表发生变化（安装/导入/删除等），驱动所有观察方刷新。
-     * 与 [invalidateCache] 不同，此方法不做磁盘扫描，仅递增修订号，
-     * 供不经由 StateFlow 缓存的安装路径（基岩版下载/导入）调用。
-     */
     fun notifyChanged() {
         _revision.value = _revision.value + 1
     }
 
-    /**
-     * 扫描本地版本目录并更新 StateFlow。
-     */
     suspend fun scan(minecraftDir: String) {
         _versions.value = VersionScanner.scan(minecraftDir)
     }
 
-    /**
-     * 强制刷新 StateFlow 缓存，驱动 UI 重组。
-     */
     suspend fun invalidateCache(minecraftDir: String) {
         _versions.value = VersionScanner.scan(minecraftDir)
         _revision.value = _revision.value + 1
     }
 
-    /**
-     * 原子化版本重命名 —— 严格按以下原子操作流执行：
-     *
-     * 1. JsonParser 读取原 .json 构建 AST
-     * 2. 突变 (Mutate) 根节点的 "id" 属性为 newName
-     * 3. 将 AST 重新序列化并覆盖写入硬盘
-     * 4. 使用 java.nio.file.Files.move 重命名 JSON 文件
-     * 5. Files.move 重命名父级 Directory
-     * 6. 显式调用 invalidateCache() 强制刷新 StateFlow
-     *
-     * 所有 I/O 操作使用 NIO 的 ATOMIC_MOVE 保证强一致性，
-     * 消除 File.renameTo 的竞态条件 (Race Condition)。
-     */
     suspend fun atomicRename(
         version: LocalVersion,
         newId: String,
@@ -78,7 +48,6 @@ object VersionRepository {
             val oldId = version.id
             val isBedrock = version.type == "bedrock"
 
-            // Java 版：修改 JSON 中的 id 字段并重命名 JSON + JAR
             if (!isBedrock) {
                 val oldJsonFile = File(oldDir, "$oldId.json")
                 if (!oldJsonFile.exists()) return@withContext "找不到版本 JSON: ${oldJsonFile.name}"
@@ -116,7 +85,6 @@ object VersionRepository {
                 }
             }
 
-            // 重命名目录（Java 和 Bedrock 通用）
             try {
                 Files.move(oldDir.toPath(), newDir.toPath(), StandardCopyOption.ATOMIC_MOVE)
             } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
@@ -134,9 +102,6 @@ object VersionRepository {
         }
     }
 
-    /**
-     * 删除本地版本并刷新缓存。
-     */
     suspend fun deleteVersion(version: LocalVersion, minecraftDir: String): String = withContext(Dispatchers.IO) {
         try {
             val dir = File(version.versionDir)

@@ -14,7 +14,6 @@ import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipFile
 
-// Minecraft Bedrock GDK CIK 密钥（从 Minecraft_MCWIN_GamePass_XboxLive 的 CIK 文件提取）
 const val GDK_CIK_GUID = "91e7b9bd7cc93437e1a8bc602552df06"
 const val GDK_CIK_KEY = "C9A969FBFCBBF5F46D71250AF226CF6AC7D15C25F9546344549391D16857391F"
 
@@ -55,26 +54,23 @@ object BedrockDownloadManager {
     }
 
     data class InstallProgress(
-        val phase: String = "",          // "downloading" | "installing" | "done" | "error"
-        val message: String = "",        // 人类可读状态
-        val fraction: Float = 0f,        // 0..1
-        val versionKey: String = "",     // "${version}_WU"
+        val phase: String = "",
+        val message: String = "",
+        val fraction: Float = 0f,
+        val versionKey: String = "",
     )
 
     private val _installProgress = MutableStateFlow(InstallProgress())
     val installProgress: StateFlow<InstallProgress> = _installProgress.asStateFlow()
 
-    // 全局下载状态
     private val _downloadingVersions = MutableStateFlow<Set<String>>(emptySet())
     val downloadingVersions: StateFlow<Set<String>> = _downloadingVersions.asStateFlow()
 
     private val _downloadResults = MutableStateFlow<Map<String, String>>(emptyMap())
     val downloadResults: StateFlow<Map<String, String>> = _downloadResults.asStateFlow()
 
-    // 全局协程作用域
     private val globalScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    // 保存 Job 引用用于取消
     private val activeJobs = ConcurrentHashMap<String, kotlinx.coroutines.Job>()
     private val pausedVersions = ConcurrentHashMap.newKeySet<String>()
     private val closedVersions = ConcurrentHashMap.newKeySet<String>()
@@ -102,9 +98,6 @@ object BedrockDownloadManager {
         VersionRepository.notifyChanged()
     }
 
-    /**
-     * 取消下载任务。
-     */
     fun cancelDownload(versionKey: String) {
         closedVersions.add(versionKey)
         pausedVersions.remove(versionKey)
@@ -158,12 +151,9 @@ object BedrockDownloadManager {
         }
     }
 
-    /**
-     * 在全局作用域中启动下载+安装，切换页面也不会中断。
-     */
     fun launchDownload(entry: BedrockVersionCatalog.BedrockVersionEntry) {
         val versionKey = "${entry.version}_${entry.arch}"
-        if (_downloadingVersions.value.contains(versionKey)) return // 防重复
+        if (_downloadingVersions.value.contains(versionKey)) return
         if (_downloadingVersions.value.isNotEmpty()) {
             _downloadResults.value = _downloadResults.value + (versionKey to "已有基岩下载任务进行中，请先完成或取消")
             return
@@ -459,8 +449,6 @@ object BedrockDownloadManager {
                 proc.waitFor(35, java.util.concurrent.TimeUnit.SECONDS)
                 if (json.length < 100) return@runCatching null
 
-                // 从 JSON 里找 PackageDownloadUris 下的 msixvc/msixbundle URL
-                // 优先匹配版本号，再 fallback 到任意 msixvc
                 val urlRegex = Regex(""""Uri"\s*:\s*"(https?://[^"]+\.msixvc[^"]*)"""", RegexOption.IGNORE_CASE)
                 val allUrls = urlRegex.findAll(json).map { it.groupValues[1] }.toList()
                 val versionMatch = allUrls.firstOrNull { versionName in it }
@@ -481,7 +469,6 @@ object BedrockDownloadManager {
             cacheDir.mkdirs()
             val targetFile = File(cacheDir, entry.fileName)
 
-            // Phase 1: 尝试直接 HTTP 下载
             if (targetFile.exists() && targetFile.length() > 0 &&
                 (entry.fileSize <= 0 || targetFile.length() >= entry.fileSize * 0.95)) {
                 println("[BDM] 缓存命中: ${entry.fileName} (${targetFile.length()} bytes)")
@@ -552,7 +539,6 @@ object BedrockDownloadManager {
         if (versionDir.exists()) versionDir.deleteRecursively()
         versionDir.mkdirs()
 
-        // 纯 Kotlin XVD 解码器（针对 .msixvc GDK 格式）
         if (file.extension.lowercase() == "msixvc") {
             println("[BDM-GDK] 使用纯 Kotlin XVD 解码器...")
             emit(versionKey, "installing", "正在 XVD 解码解压...", 0.55f)
@@ -570,7 +556,6 @@ object BedrockDownloadManager {
             }
             println("[BDM-GDK] XVD 解码器解压成功")
         } else {
-            // 非 msixvc 走标准 Bundle 解压
             emit(versionKey, "installing", "正在解压...", 0.55f)
             try {
                 BedrockLaunchEngine().extractAppxBundle(file.absolutePath, versionDir, "x64") { cur, total, name ->
@@ -614,7 +599,6 @@ object BedrockDownloadManager {
         if (extractDir.exists()) extractDir.deleteRecursively()
         extractDir.mkdirs()
 
-        // msixvc → 优先使用纯 Kotlin XVD 解码器
         val extracted = if (file.extension.lowercase() == "msixvc") {
             println("[BDM] MSIXVC 使用纯 Kotlin XVD 解码器...")
             val xvdProgress = GdkXvdExtractor.ExtractProgress { cur, total, name ->
@@ -781,7 +765,6 @@ object BedrockDownloadManager {
         val ext = file.extension.lowercase()
         when (ext) {
             "msixvc" -> {
-                // .msixvc 是 GDK/XVD 容器，必须走纯 Kotlin XVD 解码器，不能当普通 Appx 解压
                 return installGdk(file, version, versionKey, settings)
             }
             "appx", "msixbundle", "appxbundle", "msix" -> {
@@ -848,7 +831,7 @@ object BedrockDownloadManager {
 
             emit(versionKey, "downloading", "等待浏览器下载中... 请在浏览器中点击下载", 0.05f)
             var newFile: File? = null
-            val deadline = System.currentTimeMillis() + 10 * 60 * 1000L // 10 min
+            val deadline = System.currentTimeMillis() + 10 * 60 * 1000L
 
             while (System.currentTimeMillis() < deadline) {
                 Thread.sleep(2000)
@@ -905,9 +888,6 @@ object BedrockDownloadManager {
         }
     }
 
-    /**
-     * 手动导入本地 .appx 文件并安装。
-     */
     suspend fun installFromFile(file: File, version: String): String = withContext(Dispatchers.IO) {
         val versionKey = "${version}_import"
         try {
@@ -921,9 +901,6 @@ object BedrockDownloadManager {
         }
     }
 
-    /**
-     * 用系统浏览器打开 URL（绕过 Cloudflare）。
-     */
     fun openInBrowser(url: String) {
         try {
             if (Desktop.isDesktopSupported()) {
@@ -937,9 +914,6 @@ object BedrockDownloadManager {
         }
     }
 
-    /**
-     * 打开 Microsoft Store 中的 Minecraft 页面。
-     */
     fun openMicrosoftStore() {
         try {
             ProcessBuilder("cmd", "/c", "start", "ms-windows-store://pdp/?ProductId=9NBLGGH2JHXJ").start()
@@ -948,9 +922,6 @@ object BedrockDownloadManager {
 
     enum class DownloadResult { SUCCESS, FAILED, CLOUDFLARE_BLOCKED }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    //  直接 HTTP 下载 — 不经过 DownloadManager，带完整错误日志
-    // ═══════════════════════════════════════════════════════════════════════
 
     private fun directDownload(
         url: String,
@@ -965,7 +936,6 @@ object BedrockDownloadManager {
             if (isCancelled()) throw CancellationException("基岩版下载已暂停")
             attempt++
             try {
-                // 手动跟随重定向
                 var currentUrl = url
                 var conn: HttpURLConnection
                 var redirects = 0
@@ -999,7 +969,6 @@ object BedrockDownloadManager {
                 }
 
                 if (conn.responseCode == 403) {
-                    // 检测 Cloudflare JS 挑战
                     val errBody = try { conn.errorStream?.bufferedReader()?.readText()?.take(500) } catch (_: Exception) { null }
                     conn.disconnect()
                     if (errBody != null && (errBody.contains("Just a moment") || errBody.contains("cloudflare"))) {
@@ -1007,7 +976,7 @@ object BedrockDownloadManager {
                         return DownloadResult.CLOUDFLARE_BLOCKED
                     }
                     println("[BDM-DL] HTTP 403 (非 Cloudflare): $errBody")
-                    return DownloadResult.CLOUDFLARE_BLOCKED // 403 都当作需要浏览器
+                    return DownloadResult.CLOUDFLARE_BLOCKED
                 }
 
                 if (conn.responseCode != 200) {
@@ -1052,7 +1021,6 @@ object BedrockDownloadManager {
         return DownloadResult.FAILED
     }
 
-    //  从 exe 安装器中提取 .appx
 
     private val APPX_EXTS = setOf("appx", "msixbundle", "appxbundle", "msix")
 
@@ -1072,7 +1040,7 @@ object BedrockDownloadManager {
             }
         } catch (_: Exception) {}
 
-  
+
         try {
             val proc = ProcessBuilder(
                 "powershell", "-NoProfile", "-Command",
@@ -1106,7 +1074,6 @@ object BedrockDownloadManager {
     }
 
 
-    //  ZIP 解压回退
 
     private fun extractZipWithProgress(zipFile: File, targetDir: File, versionKey: String) {
         ZipFile(zipFile).use { zip ->

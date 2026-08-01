@@ -5,10 +5,6 @@ import kotlinx.serialization.Serializable
 @Serializable
 enum class AccountType { MSA, Offline, ThirdParty }
 
-/**
- * 持久化账号会话实体。
- * 序列化至 ~/.md3l/.accounts.json，包含完整的 OAuth Token 链。
- */
 @Serializable
 data class AccountSession(
     val uuid: String,
@@ -23,7 +19,6 @@ data class AccountSession(
     val userHash: String = "",
     val tokenExpiresAt: Long = 0L,
     val minecraftAccessToken: String = "",
-    // 第三方登录独有字段
     val authServerUrl: String = "",
     val serverName: String = "",
     val thirdPartyEmail: String = "",
@@ -39,9 +34,6 @@ data class AccountSession(
         }
 }
 
-/**
- * 持久化容器：包含活跃账号索引 + 完整账号池。
- */
 @Serializable
 data class AccountStore(
     val activeIndex: Int = -1,

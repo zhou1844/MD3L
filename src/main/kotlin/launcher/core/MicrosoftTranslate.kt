@@ -52,7 +52,6 @@ object MicrosoftTranslate {
 
         try {
             apiMutex.withLock {
-                // 保证每次请求间隔至少 300ms
                 val elapsed = System.currentTimeMillis() - lastApiCallMs
                 if (elapsed < 300) {
                     kotlinx.coroutines.delay(300 - elapsed)
@@ -65,7 +64,6 @@ object MicrosoftTranslate {
                 lastApiCallMs = System.currentTimeMillis()
             }
         } catch (_: Exception) {
-            // fall through
         }
 
         val fallback = words.map { w ->
@@ -79,10 +77,6 @@ object MicrosoftTranslate {
         null
     }
 
-    /**
-     * 调用 MyMemory 免费翻译 API。
-     * 文档：https://mymemory.translated.net/doc/spec.php
-     */
     private suspend fun callMyMemory(text: String): String? {
         val encoded = URLEncoder.encode(text, "UTF-8")
         val url = "https://api.mymemory.translated.net/get?q=$encoded&langpair=zh-CN|en-US"
@@ -94,7 +88,6 @@ object MicrosoftTranslate {
         val responseData = body["responseData"]?.jsonObject ?: return null
         val translatedText = responseData["translatedText"]?.jsonPrimitive?.contentOrNull ?: return null
         val matchQuality = responseData["match"]?.jsonPrimitive?.contentOrNull?.toFloatOrNull() ?: 0f
-        // 只接受质量 >= 40% 的结果
         if (matchQuality < 0.4f) return null
         return translatedText
     }

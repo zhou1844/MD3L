@@ -23,7 +23,6 @@ import java.util.UUID
 object AccountRepository {
 
     private const val CLIENT_ID = "00000000402b5328"
-    // Microsoft OAuth v2.0 endpoints
     private const val TOKEN_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token"
     private const val XBOX_AUTH_URL = "https://user.auth.xboxlive.com/user/authenticate"
     private const val XSTS_URL = "https://xsts.auth.xboxlive.com/xsts/authorize"
@@ -53,7 +52,6 @@ object AccountRepository {
     private val _refreshState = MutableStateFlow<RefreshState>(RefreshState.Idle)
     val refreshState: StateFlow<RefreshState> = _refreshState.asStateFlow()
 
-    /** 皮肤导入成功事件（用于右下角弹窗提示） */
     data class SkinImportEvent(val username: String, val model: String)
 
     private val _skinImportEvent = MutableSharedFlow<SkinImportEvent>(extraBufferCapacity = 1)
@@ -187,7 +185,7 @@ object AccountRepository {
             contentType(ContentType.Application.Json)
             setBody(jsonBody)
         }
-        
+
         if (!resp.status.isSuccess()) {
             val errorBody = try { json.parseToJsonElement(resp.bodyAsText()).jsonObject } catch (e: Exception) { null }
             val errorMsg = errorBody?.get("errorMessage")?.jsonPrimitive?.contentOrNull ?: "HTTP ${resp.status.value}"
@@ -197,21 +195,18 @@ object AccountRepository {
         val body = json.parseToJsonElement(resp.bodyAsText()).jsonObject
         val accessToken = body["accessToken"]?.jsonPrimitive?.contentOrNull ?: throw RuntimeException("响应中缺少 accessToken")
         val clientToken = body["clientToken"]?.jsonPrimitive?.contentOrNull ?: ""
-        
+
         val selectedProfile = body["selectedProfile"]?.jsonObject
             ?: body["availableProfiles"]?.jsonArray?.firstOrNull()?.jsonObject
             ?: throw RuntimeException("账号下没有可用的角色(Profile)")
-            
+
         val uuid = selectedProfile["id"]?.jsonPrimitive?.contentOrNull ?: ""
         val name = selectedProfile["name"]?.jsonPrimitive?.contentOrNull ?: ""
 
-        // 皮肤解析使用对象级别的 parseSkinFromTextures()（定义在 pickOfflineSkin 上方）
 
         var skinUrl = ""
         var skinModel = "classic"
 
-        // 优先从 authenticate 响应的 selectedProfile.properties 中解析皮肤（部分第三方服务器
-        // 的 sessionserver 接口无水纹/权限限制，但 authenticate 响应中已包含完整纹理信息）
         val authTexturesProp = selectedProfile["properties"]?.jsonArray
             ?.find { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull == "textures" }
         val authBase64Value = authTexturesProp?.jsonObject?.get("value")?.jsonPrimitive?.contentOrNull
@@ -228,7 +223,6 @@ object AccountRepository {
             }
         }
 
-        // 如果 authenticate 响应中没有皮肤纹理，再尝试 sessionserver profile 接口
         if (skinUrl.isBlank()) {
             try {
                 val profileResp = client.get("$serverUrl/sessionserver/session/minecraft/profile/$uuid")
@@ -251,13 +245,9 @@ object AccountRepository {
             }
         }
 
-        // 格式化UUID为标准连字符格式（8-4-4-4-12）
         val formattedUuid = if (uuid.length == 32 && !uuid.contains("-")) {
             "${uuid.substring(0,8)}-${uuid.substring(8,12)}-${uuid.substring(12,16)}-${uuid.substring(16,20)}-${uuid.substring(20)}"
         } else uuid
-        // 第三方账号头像：crafatar 不认识第三方服务器的 UUID，
-        // 优先使用皮肤文件 URL 作为头像（皮肤图片可直接展示为头像），
-        // 若无皮肤则回退到 crafatar（至少有个占位显示）
         val avatarUrl = if (skinUrl.isNotBlank()) {
             skinUrl
         } else if (formattedUuid.isNotBlank()) {
@@ -415,11 +405,6 @@ object AccountRepository {
     private val skinCacheDir: File
         get() = File(LauncherDirs.dataDir, "skin_cache").also { it.mkdirs() }
 
-    /**
-     * 刷新正版(MSA)或第三方登录的皮肤信息。
-     * MSA：调用 Minecraft Profile API 获取当前激活的皮肤 URL/型号。
-     * 第三方：调用 sessionserver profile 端点重新拉取纹理。
-     */
     suspend fun refreshSkin(uuid: String): AccountSession? = withContext(Dispatchers.IO) {
         val account = _accounts.value.find { it.uuid == uuid } ?: return@withContext null
         val updated = when (account.type) {
@@ -456,7 +441,7 @@ object AccountRepository {
                     null
                 }
             }
-            else -> null // 离线账号不支持此操作
+            else -> null
         }
         if (updated != null) {
             val list = _accounts.value.toMutableList()
@@ -473,7 +458,6 @@ object AccountRepository {
         updated
     }
 
-    // 将 parseSkinFromTextures 提升为 object 级别的可复用函数（第三方登录添加/刷新共用）
     private fun parseSkinFromTextures(base64Value: String): Pair<String, String> {
         val decoded = String(java.util.Base64.getDecoder().decode(base64Value))
         val texturesJson = json.parseToJsonElement(decoded).jsonObject
@@ -622,7 +606,6 @@ object AccountRepository {
                 ?.jsonObject
         }.getOrNull()
         val skinUrl = activeSkin?.get("url")?.jsonPrimitive?.contentOrNull ?: ""
-        // MC Profile API 返回 "variant": "SLIM" 或 "CLASSIC"
         val skinVariant = activeSkin?.get("variant")?.jsonPrimitive?.contentOrNull?.lowercase() ?: "classic"
         val skinModel = if (skinVariant == "slim") "slim" else "classic"
         return McProfile(uuid, name, skinUrl, skinModel)

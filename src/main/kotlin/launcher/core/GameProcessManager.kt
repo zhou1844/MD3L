@@ -30,13 +30,6 @@ object GameProcessManager {
 
     val isRunning: Boolean get() = _activeProcess.value != null
 
-    /**
-     * 注册已启动的游戏进程。
-     * 在 IO 线程启动监控协程，等待进程退出后自动清理。
-     *
-     * @param process 游戏进程句柄
-     * @param versionId 启动的版本 ID（用于 UI 显示）
-     */
     fun attachProcess(process: Process, versionId: String = "", logFile: File? = null, edition: GameEdition = GameEdition.Java, onExit: (() -> Unit)? = null) {
         _activeProcess.value = process
         _processInfo.value = ProcessInfo(
@@ -48,10 +41,9 @@ object GameProcessManager {
         _statusMessage.value = "游戏运行中: $versionId"
         _launchProgress.value = 85
 
-        
+
         monitorJob?.cancel()
         monitorJob = scope.launch {
-            // 持续消费进程 stdout/stderr，防止管道缓冲区满导致游戏卡死
             val lastLines = mutableListOf<String>()
             val outputLog = logFile
             val windowJob = launch(Dispatchers.IO) {
@@ -85,7 +77,6 @@ object GameProcessManager {
             }
 
             try {
-                // 在 IO 线程阻塞等待进程退出，不阻塞 UI
                 val exitCode = withContext(Dispatchers.IO) {
                     process.waitFor()
                 }
@@ -120,7 +111,6 @@ object GameProcessManager {
                     _statusMessage.value = "游戏已正常退出 · 运行 ${elapsedSec}s"
                 }
             } catch (e: CancellationException) {
-                // forceKill 导致的取消
                 _statusMessage.value = "游戏进程已被强制终结"
             } catch (e: Exception) {
                 _statusMessage.value = "进程监控异常: ${e.message}"
@@ -130,7 +120,6 @@ object GameProcessManager {
                 _launchProgress.value = 0
                 drainJob.cancel()
                 windowJob.cancel()
-                // 通知调用方进程已退出（如停止皮肤服务器等清理工作）
                 onExit?.invoke()
             }
         }
@@ -144,9 +133,6 @@ object GameProcessManager {
         _crashReport.value = null
     }
 
-    /**
-     * 强制销毁当前游戏进程。
-     */
     fun forceKill() {
         _activeProcess.value?.destroyForcibly()
         try {

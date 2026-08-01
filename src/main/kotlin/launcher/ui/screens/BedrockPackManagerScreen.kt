@@ -53,7 +53,6 @@ fun BedrockPackManagerScreen(versionId: String, versionDir: String, packType: St
             val minecraftDir = File(versionDir).parentFile?.parentFile?.absolutePath ?: return null
             val engine = BedrockLaunchEngine()
             val profile = engine.resolveBedrockVersionComMojang(minecraftDir, versionId)
-            // 如果版本隔离目录为空，回退到当前 junction 实际指向的路径
             if (!profile.isDirectory || profile.listFiles().isNullOrEmpty()) {
                 val junctionTarget = engine.resolveActiveJunctionTarget()
                 if (junctionTarget != null) {
@@ -97,7 +96,6 @@ fun BedrockPackManagerScreen(versionId: String, versionDir: String, packType: St
     LaunchedEffect(versionId, packType) { refresh() }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // 顶部栏
         Row(verticalAlignment = Alignment.CenterVertically) {
             FilledTonalIconButton(
                 onClick = { Navigator.back() },
@@ -273,7 +271,6 @@ fun BedrockPackManagerScreen(versionId: String, versionDir: String, packType: St
         }
     }
 
-    // 删除确认对话框
     val target = confirmDeleteTarget
     if (target != null) {
         AlertDialog(
@@ -327,7 +324,6 @@ private fun doImportPack(versionDir: String, versionId: String, packType: String
     } catch (e: Exception) { "导入失败: ${e.message}" }
 }
 
-// 从包目录的 manifest.json 读取包的显示名称 
 private fun readPackDisplayName(packFile: File): String? = runCatching {
     val manifest = if (packFile.isDirectory) File(packFile, "manifest.json")
     else return@runCatching null

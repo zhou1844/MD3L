@@ -4,12 +4,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/**
- * 统一下载/安装任务中心。
- *
- * 把 Java 版本下载、Bedrock 下载、加载器安装等事件汇总到一个列表，
- * 供全局悬浮球和下载管理页面使用。
- */
 object DownloadHub {
 
     enum class TaskType { JavaVersion, BedrockVersion, LoaderInstall, ResourceDownload }
@@ -33,11 +27,9 @@ object DownloadHub {
     private val closeActions = java.util.concurrent.ConcurrentHashMap<String, () -> Unit>()
     private val hiddenTasks = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
-    // 活跃任务数 
     val activeCount: Int
         get() = _tasks.value.count { it.status == TaskStatus.Running }
 
-    // 全局平均进度 0..1 
     val overallFraction: Float
         get() {
             val running = _tasks.value.filter { it.status == TaskStatus.Running }
@@ -87,7 +79,6 @@ object DownloadHub {
             ?: remove(id)
     }
 
-    // 清除已完成/错误的任务 
     fun clearFinished() {
         _tasks.value = _tasks.value.filter { it.status == TaskStatus.Running }
     }

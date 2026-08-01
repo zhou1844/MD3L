@@ -2,18 +2,10 @@ package launcher.core
 
 import java.io.File
 
-/**
- * 启动引擎抽象基类。
- * 派生 [JavaLaunchEngine] 和 [BedrockLaunchEngine]，
- * 通过多态实现 Java Edition / Bedrock Edition 的启动隔离。
- */
 interface ILaunchEngine {
     fun execute(context: LaunchContext): Process
 }
 
-/**
- * 统一启动上下文，携带版本信息、鉴权凭据、JVM 参数等。
- */
 data class LaunchContext(
     val version: LocalVersion,
     val javaPath: String,
@@ -31,10 +23,9 @@ data class LaunchContext(
     val bedrockPackageId: String = "Microsoft.MinecraftUWP_8wekyb3d8bbwe!App",
     val skinUri: String = "",
     val skinModel: String = "classic",
-    val authServerUrl: String = "", // 第三方登录 Yggdrasil API URL
+    val authServerUrl: String = "",
     val gcPolicy: String = "G1GC",
     val accountType: AccountType = AccountType.Offline,
-    // Advanced JVM settings (from AppSettings)
     val jvmMetaspaceSize: Int = 256,
     val jvmReservedCodeCache: Int = 256,
     val jvmG1NewSizePercent: Int = 20,
@@ -58,7 +49,6 @@ data class LaunchContext(
     val jvmLoopUnrollingLimit: Int = 60,
     val jvmEnableIEEE: Boolean = false,
     val jvmNativeMemoryTracking: Boolean = false,
-    // Advanced game args
     val launchDemoMode: Boolean = false,
     val javaUseNativeGlfw: Boolean = false,
     val javaUseNativeOpenAl: Boolean = false,

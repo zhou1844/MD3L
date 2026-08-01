@@ -41,12 +41,10 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
     var downloadingId by remember { mutableStateOf<String?>(null) }
     var statusMessage by remember { mutableStateOf("") }
 
-    // 过滤状态
     var filterGameVersion by remember { mutableStateOf("") }
     var filterLoader by remember { mutableStateOf("") }
     var gameVersionExpanded by remember { mutableStateOf(false) }
 
-    // 目标版本选择（模组将下载到该版本的 mods 文件夹）
     var localVersions by remember { mutableStateOf<List<LocalVersion>>(emptyList()) }
     var selectedTargetVersion by remember { mutableStateOf<LocalVersion?>(null) }
     var targetVersionExpanded by remember { mutableStateOf(false) }
@@ -62,7 +60,6 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
             }
             selectedTargetVersion = localVersions.firstOrNull()
         }
-        // 检测是否为 CurseForge 源（slug 以 "cf:" 开头）
         val slug = project.slug
         if (slug.startsWith("cf:")) {
             val modId = slug.removePrefix("cf:").toIntOrNull()
@@ -90,7 +87,6 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
         isLoading = false
     }
 
-    // 收集可用的游戏版本和加载器
     val availableGameVersions = remember(versions) {
         versions.flatMap { it.gameVersions }.distinct().sortedDescending()
     }
@@ -117,7 +113,6 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
             modifier = Modifier.fillMaxSize().padding(end = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            // 顶部导航栏
             item(key = "header") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     FilledTonalIconButton(
@@ -146,7 +141,6 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                 }
             }
 
-            // 项目信息大横幅
             item(key = "banner") {
                 ElevatedCard(
                     shape = RoundedCornerShape(24.dp),
@@ -198,7 +192,6 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                 }
             }
 
-            // 目标版本选择器卡片
             if (localVersions.isNotEmpty() && !isJavaModpackPage) {
                 item(key = "target_version") {
                     ElevatedCard(
@@ -253,7 +246,6 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                 }
             }
 
-            // 过滤器卡片（Java 版）
             if (edition != "bedrock") {
                 item(key = "filter") {
                     ElevatedCard(
@@ -306,7 +298,6 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                                     }
                                 }
                             }
-                            // 加载器过滤 chips
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 FilterChip(
                                     selected = filterLoader.isBlank(),
@@ -330,7 +321,6 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                 }
             }
 
-            // 状态消息
             if (statusMessage.isNotBlank()) {
                 item(key = "status") {
                     val isOk = "成功" in statusMessage || "加入" in statusMessage || "完成" in statusMessage
@@ -352,7 +342,6 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                 }
             }
 
-            // 版本列表分隔标题
             item(key = "versions_title") {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
@@ -364,7 +353,6 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                 }
             }
 
-            // 空状态
             if (!isLoading && filteredVersions.isEmpty()) {
                 item(key = "empty") {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
@@ -378,7 +366,6 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                 }
             }
 
-            // 版本条目
             items(filteredVersions, key = { it.id }) { ver ->
                     val isDownloading = downloadingId == ver.id
                     ElevatedCard(
@@ -484,7 +471,6 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                                                 val dest = File(targetDir, file.filename)
                                                 val versionHint = selectedTargetVersion?.let { " → ${it.id}" } ?: if (isJavaModpack) " → 导入为新版本" else " → 全局目录"
 
-                                                // 自动解析并下载前置依赖（仅 Java mod，非整合包）
                                                 if (edition != "bedrock" && !isJavaModpack) {
                                                     val preferGv = ver.gameVersions.firstOrNull() ?: filterGameVersion
                                                     val preferLd = ver.loaders.firstOrNull() ?: filterLoader
@@ -518,7 +504,6 @@ fun ModDetailScreen(project: ModrinthProject, edition: String = "java", contentT
                                                     size = file.size,
                                                 ) { ok, finishedFile ->
                                                     if (ok && isJavaModpack) {
-                                                        // 用独立协程作用域，不绑定 Compose 生命周期，防止切换页面时取消导入
                                                         val importScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
                                                         importScope.launch {
                                                             val importTaskId = "modpack_import_${finishedFile.absolutePath.hashCode()}_${System.currentTimeMillis()}"

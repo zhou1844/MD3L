@@ -26,7 +26,6 @@ object VersionManifest {
     private const val MOJANG_MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
     private const val BMCLAPI_MANIFEST = "https://bmclapi2.bangbang93.com/mc/game/version_manifest_v2.json"
 
-    // 根据镜像源设置排列获取顺序 
     private fun getManifestUrls(): List<String> {
         return if (DownloadManager.activeMirror == "official") {
             listOf(MOJANG_MANIFEST, BMCLAPI_MANIFEST)
@@ -46,7 +45,6 @@ object VersionManifest {
         }
     }
 
-    // 最后一次获取版本列表的错误信息（供 UI 展示） 
     @Volatile
     var lastError: String = ""
         private set
@@ -54,7 +52,6 @@ object VersionManifest {
     suspend fun fetchVersionList(): List<RemoteVersion> = withContext(Dispatchers.IO) {
         val errors = mutableListOf<String>()
 
-        // 尝试 Ktor（所有 URL）
         for (url in getManifestUrls()) {
             try {
                 val resp = client.get(url) { header("User-Agent", "MD3L/1.1") }
@@ -71,7 +68,6 @@ object VersionManifest {
             }
         }
 
-        // 备选: curl.exe（所有 URL）
         for (url in getManifestUrls()) {
             try {
                 println("[VersionManifest] 尝试 curl: $url")
@@ -94,7 +90,6 @@ object VersionManifest {
             }
         }
 
-        // 最后: 本地缓存
         if (cacheFile.exists() && cacheFile.length() > 1000) {
             println("[VersionManifest] 使用本地缓存")
             lastError = "网络不可用，使用本地缓存"
@@ -106,9 +101,7 @@ object VersionManifest {
         emptyList()
     }
 
-    // 通用 HTTP GET：先 Ktor，失败走 curl.exe（解决 JVM SSL 问题） 
     private fun httpGet(url: String): String {
-        // Ktor
         try {
             val proc = ProcessBuilder(
                 "curl.exe", "-sL", "--connect-timeout", "15", "--max-time", "60", url
@@ -118,7 +111,6 @@ object VersionManifest {
             if (ok && proc.exitValue() == 0 && text.isNotBlank()) return text
         } catch (_: Exception) {}
 
-        // fallback Ktor (blocking)
         val resp = kotlinx.coroutines.runBlocking {
             client.get(url) { header("User-Agent", "MD3L/1.1") }.bodyAsText()
         }
@@ -141,15 +133,6 @@ object VersionManifest {
         }
     }
 
-    /**
-     * 完整下载一个 Minecraft 版本：
-     * 1. version JSON
-     * 2. client.jar
-     * 3. 所有 libraries (含 natives classifier)
-     * 4. asset index JSON
-     * 5. 所有 asset objects
-     * 可选自定义版本名。
-     */
     suspend fun installVersion(
         version: RemoteVersion,
         minecraftDir: String,
@@ -165,15 +148,12 @@ object VersionManifest {
         try {
             versionDir.mkdirs()
 
-            // Step 1: 下载 version JSON（curl 优先，解决 JVM SSL 问题）
             onProgress("步骤 1/6：下载版本 JSON", 0.05f)
             val vJsonText = httpGet(version.url)
 
-            // 如果自定义名称，需要修改 JSON 中的 id
             val finalJsonText = if (customName != null && customName != version.id) {
                 val parsed = json.parseToJsonElement(vJsonText).jsonObject.toMutableMap()
                 parsed["id"] = JsonPrimitive(versionId)
-                // 加上 inheritsFrom 指向原始版本（如果没有的话）
                 JsonObject(parsed).toString()
             } else {
                 vJsonText
@@ -184,7 +164,6 @@ object VersionManifest {
             val tasks = mutableListOf<DownloadTask>()
             val librariesDir = File(minecraftDir, "libraries")
 
-            // Step 2: client.jar
             val clientDl = root["downloads"]?.jsonObject?.get("client")?.jsonObject
             if (clientDl != null) {
                 val url = DownloadManager.mirrorUrl(clientDl["url"]!!.jsonPrimitive.content)
@@ -196,16 +175,13 @@ object VersionManifest {
                 }
             }
 
-            // Step 3: 所有 libraries
             root["libraries"]?.jsonArray?.forEach { libEl ->
                 val lib = libEl.jsonObject
 
-                // 检查 rules
                 if (!isLibraryAllowed(lib)) return@forEach
 
                 val downloads = lib["downloads"]?.jsonObject
 
-                // artifact (主 jar)
                 val artifact = downloads?.get("artifact")?.jsonObject
                 if (artifact != null) {
                     val path = artifact["path"]!!.jsonPrimitive.content
@@ -218,7 +194,6 @@ object VersionManifest {
                     }
                 }
 
-                // natives classifiers
                 val classifiers = downloads?.get("classifiers")?.jsonObject
                 val nativesKey = getNativesKey(lib)
                 if (classifiers != null && nativesKey != null) {
@@ -236,7 +211,6 @@ object VersionManifest {
                 }
             }
 
-            // Step 4: asset index
             val assetIndex = root["assetIndex"]?.jsonObject
             var assetIndexId: String? = null
             if (assetIndex != null) {
@@ -250,7 +224,6 @@ object VersionManifest {
                 }
             }
 
-            // 先下载 libraries + client jar + asset index
             if (tasks.isNotEmpty()) {
                 onProgress("步骤 2/6：下载客户端与库文件（共 ${tasks.size} 个）", 0.15f)
                 kotlinx.coroutines.coroutineScope {
@@ -261,7 +234,6 @@ object VersionManifest {
                 }
             }
 
-            // Step 5: 下载 asset objects
             if (assetIndexId != null) {
                 val indexFile = File(minecraftDir, "assets/indexes/$assetIndexId.json")
                 if (indexFile.exists()) {
@@ -278,7 +250,6 @@ object VersionManifest {
                 }
             }
 
-            // Step 6: 解压 natives
             onProgress("步骤 5/6：解压 natives", 0.97f)
             extractNatives(root, minecraftDir, versionDir)
             onProgress("步骤 6/6：原版安装完成", 1f)
@@ -417,7 +388,6 @@ object VersionManifest {
     }
 
     internal suspend fun waitForDownloadComplete() {
-        // 轮询等待 DownloadManager 完成
         while (true) {
             val prog = DownloadManager.progress.value
             if (!prog.isRunning && prog.totalFiles > 0) break
@@ -463,6 +433,6 @@ object VersionManifest {
             }
             delay(200)
         }
-        dlJob.join() // 确保任何异常都会在这里抛出，或正常结束
+        dlJob.join()
     }
 }

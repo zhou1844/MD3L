@@ -19,22 +19,10 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
-/**
- * CurseForge Bedrock Edition API
- * gameId=78022 (Minecraft Bedrock)
- * 通过 api.curse.tools 公开代理（无需 API Key）
- *
- * classId:
- *   4984 = Addons（行为包/模组）
- *   6929 = Texture Packs（材质/资源包）
- *   6913 = Maps（地图）
- *   6925 = Skins（皮肤）
- */
 object BedrockResourceApi {
     private const val CF_PROXY = "http://api.curse.tools/v1"
     private const val GAME_ID = 78022
 
-    // CurseForge Bedrock classId 映射
     const val CLASS_ADDONS = 4984
     const val CLASS_TEXTURE_PACKS = 6929
     const val CLASS_MAPS = 6913
@@ -45,10 +33,6 @@ object BedrockResourceApi {
     }
     private val json = Json { ignoreUnknownKeys = true }
 
-    /**
-     * 搜索 CurseForge Bedrock 资源。
-     * contentType: "addon" | "texture_pack" | "map" | "skin"
-     */
     suspend fun search(
         query: String,
         contentType: String,
@@ -66,7 +50,7 @@ object BedrockResourceApi {
                 parameter("classId", classId)
                 parameter("pageSize", limit)
                 parameter("index", index)
-                parameter("sortField", 2) // 2=Popularity
+                parameter("sortField", 2)
                 parameter("sortOrder", "desc")
                 if (actualQuery.isNotBlank()) parameter("searchFilter", actualQuery)
                 if (gameVersion.isNotBlank()) parameter("gameVersion", gameVersion)
@@ -77,10 +61,6 @@ object BedrockResourceApi {
         }.getOrDefault(emptyList())
     }
 
-    /**
-     * 获取 Minecraft 基岩版可用游戏版本列表（新→旧），来源 CurseForge games/versions。
-     * 用于资源中心基岩版的版本筛选下拉框。失败时返回空列表。
-     */
     suspend fun getBedrockGameVersions(): List<String> = withContext(Dispatchers.IO) {
         runCatching {
             val resp = client.get("$CF_PROXY/games/$GAME_ID/versions") {
@@ -98,7 +78,6 @@ object BedrockResourceApi {
         }.getOrDefault(emptyList())
     }
 
-    // 按点分数字段从高到低排序版本字符串（如 1.21.101 > 1.21.94）。 
     private val VersionComparator = Comparator<String> { a, b ->
         val pa = a.split('.').map { it.toIntOrNull() ?: 0 }
         val pb = b.split('.').map { it.toIntOrNull() ?: 0 }
@@ -116,7 +95,6 @@ object BedrockResourceApi {
         kotlinx.coroutines.runBlocking { MicrosoftTranslate.toEnglish(text) }
     }.getOrNull()
 
-    // 获取单个 mod 的文件列表 
     suspend fun getModFiles(modId: Int): List<CfBedrockFile> = withContext(Dispatchers.IO) {
         runCatching {
             val resp = client.get("$CF_PROXY/mods/$modId/files") {
@@ -134,7 +112,6 @@ object BedrockResourceApi {
         }.getOrDefault(emptyList())
     }
 
-    // 获取单个 mod 详情 
     suspend fun getMod(modId: Int): CfBedrockProject? = withContext(Dispatchers.IO) {
         runCatching {
             val resp = client.get("$CF_PROXY/mods/$modId") {
@@ -151,7 +128,7 @@ object BedrockResourceApi {
         "texture_pack" -> CLASS_TEXTURE_PACKS
         "map" -> CLASS_MAPS
         "skin" -> CLASS_SKINS
-        else -> CLASS_ADDONS // addon (default)
+        else -> CLASS_ADDONS
     }
 
     private fun parseCfMods(body: String, contentType: String): List<CfBedrockProject> {
@@ -175,7 +152,6 @@ object BedrockResourceApi {
             ?.mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull } ?: emptyList()
         val cfUrl = obj["links"]?.jsonObject?.get("websiteUrl")?.jsonPrimitive?.contentOrNull
             ?: "https://www.curseforge.com/minecraft-bedrock"
-        // 最新文件
         val latestFile = obj["latestFiles"]?.jsonArray?.firstOrNull()?.jsonObject
         val downloadUrl = latestFile?.get("downloadUrl")?.jsonPrimitive?.contentOrNull ?: ""
         val fileName = latestFile?.get("fileName")?.jsonPrimitive?.contentOrNull ?: ""
@@ -227,11 +203,6 @@ object BedrockResourceApi {
         }
     }
 
-    /**
-     * 获取某个文件的所有 required 依赖的最新可下载文件。
-     * relationType == 3 => required dependency
-     * 返回列表：(项目名, CfBedrockFile)
-     */
     suspend fun getRequiredDependencyFiles(
         file: CfBedrockFile,
     ): List<Pair<String, CfBedrockFile>> = withContext(Dispatchers.IO) {
@@ -239,7 +210,6 @@ object BedrockResourceApi {
         val requiredDeps = file.dependencies.filter { it.relationType == 3 }
         for (dep in requiredDeps) {
             runCatching {
-                // 取依赖项目信息
                 val modResp = client.get("$CF_PROXY/mods/${dep.modId}") {
                     header("Accept", "application/json")
                     header("User-Agent", "MD3L-Launcher/1.3")
@@ -247,7 +217,6 @@ object BedrockResourceApi {
                 val modData = json.parseToJsonElement(modResp.bodyAsText()).jsonObject["data"]?.jsonObject
                     ?: return@runCatching
                 val depName = modData["name"]?.jsonPrimitive?.contentOrNull ?: "依赖模组"
-                // 取该依赖的文件列表，选第一个有下载链接的
                 val filesResp = client.get("$CF_PROXY/mods/${dep.modId}/files") {
                     parameter("pageSize", 10)
                     header("Accept", "application/json")
@@ -284,7 +253,7 @@ data class CfBedrockProject(
 
 data class CfFileDependency(
     val modId: Int,
-    val relationType: Int, // 1=embedded, 2=optional, 3=required, 4=tool, 5=incompatible, 6=include
+    val relationType: Int,
 )
 
 data class CfBedrockFile(

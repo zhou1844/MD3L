@@ -8,18 +8,14 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.util.UUID
 
-/**
- * 贴纸数据模型：支持 PNG/JPG/GIF 图片。
- * 位置以窗口宽高的比例存储（0.0~1.0），适配窗口缩放。
- */
 @Serializable
 data class StickerData(
     val id: String = UUID.randomUUID().toString(),
     val fileName: String,
-    val x: Float = 0.05f,          // 窗口宽比例
-    val y: Float = 0.75f,          // 窗口高比例（默认左下角）
-    val scale: Float = 1.0f,       // 缩放倍数
-    val playbackSpeed: Float = 1.0f, // GIF 播放倍速，1.0=原速，0.5=半速，2.0=双倍速
+    val x: Float = 0.05f,
+    val y: Float = 0.75f,
+    val scale: Float = 1.0f,
+    val playbackSpeed: Float = 1.0f,
     val zIndex: Int = 0,
 )
 
@@ -28,10 +24,6 @@ data class StickerStore(
     val stickers: List<StickerData> = emptyList()
 )
 
-/**
- * 贴纸管理器：持久化贴纸元数据到 data/stickers.json，
- * 贴纸图片文件存储在 data/stickers/ 目录。
- */
 object StickerManager {
 
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
@@ -48,7 +40,6 @@ object StickerManager {
 
     val stickers: List<StickerData> get() = _store.stickers
 
-    /** 加载贴纸元数据（启动时调用一次） */
     suspend fun load(): List<StickerData> = withContext(Dispatchers.IO) {
         try {
             if (storeFile.exists()) {
@@ -58,7 +49,6 @@ object StickerManager {
             println("[StickerManager] 加载贴纸数据失败: ${e.message}")
             _store = StickerStore()
         }
-        // 清理无效条目（文件被手动删除）
         _store = _store.copy(stickers = _store.stickers.filter { s ->
             File(stickersDir, s.fileName).exists()
         })
@@ -73,7 +63,6 @@ object StickerManager {
         }
     }
 
-    /** 添加贴纸：复制图片到 stickers 目录 */
     suspend fun addSticker(sourceFile: File): StickerData? = withContext(Dispatchers.IO) {
         try {
             val ext = sourceFile.extension.lowercase()
@@ -97,7 +86,6 @@ object StickerManager {
         }
     }
 
-    /** 删除贴纸 */
     suspend fun removeSticker(id: String) = withContext(Dispatchers.IO) {
         val sticker = _store.stickers.find { it.id == id } ?: return@withContext
         try {
@@ -107,7 +95,6 @@ object StickerManager {
         save()
     }
 
-    /** 更新贴纸位置、缩放和播放倍速 */
     suspend fun updateSticker(id: String, x: Float? = null, y: Float? = null, scale: Float? = null, playbackSpeed: Float? = null) {
         _store = _store.copy(stickers = _store.stickers.map { s ->
             if (s.id == id) s.copy(

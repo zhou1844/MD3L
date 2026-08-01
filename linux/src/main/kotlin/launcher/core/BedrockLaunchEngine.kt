@@ -211,7 +211,6 @@ class BedrockLaunchEngine {
                 protonScript.setExecutable(true, false)
             }
 
-            // 使用 waitforexitandrun 触发 protonfixes；非 GDK 安装 MSI 用 run
             val verb = if (useWaitForExit) "waitforexitandrun" else "run"
             val pb = ProcessBuilder(
                 protonScript.absolutePath,
@@ -228,7 +227,6 @@ class BedrockLaunchEngine {
                 ).firstOrNull { File(it).exists() }
                 ?: "${System.getProperty("user.home")}/.local/share/Steam"
             env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = steamInstall
-            // UMU_ID 防止 proton 尝试启动 steam.exe
             env["UMU_ID"] = "md3l-minecraft-gdk"
 
             val lib64 = "${protonInfo.protonPath}/files/lib64"
@@ -521,7 +519,6 @@ object BedrockVersionCatalog {
     )
 
     suspend fun fetchAvailableVersions(): List<BedrockVersionEntry> {
-        // Linux 版本不提供 UWP Store 目录查询
         return emptyList()
     }
 }

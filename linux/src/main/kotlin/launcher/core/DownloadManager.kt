@@ -28,7 +28,7 @@ data class DownloadTask(
     val dest: File,
     val sha1: String? = null,
     val size: Long = -1L,
-    val urls: List<String> = emptyList(),  // 原始 URL 列表（会被 injectURLsWithCandidates 处理）
+    val urls: List<String> = emptyList(),
 )
 
 data class DownloadProgress(
@@ -49,54 +49,26 @@ data class DownloadProgress(
         get() = "%.2f MB/s".format(speedBytesPerSec / 1_048_576.0)
 }
 
-/**
- * HMCL 风格下载管理器 — 精确移植自 HMCL FetchTask + FileDownloadTask
- *
- * 核心架构：
- * 1. 全局信号量 — DEFAULT_CONCURRENCY = min(cores*4, 64)（与 HMCL 完全一致）
- * 2. 全局速度统计 — Timer 每秒触发（与 HMCL 完全一致）
- * 3. CounterInputStream — 精确字节计数（与 HMCL 完全一致）
- * 4. gzip Content-Encoding 解包（与 HMCL 完全一致）
- * 5. 临时文件 + FileChannel + MessageDigest 流式哈希（与 HMCL FileDownloadTask 完全一致）
- * 6. SHA-1 校验 + 原子移动 temp→dest（与 HMCL 完全一致）
- * 7. 多 URL fallback + 3 次重试 + 200ms 延迟（与 HMCL 完全一致）
- * 8. SHA-1 文件缓存（类似 HMCL CacheRepository）
- */
 object DownloadManager {
 
-    /** 64KB — 与 HMCL IOUtils.DEFAULT_BUFFER_SIZE 一致 */
     private const val BUFFER_SIZE = 65536
 
-    /** body 传输停滞超时：20 秒内无任何新增字节则判定连接假死，强制中断并切换候选源 */
     private const val STALL_TIMEOUT_MS = 20_000L
 
-    /**
-     * 慢速切换阈值（字节/秒）。
-     * 当下载速度持续低于此值超过 SPEED_SWITCH_DELAY_MS 时，
-     * 自动放弃当前候选 URL 并尝试下一个（如果有的话）。
-     * 防止镜像限流/国际带宽不足导致的龟速下载长时间卡住。
-     * 仅对 >512KB 的大文件生效，且仅在有多个候选源时启用。
-     */
-    private const val SPEED_SWITCH_THRESHOLD = 50_000L  // 50 KB/s
+    private const val SPEED_SWITCH_THRESHOLD = 50_000L
 
-    /** 慢速判定持续时长：持续低于 SPEED_SWITCH_THRESHOLD 这么久则切换 */
-    private const val SPEED_SWITCH_DELAY_MS = 15_000L  // 15 秒
+    private const val SPEED_SWITCH_DELAY_MS = 15_000L
 
-    /** 全局默认并发数 — 与 HMCL FetchTask.DEFAULT_CONCURRENCY 完全一致 */
     val DEFAULT_CONCURRENCY: Int = minOf(Runtime.getRuntime().availableProcessors() * 4, 64)
 
-    /** 全局信号量 — 与 HMCL FetchTask.SEMAPHORE 完全一致 */
     private val GLOBAL_SEMAPHORE = Semaphore(DEFAULT_CONCURRENCY)
 
-    /** 全局 HTTP 客户端 — HTTP/2，与 HMCL 一致 */
-    /** 连接超时 — 与 HMCL NetworkUtils.TIME_OUT 完全一致（8 秒，慢源快速失败切镜像） */
     private val httpClient: HttpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofMillis(8_000))
         .version(HttpClient.Version.HTTP_2)
-        .followRedirects(HttpClient.Redirect.NEVER)  // 手动处理重定向，与 HMCL 一致
+        .followRedirects(HttpClient.Redirect.NEVER)
         .build()
 
-    /** 全局下载速度追踪 — 与 HMCL FetchTask.downloadSpeed + Timer 完全一致 */
     private val globalDownloadSpeed = AtomicLong(0L)
     private val speedTimer = Timer("DownloadSpeedRecorder", true)
 
@@ -117,14 +89,10 @@ object DownloadManager {
 
     private var downloadJob: Job? = null
 
-    /** 当前下载源 */
     @Volatile
     var downloadProvider: DownloadProvider = BMCLAPIDownloadProvider
 
-    // ========== 向后兼容：mirrorUrl / activeMirror ==========
-    // 旧代码大量引用这些 API，这里委托给 BMCLAPIDownloadProvider.injectURL()
 
-    /** 当前镜像名称（向后兼容） */
     @Volatile
     var activeMirror: String = "bmclapi"
         set(value) {
@@ -138,12 +106,10 @@ object DownloadManager {
             }
         }
 
-    /** 镜像 URL 替换（向后兼容，委托给 BMCLAPIDownloadProvider.injectURL） */
     fun mirrorUrl(original: String): String {
         return downloadProvider.injectURL(original)
     }
 
-    // ========== 文件缓存（类似 HMCL CacheRepository） ==========
 
     private val cacheRoot: File by lazy {
         val dir = File(LauncherDirs.dataDir, "cache")
@@ -185,7 +151,6 @@ object DownloadManager {
         return File(cacheRoot, "files/$prefix/$sha1")
     }
 
-    // ========== CounterInputStream — 与 HMCL FetchTask.CounterInputStream 完全一致 ==========
 
     private class CounterInputStream(private val input: InputStream) : FilterInputStream(input) {
         var downloaded: Long = 0
@@ -204,7 +169,6 @@ object DownloadManager {
         }
     }
 
-    // ========== 多文件并发下载 ==========
 
     suspend fun downloadAll(
         tasks: List<DownloadTask>,
@@ -285,8 +249,6 @@ object DownloadManager {
         val total = tasks.size
         var remaining = tasks.toList()
 
-        // 局部并发限制：整合包资源大量来自单一镜像，过高并发（64）易触发镜像限流 → body 挂起。
-        // 用较温和的并发上限，并配合 downloadSingleFile 的进度看门狗，彻底避免卡死。
         val localSem = Semaphore(maxConcurrency.coerceIn(1, DEFAULT_CONCURRENCY))
         val maxRounds = 3
         for (round in 1..maxRounds) {
@@ -335,36 +297,17 @@ object DownloadManager {
         }
     }
 
-    // ========== 核心单文件下载 — 精确移植 HMCL FetchTask.downloadHttp ==========
 
-    /**
-     * 核心单文件下载入口
-     *
-     * 架构（精确移植 HMCL）：
-     * 1. 通过 DownloadProvider.injectURLsWithCandidates 生成候选 URL 列表
-     * 2. 按优先级尝试每个 URL
-     * 3. 每个 URL 最多重试 3 次，失败后等待 200ms
-     * 4. 手动处理 HTTP 重定向（最多 20 次）
-     * 5. 使用 accept-encoding: gzip
-     * 6. CounterInputStream 精确字节计数
-     * 7. 临时文件 + FileChannel + MessageDigest 流式哈希
-     * 8. SHA-1 校验 → 原子移动 temp→dest → 缓存
-     */
     private suspend fun downloadSingleFile(
         task: DownloadTask,
         onBytesRead: ((bytes: Long) -> Unit)? = null,
     ): Boolean = withContext(Dispatchers.IO) {
-        // 步骤 1: 生成候选 URL（使用 DownloadProvider.injectURLsWithCandidates — 与 HMCL 完全一致）
         val candidates: List<String> = if (task.urls.isNotEmpty()) {
             downloadProvider.injectURLsWithCandidates(task.urls)
         } else {
             downloadProvider.injectURLWithCandidates(task.url)
         }
 
-        // 步骤 2: 遍历候选 URL
-        // 非末尾候选源只试 1 次 → 慢源（如国内直连 modrinth 官方）8 秒超时后立即切换镜像
-        // 仅最后一个候选源重试 3 次（无其他源可用时的兜底）— 显著加速整合包资源下载
-        // 日志：打印所有候选 URL，方便排查镜像/下载问题
         println("[DL] 候选 URL: ${candidates.joinToString(" | ")}")
 
         for ((urlIndex, url) in candidates.withIndex()) {
@@ -379,18 +322,14 @@ object DownloadManager {
                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0.0.0"
                     else "CraftNova/1.0"
 
-                    // 手动重定向处理 — 与 HMCL 完全一致（最多 20 次）
                     var currentURI = URI(url)
                     val redirects = mutableListOf<URI>()
 
                     while (true) {
-                        // 请求超时 8 秒 — 与 HMCL FetchTask 完全一致。
-                        // 注意：ofInputStream 下该超时仅作用于「接收响应头」阶段，
-                        // 不会中断正在流式传输的大文件 body，因此缩短超时对大文件完全安全。
                         val requestBuilder = HttpRequest.newBuilder(currentURI)
                             .timeout(Duration.ofMillis(8_000))
                             .header("User-Agent", ua)
-                            .header("accept-encoding", "gzip")  // 与 HMCL 完全一致
+                            .header("accept-encoding", "gzip")
                             .GET()
                         if (isMcappx) {
                             requestBuilder.header("Referer", "https://www.mcappx.com/")
@@ -418,10 +357,8 @@ object DownloadManager {
                             continue
                         }
 
-                        // 检查 x-bmclapi-hash — 与 HMCL 完全一致
                         val bmclapiHash = response.headers().firstValue("x-bmclapi-hash").orElse(null)
                         if (bmclapiHash != null && bmclapiHash.length == 40 && bmclapiHash.all { it in "0123456789abcdefABCDEF" }) {
-                            // 尝试从缓存恢复
                             if (task.sha1 == null && tryCopyFromCache(bmclapiHash, task.dest)) {
                                 response.body().close()
                                 return@withContext true
@@ -436,9 +373,7 @@ object DownloadManager {
                             throw IOException("HTTP $code for $url")
                         }
 
-                        // === 下载数据 — 与 HMCL FileDownloadTask.getContext + download 完全一致 ===
 
-                        // 创建临时文件 + MessageDigest
                         val tempFile: Path = Files.createTempFile(null, null)
                         val algorithm: String?
                         val expectedChecksum: String?
@@ -466,7 +401,6 @@ object DownloadManager {
                         var watchdog: Job? = null
                         val transferStartTime = System.currentTimeMillis()
                         try {
-                            // 处理 Content-Encoding — gzip 解包（与 HMCL 完全一致）
                             val contentEncoding = response.headers().firstValue("content-encoding")
                                 .map { it.lowercase(Locale.ROOT) }.orElse("")
                             val rawInput = response.body()
@@ -476,27 +410,18 @@ object DownloadManager {
                                 rawInput
                             }
 
-                            // === 进度看门狗 + 慢速检测（关键：防止 body 挂起/龟速导致的永久卡住）===
-                            // ofInputStream 的 8 秒超时只保护「接收响应头」，body 流式读取无任何超时。
-                            // 若 body 传输中途挂起（镜像限流/连接假死），counter.read 会永久阻塞，
-                            // 该协程永不释放并发许可，最终许可耗尽 → 整体下载卡住。
-                            // 看门狗监控读取进度，STALL 秒内无新增字节则强制关闭底层流。
-                            // 同时检测持续低速（< 50 KB/s 超过 15 秒），自动切换到下一候选源。
                             val lastActivity = AtomicLong(System.currentTimeMillis())
-                            // 速度追踪变量（在 CounterInputStream 创建前声明，供 watchdog 协程闭包捕获）
                             var counterRef: CounterInputStream? = null
                             val speedTrack = _SpeedTrack()
                             watchdog = launch(Dispatchers.IO) {
                                 while (isActive) {
                                     delay(2_000)
                                     val now = System.currentTimeMillis()
-                                    // 停滞检测
                                     if (now - lastActivity.get() > STALL_TIMEOUT_MS) {
                                         println("[DL] 连接停滞 ${STALL_TIMEOUT_MS}ms，强制关闭")
                                         try { rawInput.close() } catch (_: Throwable) {}
                                         break
                                     }
-                                    // 慢速检测：仅在有多个候选源且已传输足够数据后生效
                                     val c = counterRef ?: continue
                                     val elapsed = now - transferStartTime
                                     if (c.downloaded > 512_000 && elapsed > 10_000 && candidates.size > 1) {
@@ -520,7 +445,6 @@ object DownloadManager {
                                             }
                                         }
                                     } else if (c.downloaded <= 512_000 && elapsed > 30_000) {
-                                                        // 小文件但超过 30 秒还没下完（镜像响应极慢）→ 退回到官方源
                                                         println("[DL] 小文件下载超过 30s，切换候选源")
                                                         try { rawInput.close() } catch (_: Throwable) {}
                                                         break
@@ -536,9 +460,8 @@ object DownloadManager {
 
                                 while (counter.read(buffer).also { len = it } != -1) {
                                     ensureActive()
-                                    lastActivity.set(System.currentTimeMillis())  // 标记有进展
+                                    lastActivity.set(System.currentTimeMillis())
 
-                                    // 更新 digest + 写入 FileChannel — 与 HMCL 完全一致
                                     if (digest != null) {
                                         digest.update(buffer, 0, len)
                                     }
@@ -547,7 +470,6 @@ object DownloadManager {
                                         fileChannel.write(byteBuffer)
                                     }
 
-                                    // 速度追踪（每秒更新）— 与 HMCL 完全一致
                                     onBytesRead?.invoke(counter.downloaded - lastDownloaded)
                                     lastDownloaded = counter.downloaded
                                 }
@@ -559,7 +481,6 @@ object DownloadManager {
                             watchdog = null
                             fileChannel.close()
 
-                            // SHA-1 校验 — 与 HMCL FileDownloadTask.close 完全一致
                             if (expectedChecksum != null && digest != null) {
                                 val actual = digest.digest().joinToString("") { "%02x".format(it) }
                                 if (!expectedChecksum.equals(actual, ignoreCase = true)) {
@@ -569,7 +490,6 @@ object DownloadManager {
                                 }
                             }
 
-                            // 原子移动 temp → dest — 与 HMCL 完全一致
                             Files.createDirectories(task.dest.toPath().toAbsolutePath().parent)
                             Files.move(tempFile, task.dest.toPath(), StandardCopyOption.REPLACE_EXISTING)
                             moved = true
@@ -577,7 +497,6 @@ object DownloadManager {
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            // 重新抛出，让外层重试逻辑处理
                             throw e
                         } finally {
                             watchdog?.cancel()
@@ -589,7 +508,6 @@ object DownloadManager {
                             }
                         }
 
-                        // 下载成功，缓存 — 与 HMCL 完全一致
                         if (expectedChecksum != null) {
                             saveToCache(task.dest, expectedChecksum)
                         }
@@ -602,7 +520,6 @@ object DownloadManager {
                     throw e
                 } catch (e: FileNotFoundException) {
                     println("[DL] 文件不存在: $url")
-                    // 文件不存在，不重试此 URL，直接尝试下一个
                     break
                 } catch (e: Exception) {
                     val isLastAttempt = attempt >= maxAttempts && urlIndex >= candidates.lastIndex
@@ -612,7 +529,6 @@ object DownloadManager {
                     } else {
                         println("[DL] URL[$urlIndex] attempt $attempt/$maxAttempts 失败: $url — ${e.message}")
                     }
-                    // 200ms 延迟后重试 — 与 HMCL 完全一致
                     if (attempt < maxAttempts) {
                         delay(200)
                     }
@@ -622,14 +538,10 @@ object DownloadManager {
         false
     }
 
-    /**
-     * 速度追踪辅助类 — 记录上次检查时的字节数和时间戳，
-     * 用于 watchdog 协程计算下载速率并判定是否持续低速。
-     */
     private class _SpeedTrack {
         var lastCheckBytes: Long = 0L
         var lastCheckTime: Long = System.currentTimeMillis()
-        var slowSince: Long = 0L  // 0 = 正常速度
+        var slowSince: Long = 0L
     }
 
     private class IOException(message: String) : java.io.IOException(message)

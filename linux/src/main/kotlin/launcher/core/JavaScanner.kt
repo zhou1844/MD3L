@@ -16,10 +16,8 @@ object JavaScanner {
         val candidates = mutableSetOf<String>()
         val osName = System.getProperty("os.name").lowercase()
 
-        // Current JAVA_HOME
         System.getenv("JAVA_HOME")?.let { candidates.add(it) }
 
-        // PATH entries
         System.getenv("PATH")?.split(File.pathSeparator)?.forEach { dir ->
             val javaBin = File(dir, if ("win" in osName) "java.exe" else "java")
             if (javaBin.exists()) {
@@ -28,7 +26,6 @@ object JavaScanner {
         }
 
         if ("win" in osName) {
-            // Common Windows locations
             listOf(
                 "C:\\Program Files\\Java",
                 "C:\\Program Files (x86)\\Java",
@@ -44,7 +41,6 @@ object JavaScanner {
                     }
                 }
             }
-            // Registry-discovered (look in standard adoptium/oracle locations)
             listOf(
                 System.getenv("LOCALAPPDATA"),
                 System.getenv("ProgramFiles"),
@@ -56,7 +52,6 @@ object JavaScanner {
                 }
             }
         } else {
-            // Linux / macOS common paths
             listOf(
                 "/usr/lib/jvm",
                 "/usr/java",

@@ -28,7 +28,7 @@ data class DownloadTask(
     val dest: File,
     val sha1: String? = null,
     val size: Long = -1L,
-    val urls: List<String> = emptyList(),  // 原始 URL 列表（会被 injectURLsWithCandidates 处理）
+    val urls: List<String> = emptyList(),
 )
 
 data class DownloadProgress(
@@ -49,42 +49,22 @@ data class DownloadProgress(
         get() = "%.2f MB/s".format(speedBytesPerSec / 1_048_576.0)
 }
 
-/**
- * 下载管理器
- *
- * 核心架构：
- * 1. 全局信号量 — DEFAULT_CONCURRENCY = min(cores*4, 64)
- * 2. 全局速度统计 — Timer 每秒触发
- * 3. CounterInputStream — 精确字节计数
- * 4. gzip Content-Encoding 解包
- * 5. 临时文件 + FileChannel + MessageDigest 流式哈希
- * 6. SHA-1 校验 + 原子移动 temp→dest
- * 7. 多 URL fallback + 3 次重试 + 200ms 延迟
- * 8. SHA-1 文件缓存
- */
 object DownloadManager {
 
-    // 64KB 
     private const val BUFFER_SIZE = 65536
 
-    // body 传输停滞超时：10 秒内无任何新增字节则判定连接假死，强制中断并切换候选源（慢源快速失败） 
     private const val STALL_TIMEOUT_MS = 10_000L
 
-    // 全局默认并发数 
     val DEFAULT_CONCURRENCY: Int = minOf(Runtime.getRuntime().availableProcessors() * 4, 64)
 
-    // 全局信号量 
     private val GLOBAL_SEMAPHORE = Semaphore(DEFAULT_CONCURRENCY)
 
-    // 全局 HTTP 客户端 — HTTP/2 
-    // 连接超时 8 秒（慢源快速失败切镜像） 
     private val httpClient: HttpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofMillis(8_000))
         .version(HttpClient.Version.HTTP_2)
-        .followRedirects(HttpClient.Redirect.NEVER)  // 手动处理重定向
+        .followRedirects(HttpClient.Redirect.NEVER)
         .build()
 
-    // 全局下载速度追踪 
     private val globalDownloadSpeed = AtomicLong(0L)
     private val speedTimer = Timer("DownloadSpeedRecorder", true)
 
@@ -105,31 +85,23 @@ object DownloadManager {
 
     private var downloadJob: Job? = null
 
-    // 当前下载源 
     @Volatile
     var downloadProvider: DownloadProvider = BMCLAPIDownloadProvider
 
-    // ========== 向后兼容：mirrorUrl / activeMirror ==========
-    // 旧代码大量引用这些 API，这里委托给 BMCLAPIDownloadProvider.injectURL()
 
-    // 当前镜像名称（向后兼容） 
     @Volatile
     var activeMirror: String = "bmclapi"
         set(value) {
             field = value
             if (downloadProvider is BMCLAPIDownloadProvider) {
-                // 彻底禁用官方源：无论传入何值（含旧配置遗留的 "official"），
-                // apiRoot 恒为 BMCLAPI 镜像，杜绝把 Mojang 域名替换成空前缀导致的坏 URL 与卡死。
                 (downloadProvider as BMCLAPIDownloadProvider).apiRoot = "https://bmclapi2.bangbang93.com"
             }
         }
 
-    // 镜像 URL 替换（向后兼容，委托给 BMCLAPIDownloadProvider.injectURL） 
     fun mirrorUrl(original: String): String {
         return downloadProvider.injectURL(original)
     }
 
-    // ========== 文件缓存 ==========
 
     private val cacheRoot: File by lazy {
         val dir = File(LauncherDirs.dataDir, "cache")
@@ -171,7 +143,6 @@ object DownloadManager {
         return File(cacheRoot, "files/$prefix/$sha1")
     }
 
-    // ========== CounterInputStream ==========
 
     private class CounterInputStream(private val input: InputStream) : FilterInputStream(input) {
         var downloaded: Long = 0
@@ -190,7 +161,6 @@ object DownloadManager {
         }
     }
 
-    // ========== 多文件并发下载 ==========
 
     suspend fun downloadAll(
         tasks: List<DownloadTask>,
@@ -271,8 +241,6 @@ object DownloadManager {
         val total = tasks.size
         var remaining = tasks.toList()
 
-        // 局部并发限制：整合包资源大量来自单一镜像，过高并发（64）易触发镜像限流 → body 挂起。
-        // 用较温和的并发上限，并配合 downloadSingleFile 的进度看门狗，彻底避免卡死。
         val localSem = Semaphore(maxConcurrency.coerceIn(1, DEFAULT_CONCURRENCY))
         val maxRounds = 3
         for (round in 1..maxRounds) {
@@ -303,18 +271,6 @@ object DownloadManager {
         }
     }
 
-    /**
-     * 整合包批量下载引擎
-     *
-     * 核心机制：
-     * 1. 全局 worker 池 + 速度自适应动态扩容：初始少量 worker，管理协程每 150ms 测速，
-     *    只要当前总速度仍低于「历史峰值 × 0.85」（速度下限，只增不减）且任务未取完，
-     *    就持续追加 worker，直到带宽饱和或达到 threadLimit —— 自动榨满带宽，
-     *    避免固定并发在慢源下吞吐骤降。
-     * 2. 每个 worker 复用 downloadSingleFile：多候选源快速失败切换 + gzip 解包 +
-     *    SHA-1 流式校验 + 文件缓存 + 停滞看门狗（慢源自动掐断切下一源）。
-     * 3. 失败文件多轮重试（容错个别抽风的镜像源）。
-     */
     suspend fun downloadModpackFiles(
         tasks: List<DownloadTask>,
         threadLimit: Int = minOf(Runtime.getRuntime().availableProcessors() * 8, 128),
@@ -349,22 +305,19 @@ object DownloadManager {
                 }
             }
 
-            // 初始并发：PCL 先为等待文件开少量线程，再按速度增长逐步扩容
             val initial = minOf(limit, total, 16)
             repeat(initial) { startWorker() }
 
-            // 速度自适应扩容管理协程（对应 PCL NetManager.StartManager）
             launch {
-                var speedLimitLow = 256L * 1024        // 初始速度下限 256 K/s，与 PCL 一致
+                var speedLimitLow = 256L * 1024
                 var lastBytes = 0L
                 while (queue.isNotEmpty() && active.get() > 0) {
                     delay(150)
                     val now = bytes.get()
-                    val speed = (now - lastBytes) * 1000 / 150   // B/s
+                    val speed = (now - lastBytes) * 1000 / 150
                     lastBytes = now
                     val newLimit = (speed * 0.85).toLong()
-                    if (newLimit > speedLimitLow) speedLimitLow = newLimit   // 只增不减
-                    // 速度未达下限（仍有提速空间）且未达线程上限 → 追加 worker
+                    if (newLimit > speedLimitLow) speedLimitLow = newLimit
                     if (speed < speedLimitLow && active.get() < limit && queue.isNotEmpty()) {
                         startWorker()
                     }
@@ -372,7 +325,6 @@ object DownloadManager {
             }
         }
 
-        // 失败文件多轮重试（降并发，容错个别抽风的源）
         var round = 2
         while (failed.isNotEmpty() && round-- > 0) {
             val retry = failed.toList()
@@ -414,35 +366,17 @@ object DownloadManager {
         }
     }
 
-    // ========== 核心单文件下载 ==========
 
-    /**
-     * 核心单文件下载入口
-     *
-     * 架构：
-     * 1. 通过 DownloadProvider.injectURLsWithCandidates 生成候选 URL 列表
-     * 2. 按优先级尝试每个 URL
-     * 3. 每个 URL 最多重试 3 次，失败后等待 200ms
-     * 4. 手动处理 HTTP 重定向（最多 20 次）
-     * 5. 使用 accept-encoding: gzip
-     * 6. CounterInputStream 精确字节计数
-     * 7. 临时文件 + FileChannel + MessageDigest 流式哈希
-     * 8. SHA-1 校验 → 原子移动 temp→dest → 缓存
-     */
     private suspend fun downloadSingleFile(
         task: DownloadTask,
         onBytesRead: ((bytes: Long) -> Unit)? = null,
     ): Boolean = withContext(Dispatchers.IO) {
-        // 步骤 1: 生成候选 URL
         val candidates: List<String> = if (task.urls.isNotEmpty()) {
             downloadProvider.injectURLsWithCandidates(task.urls)
         } else {
             downloadProvider.injectURLWithCandidates(task.url)
         }
 
-        // 步骤 2: 遍历候选 URL
-        // 非末尾候选源只试 1 次 → 慢源（如国内直连 modrinth 官方）8 秒超时后立即切换镜像
-        // 仅最后一个候选源重试 3 次（无其他源可用时的兜底）— 显著加速整合包资源下载
         for ((urlIndex, url) in candidates.withIndex()) {
             val remaining = candidates.size - urlIndex
             val maxAttempts = if (remaining <= 1) 3 else 1
@@ -455,14 +389,10 @@ object DownloadManager {
                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0.0.0"
                     else "CraftNova/1.0"
 
-                    // 手动重定向处理（最多 20 次）
                     var currentURI = URI(url)
                     val redirects = mutableListOf<URI>()
 
                     while (true) {
-                        // 请求超时 8 秒。
-                        // 注意：ofInputStream 下该超时仅作用于「接收响应头」阶段，
-                        // 不会中断正在流式传输的大文件 body，因此缩短超时对大文件完全安全。
                         val requestBuilder = HttpRequest.newBuilder(currentURI)
                             .timeout(Duration.ofMillis(8_000))
                             .header("User-Agent", ua)
@@ -494,10 +424,8 @@ object DownloadManager {
                             continue
                         }
 
-                        // 检查 x-bmclapi-hash
                         val bmclapiHash = response.headers().firstValue("x-bmclapi-hash").orElse(null)
                         if (bmclapiHash != null && bmclapiHash.length == 40 && bmclapiHash.all { it in "0123456789abcdefABCDEF" }) {
-                            // 尝试从缓存恢复
                             if (task.sha1 == null && tryCopyFromCache(bmclapiHash, task.dest)) {
                                 response.body().close()
                                 return@withContext true
@@ -512,9 +440,7 @@ object DownloadManager {
                             throw IOException("HTTP $code for $url")
                         }
 
-                        // === 下载数据 ===
 
-                        // 创建临时文件 + MessageDigest
                         val tempFile: Path = Files.createTempFile(null, null)
                         val algorithm: String?
                         val expectedChecksum: String?
@@ -541,7 +467,6 @@ object DownloadManager {
                         var moved = false
                         var watchdog: Job? = null
                         try {
-                            // 处理 Content-Encoding — gzip 解包
                             val contentEncoding = response.headers().firstValue("content-encoding")
                                 .map { it.lowercase(Locale.ROOT) }.orElse("")
                             val rawInput = response.body()
@@ -551,12 +476,6 @@ object DownloadManager {
                                 rawInput
                             }
 
-                            // === 进度看门狗（关键：防止 body 挂起导致的永久卡死）===
-                            // ofInputStream 的 8 秒超时只保护「接收响应头」，body 流式读取无任何超时。
-                            // 若 body 传输中途挂起（镜像限流/连接假死），counter.read 会永久阻塞，
-                            // 该协程永不释放并发许可，最终许可耗尽 → 整体下载卡住。
-                            // 看门狗监控读取进度，STALL 秒内无新增字节则强制关闭底层流，
-                            // 使阻塞的 read 抛异常 → 失败重试 / 切换下一候选源 → 释放许可。
                             val lastActivity = AtomicLong(System.currentTimeMillis())
                             watchdog = launch(Dispatchers.IO) {
                                 while (isActive) {
@@ -575,9 +494,8 @@ object DownloadManager {
 
                                 while (counter.read(buffer).also { len = it } != -1) {
                                     ensureActive()
-                                    lastActivity.set(System.currentTimeMillis())  // 标记有进展
+                                    lastActivity.set(System.currentTimeMillis())
 
-                                    // 更新 digest + 写入 FileChannel
                                     if (digest != null) {
                                         digest.update(buffer, 0, len)
                                     }
@@ -586,7 +504,6 @@ object DownloadManager {
                                         fileChannel.write(byteBuffer)
                                     }
 
-                                    // 速度追踪（每秒更新）
                                     onBytesRead?.invoke(counter.downloaded - lastDownloaded)
                                     lastDownloaded = counter.downloaded
                                 }
@@ -598,7 +515,6 @@ object DownloadManager {
                             watchdog = null
                             fileChannel.close()
 
-                            // SHA-1 校验
                             if (expectedChecksum != null && digest != null) {
                                 val actual = digest.digest().joinToString("") { "%02x".format(it) }
                                 if (!expectedChecksum.equals(actual, ignoreCase = true)) {
@@ -608,7 +524,6 @@ object DownloadManager {
                                 }
                             }
 
-                            // 原子移动 temp → dest
                             Files.createDirectories(task.dest.toPath().toAbsolutePath().parent)
                             Files.move(tempFile, task.dest.toPath(), StandardCopyOption.REPLACE_EXISTING)
                             moved = true
@@ -616,7 +531,6 @@ object DownloadManager {
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            // 重新抛出，让外层重试逻辑处理
                             throw e
                         } finally {
                             watchdog?.cancel()
@@ -628,7 +542,6 @@ object DownloadManager {
                             }
                         }
 
-                        // 下载成功，缓存
                         if (expectedChecksum != null) {
                             saveToCache(task.dest, expectedChecksum)
                         }
@@ -641,7 +554,6 @@ object DownloadManager {
                     throw e
                 } catch (e: FileNotFoundException) {
                     println("[DL] 文件不存在: $url")
-                    // 文件不存在，不重试此 URL，直接尝试下一个
                     break
                 } catch (e: Exception) {
                     val isLastAttempt = attempt >= maxAttempts && urlIndex >= candidates.lastIndex
@@ -650,7 +562,6 @@ object DownloadManager {
                     } else {
                         println("[DL] URL[$urlIndex] attempt $attempt/$maxAttempts 失败: ${e.message}")
                     }
-                    // 200ms 延迟后重试
                     if (attempt < maxAttempts) {
                         delay(200)
                     }

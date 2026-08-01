@@ -48,7 +48,6 @@ data class CurseForgeFile(
     val releaseDate: String = "",
 )
 
-// CurseForge 整合包 manifest 中一个 file 条目解析后的可下载信息。
 @Serializable
 data class CurseResolvedFile(
     val projectId: Int = 0,
@@ -76,7 +75,7 @@ data class ModrinthProject(
 data class ModrinthDependency(
     val versionId: String = "",
     val projectId: String = "",
-    val dependencyType: String = "", // "required", "optional", "incompatible", "embedded"
+    val dependencyType: String = "",
 )
 
 @Serializable
@@ -414,11 +413,6 @@ object ModrinthApi {
         }
     }
 
-    /**
-     * 解析 version 的所有 required 依赖，返回每个依赖的 (项目名, 下载文件)。
-     * 仅递归 required 类型，最多两层，避免无限循环。
-     * gameVersions / loaders 用于匹配最佳版本。
-     */
     suspend fun resolveDependencyFiles(
         version: ModrinthVersion,
         preferGameVersion: String = "",
@@ -431,7 +425,6 @@ object ModrinthApi {
             if (depth > 2) return
             if (dep.dependencyType != "required") return
 
-            // 优先直接用 versionId
             val depVersion: ModrinthVersion? = if (dep.versionId.isNotBlank()) {
                 runCatching {
                     val resp = client.get("$BASE/version/${dep.versionId}") {
@@ -470,7 +463,6 @@ object ModrinthApi {
             } else if (dep.projectId.isNotBlank()) {
                 if (dep.projectId in visited) return
                 visited.add(dep.projectId)
-                // 取该项目的版本列表，选最佳匹配
                 val versions = getProjectVersions(dep.projectId)
                 versions.firstOrNull { v ->
                     (preferGameVersion.isBlank() || preferGameVersion in v.gameVersions) &&
@@ -482,7 +474,6 @@ object ModrinthApi {
             if (file != null && depVersion != null) {
                 val name = depVersion.name.ifBlank { file.filename }
                 result.add(name to file)
-                // 递归
                 depVersion.dependencies.forEach { fetchDep(it, depth + 1) }
             }
         }
@@ -514,7 +505,6 @@ object ModrinthApi {
         try {
             targetDir.mkdirs()
             val dest = File(targetDir, file.filename)
-            // use single download with a simple scope
             val resp = client.get(file.url) {
                 header("User-Agent", "MD3L/1.1")
             }
@@ -526,7 +516,6 @@ object ModrinthApi {
     }
 
 
-    // CurseForge Java / Java-like resources
 
     private fun cfClassIdFor(projectType: String): Int = when (projectType) {
         "resourcepack" -> CF_CLASS_RESOURCEPACK
@@ -658,11 +647,6 @@ object ModrinthApi {
         }
     }
 
-    /**
-     * 获取 Minecraft Java 版正式发布版本列表（新→旧），来源 Modrinth tag/game_version。
-     * 用于资源中心版本筛选下拉框，随官方发布自动覆盖最新版本（如 26.x）。
-     * 失败时返回空列表，由调用方回退到内置静态列表。
-     */
     suspend fun getMinecraftReleaseVersions(): List<String> = withContext(Dispatchers.IO) {
         try {
             val resp = client.get("$BASE/tag/game_version") {
@@ -681,7 +665,6 @@ object ModrinthApi {
 
     private val cfClassIdCache = java.util.concurrent.ConcurrentHashMap<Int, Int>()
 
-    // 查询某个 CurseForge 项目的 classId（模组/资源包/光影），带缓存。 
     private suspend fun cfClassId(projectId: Int): Int {
         cfClassIdCache[projectId]?.let { return it }
         return try {
@@ -698,10 +681,6 @@ object ModrinthApi {
         }
     }
 
-    /**
-     * 解析 CurseForge 整合包 manifest 中的单个 file（projectID/fileID）为可下载信息。
-     * 若官方 downloadUrl 为空（分发受限），回退到 forgecdn edge 地址。
-     */
     suspend fun resolveCurseForgeManifestFile(
         projectId: Int,
         fileId: Int,
@@ -729,7 +708,6 @@ object ModrinthApi {
         }
     }
 
-    // 并发解析 CurseForge 整合包 manifest 的所有 file 条目。Triple = (projectID, fileID, required)。 
     suspend fun resolveCurseForgeManifestFiles(
         files: List<Triple<Int, Int, Boolean>>,
         onResolve: (Int) -> Unit = {},

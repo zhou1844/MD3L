@@ -1,23 +1,12 @@
 package launcher.core
 
-/**
- * HMCL 风格 BMCLAPI 下载源
- *
- * 精确移植自 HMCL BMCLAPIDownloadProvider：
- * - 两层 URL 替换：replacement（主要镜像）+ fallbackReplacement（备用镜像）
- * - injectURLWithCandidates: 主镜像命中 → 返回注入 URL；否则尝试备用镜像 → 返回 [原始, 备用]
- * - getConcurrency: max(cores*2, 6)
- */
 object BMCLAPIDownloadProvider : DownloadProvider {
 
-    /** 默认 BMCLAPI 根地址 */
     private const val DEFAULT_API_ROOT = "https://bmclapi2.bangbang93.com"
 
-    /** 当前使用的 API 根地址 */
     @Volatile
     var apiRoot: String = DEFAULT_API_ROOT
 
-    /** 主要 URL 替换规则（精确复制 HMCL） */
     private val replacement: List<Pair<String, String>> = listOf(
         "https://bmclapi2.bangbang93.com" to apiRoot,
         "https://launchermeta.mojang.com" to apiRoot,
@@ -39,11 +28,9 @@ object BMCLAPIDownloadProvider : DownloadProvider {
         "https://hmcl.glavo.site/metadata/cleanroom" to "https://alist.8mi.tech/d/mirror/HMCL-Metadata/Auto/cleanroom",
         "https://hmcl.glavo.site/metadata/fmllibs" to "https://alist.8mi.tech/d/mirror/HMCL-Metadata/Auto/fmllibs",
         "https://zkitefly.github.io/unlisted-versions-of-minecraft" to "https://alist.8mi.tech/d/mirror/unlisted-versions-of-minecraft/Auto",
-        // resources 目录特殊路径
         "https://resources.download.minecraft.net" to "$apiRoot/assets",
     )
 
-    /** 备用 URL 替换规则（Modrinth / CurseForge 镜像） */
     private val fallbackReplacement: List<Pair<String, String>> = listOf(
         "https://api.modrinth.com" to "https://mod.mcimirror.top/modrinth",
         "https://cdn.modrinth.com" to "https://mod.mcimirror.top",
@@ -53,7 +40,6 @@ object BMCLAPIDownloadProvider : DownloadProvider {
         "https://media.forgecdn.net" to "https://mod.mcimirror.top",
     )
 
-    /** 用替换规则注入 URL */
     private fun injectURL(replacement: List<Pair<String, String>>, baseURL: String): String {
         for ((key, value) in replacement) {
             if (baseURL.startsWith(key)) {
@@ -67,17 +53,7 @@ object BMCLAPIDownloadProvider : DownloadProvider {
         return injectURL(replacement, baseURL)
     }
 
-    /**
-     * 注入原始 URL，返回候选 URL 列表
-     *
-     * 逻辑（基于 HMCL，针对国内整合包下载优化）：
-     * - 如果主镜像规则命中（injected != baseURL）→ 返回 [injected]
-     * - 如果备用镜像规则命中（Modrinth/CurseForge）→ 默认「镜像优先，官方兜底」，
-     *   显著加速国内整合包资源下载；仅当用户显式选择官方源（apiRoot 为空）时保持官方优先
-     * - 否则 → 返回 [原始 URL]
-     */
     override fun injectURLWithCandidates(baseURL: String): List<String> {
-        // 动态更新 replacement 中的 apiRoot
         val currentReplacement = if (apiRoot != DEFAULT_API_ROOT) {
             replacement.map { (k, v) ->
                 k to v.replace(DEFAULT_API_ROOT, apiRoot)
@@ -93,8 +69,6 @@ object BMCLAPIDownloadProvider : DownloadProvider {
 
         val fallbackInjected = injectURL(fallbackReplacement, baseURL)
         if (fallbackInjected != baseURL) {
-            // 国内优化：mcimirror 镜像优先、官方源兜底（整合包资源提速关键）；
-            // 用户显式选择官方源（apiRoot 为空）时保持官方优先。
             return if (apiRoot.isBlank())
                 listOf(baseURL, fallbackInjected)
             else
@@ -104,7 +78,6 @@ object BMCLAPIDownloadProvider : DownloadProvider {
         return listOf(baseURL)
     }
 
-    /** max(cores*2, 6) — 与 HMCL 完全一致 */
     override fun getConcurrency(): Int {
         return maxOf(Runtime.getRuntime().availableProcessors() * 2, 6)
     }

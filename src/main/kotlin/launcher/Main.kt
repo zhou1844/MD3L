@@ -52,15 +52,12 @@ import java.net.URI
 fun main() {
     launcher.core.AppLogger.installSystemStreams()
 
-    // 当前进程使用的渲染 API（在 setProperty 之后记录）
     var currentRenderApi = "UNKNOWN"
 
-    // 全局异常处理器（安全兜底）
     Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
         val msg = throwable.message ?: ""
         println("[FATAL] 线程 [${thread.name}] 未捕获异常: $msg")
         throwable.printStackTrace()
-        // 渲染相关异常 → 写 SOFTWARE 回退标记，下次启动兜底
         if (msg.contains("skiko", ignoreCase = true) ||
             msg.contains("render", ignoreCase = true) ||
             msg.contains("DirectX", ignoreCase = true) ||
@@ -76,7 +73,6 @@ fun main() {
         }
     }
 
-    // 在任何窗口创建前设置任务栏图标，否则会显示 Java 默认图标
     runCatching {
         val iconUrl = Thread.currentThread().contextClassLoader.getResource("app_icon.png")
         if (iconUrl != null) {
@@ -91,7 +87,6 @@ fun main() {
     LauncherDirs.migrateFromLegacyIfNeeded()
     val md3lDir = LauncherDirs.dataDir
 
-    // 启动前预加载导航模式，防止首次渲染时闪现错误布局
     runCatching {
         val settingsFile = java.io.File(md3lDir, "settings.json")
         if (settingsFile.exists()) {
@@ -103,14 +98,6 @@ fun main() {
         }
     }
 
-    // 渲染 API 固定为 DIRECT3D
-    // 注意：Skiko 0.7.x 合法的 renderApi 值是: DIRECT3D / OPENGL / SOFTWARE
-    // 不区分 DIRECT3D11 / DIRECT3D12，写成 DIRECT3D11 会被 Skiko 忽略，
-    // 导致 Skiko 回退到自动探测 → 先试 D3D12 再失败（日志中的
-    // "Failed to choose DirectX12 adapter"）→ 最终可能 Software 回退失败 → 幽灵窗口。
-    //
-    // 正确值 DIRECT3D 让 Skiko 内部选择合适的 D3D 版本（自动降级 D3D12→11→10）。
-    // 用户可在 data 目录创建 software_render 文件手动切 CPU 渲染。
     val softwareMarker = File(md3lDir, "software_render")
     val softwareMarkerTxt = File(md3lDir, "software_render.txt")
 
@@ -134,7 +121,6 @@ private fun runLauncherApp() = application {
     )
     val appIconImage = remember { loadTaskbarIconImage() }
     val windowIcon = painterResource("app_icon.ico")
-    // 启动动画控制：动画播放完后才显示主界面
     var splashFinished by remember { mutableStateOf(false) }
     var showCloseConfirm by remember { mutableStateOf(false) }
 
@@ -151,7 +137,6 @@ private fun runLauncherApp() = application {
         visible = true,
     ) {
         val scope = rememberCoroutineScope()
-        // 默认 true 让窗口立即可见，后台加载完后若需要 EULA 再切换
         var eulaAccepted by remember { mutableStateOf<Boolean?>(true) }
         var currentSettings by remember { mutableStateOf(AppSettings()) }
         var showUpdateSuccess by remember { mutableStateOf<String?>(null) }
@@ -165,18 +150,13 @@ private fun runLauncherApp() = application {
             }
         }
 
-        // 使用原生 AWT Window.setShape() 实现圆角窗口，替代透明分层窗口方案
-        // 透明分层窗口（WS_EX_LAYERED）+ GPU 渲染在部分系统上静默失败 → "幽灵窗口"
-        // AWT setShape() 直接裁剪窗口像素，无需分层窗口，兼容所有系统
         LaunchedEffect(Unit) {
-            // 窗口不透明，设置深色背景避免白色闪烁
             window.background = java.awt.Color(0x11, 0x11, 0x13)
-            val arc = 24 // 圆角直径 px，对应 12dp 的视觉效果
+            val arc = 24
             val w = window.width.coerceAtLeast(arc)
             val h = window.height.coerceAtLeast(arc)
             val shape = java.awt.geom.RoundRectangle2D.Double(0.0, 0.0, w.toDouble(), h.toDouble(), arc.toDouble(), arc.toDouble())
             window.setShape(shape)
-            // 同步更新：窗口尺寸变化时重设 shape
             window.addPropertyChangeListener("size") { _ ->
                 val nw = window.width.coerceAtLeast(arc)
                 val nh = window.height.coerceAtLeast(arc)
@@ -186,10 +166,8 @@ private fun runLauncherApp() = application {
         }
 
         LaunchedEffect(Unit) {
-            // 立即在后台加载设置，不阻塞 UI 线程
             scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 val settings = runCatching { AppSettings.load() }.getOrDefault(AppSettings())
-                // 在 IO 线程预处理壁纸（仅解码与缩放），模糊改由 GPU 实时完成
                 val bgKey = settings.backgroundImagePath
                 if (settings.backgroundImagePath.isNotBlank()) {
                     runCatching {
@@ -242,7 +220,6 @@ private fun runLauncherApp() = application {
                     ThemeState.showLogSidebar = settings.showLogSidebar
                     ThemeState.customFontPath = settings.customFontPath
                     DownloadManager.activeMirror = settings.downloadMirror
-                    // 若首次启动需要 EULA，切换到 EULA 界面
                     if (!settings.eulaAccepted) eulaAccepted = false
                 }
 
@@ -262,7 +239,6 @@ private fun runLauncherApp() = application {
         }
 
         MD3LTheme {
-            // 启动动画：动画播放完之前显示 SplashScreen，之后才渲染主界面
             if (!splashFinished) {
                 SplashScreen(
                     onAnimationEnd = { splashFinished = true }
@@ -275,7 +251,6 @@ private fun runLauncherApp() = application {
                         }
                     }
                     false -> {
-                        // 首次启动：显示免责声明
                         DisclaimerScreen(
                             onAccept = {
                                 scope.launch {
@@ -289,7 +264,6 @@ private fun runLauncherApp() = application {
                         )
                     }
                     true -> {
-                        // 主界面
                         AppWindow(windowState, ::exitApplication)
 
                         if (showCloseConfirm) {
@@ -364,12 +338,9 @@ private fun FrameWindowScope.AppWindow(
     var dropMessage by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
-    // 自定义最大化：手动计算工作区（排除任务栏），不用 WindowPlacement.Maximized
     var isMaximized by remember { mutableStateOf(false) }
-    // 保存最大化前的窗口 bounds，用于还原
     val savedBounds = remember { java.awt.Rectangle() }
 
-    // closeAfterLaunch: 游戏进程启动时隐藏窗口，退出时恢复
     val activeProcess by launcher.core.GameProcessManager.activeProcess.collectAsState()
     LaunchedEffect(activeProcess) {
         if (ThemeState.closeAfterLaunch) {
@@ -425,7 +396,6 @@ private fun FrameWindowScope.AppWindow(
         }
     }
 
-    // Windows 下部分环境 Compose 外部拖拽回调不稳定，增加 AWT 原生兜底。
     DisposableEffect(window) {
         fun droppedFiles(transferable: Transferable?): List<File> {
             if (transferable == null || !transferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) return emptyList()
@@ -483,7 +453,6 @@ private fun FrameWindowScope.AppWindow(
             }
         }
 
-        // 在 AWT 事件线程上注册，确保 window peer 已完全初始化
         var dropTarget: DropTarget? = null
         javax.swing.SwingUtilities.invokeLater {
             runCatching {
@@ -502,13 +471,10 @@ private fun FrameWindowScope.AppWindow(
         }
     }
 
-    // 最大化时圆角设为 0，避免圆角区域露出桌面
     val windowShape = if (isMaximized) RoundedCornerShape(0.dp) else RoundedCornerShape(12.dp)
 
-    // 圆角直径 px，对应 12dp 的视觉效果
     val cornerArc = 24
 
-    // 自定义最大化：手动计算 Windows 工作区（排除任务栏）
     fun applyMaximized() {
         val ge = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment()
         val screen = ge.defaultScreenDevice.defaultConfiguration.bounds
@@ -519,10 +485,8 @@ private fun FrameWindowScope.AppWindow(
             screen.width - insets.left - insets.right,
             screen.height - insets.top - insets.bottom,
         )
-        // 保存当前 bounds
         savedBounds.setBounds(window.x, window.y, window.width, window.height)
         window.setBounds(workArea)
-        // 最大化时取消圆角裁剪
         runCatching { window.setShape(null) }
         isMaximized = true
     }
@@ -531,7 +495,6 @@ private fun FrameWindowScope.AppWindow(
         if (savedBounds.width > 0 && savedBounds.height > 0) {
             window.setBounds(savedBounds)
         }
-        // 恢复圆角
         runCatching {
             val w = window.width.coerceAtLeast(cornerArc)
             val h = window.height.coerceAtLeast(cornerArc)
@@ -587,7 +550,6 @@ private fun FrameWindowScope.AppWindow(
                         )
                     }
                 } else {
-                    // 最大化时：只显示 TitleBar 但不使用 WindowDraggableArea（避免圆角冲突）
                     TitleBar(
                         isMaximized = isMaximized,
                         onMinimize = { windowState.isMinimized = true },
@@ -727,7 +689,6 @@ private fun TitleBar(
             )
             Spacer(Modifier.weight(1f))
 
-            // Window buttons
             IconButton(
                 onClick = onMinimize,
                 modifier = Modifier.size(32.dp),

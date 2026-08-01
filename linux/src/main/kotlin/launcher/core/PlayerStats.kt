@@ -12,9 +12,6 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
 
-/**
- * 玩家游玩统计数据 — 持久化存储到 data/stats.json
- */
 @Serializable
 data class StatsData(
     val javaLaunchCount: Int = 0,

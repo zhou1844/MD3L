@@ -9,7 +9,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Neutral dark tones (shared across all palettes)
 private val darkBackground = Color(0xFF111113)
 private val darkOnBackground = Color(0xFFE3E2E6)
 private val darkSurface = Color(0xFF1B1B1F)
@@ -32,7 +31,6 @@ private val darkOnError = Color(0xFF690005)
 private val darkErrorContainer = Color(0xFF93000A)
 private val darkOnErrorContainer = Color(0xFFFFDAD6)
 
-// Dynamic accent palettes
 data class AccentPalette(
     val primary: Color,
     val onPrimary: Color,
@@ -49,7 +47,6 @@ data class AccentPalette(
     val inversePrimary: Color,
 )
 
-// 莫奈紫 (Monet Purple) ──────────────────────────────────────────────────────
 val AccentMonetPurple = AccentPalette(
     primary = Color(0xFFCFBCFF),
     onPrimary = Color(0xFF381E72),
@@ -66,7 +63,6 @@ val AccentMonetPurple = AccentPalette(
     inversePrimary = Color(0xFF6750A4),
 )
 
-// 极客蓝 (Geek Blue) ─────────────────────────────────────────────────────────
 val AccentGeekBlue = AccentPalette(
     primary = Color(0xFF9ECAFF),
     onPrimary = Color(0xFF003258),
@@ -83,7 +79,6 @@ val AccentGeekBlue = AccentPalette(
     inversePrimary = Color(0xFF1A6EB0),
 )
 
-// 薄荷绿 (Mint Green) ────────────────────────────────────────────────────────
 val AccentMintGreen = AccentPalette(
     primary = Color(0xFF7EDBA2),
     onPrimary = Color(0xFF003920),
@@ -100,7 +95,6 @@ val AccentMintGreen = AccentPalette(
     inversePrimary = Color(0xFF006D40),
 )
 
-// 琥珀橙 (Amber Orange) ───────────────────────────────────────────────────────
 val AccentAmberOrange = AccentPalette(
     primary = Color(0xFFFFB870),
     onPrimary = Color(0xFF4F2500),
@@ -117,7 +111,6 @@ val AccentAmberOrange = AccentPalette(
     inversePrimary = Color(0xFF9A4D00),
 )
 
-// 珊瑚红 (Coral Red) ─────────────────────────────────────────────────────────
 val AccentCoralRed = AccentPalette(
     primary = Color(0xFFFFB3AE),
     onPrimary = Color(0xFF5A1114),
@@ -134,7 +127,6 @@ val AccentCoralRed = AccentPalette(
     inversePrimary = Color(0xFFB63A3F),
 )
 
-// 青瓷青 (Celadon Cyan) ──────────────────────────────────────────────────────
 val AccentCeladonCyan = AccentPalette(
     primary = Color(0xFF7DD5D1),
     onPrimary = Color(0xFF003735),
@@ -151,7 +143,6 @@ val AccentCeladonCyan = AccentPalette(
     inversePrimary = Color(0xFF006A66),
 )
 
-// 石墨蓝 (Graphite Blue) ─────────────────────────────────────────────────────
 val AccentGraphiteBlue = AccentPalette(
     primary = Color(0xFFB7C5FF),
     onPrimary = Color(0xFF1D2A61),
@@ -168,7 +159,6 @@ val AccentGraphiteBlue = AccentPalette(
     inversePrimary = Color(0xFF4A5893),
 )
 
-// 星尘玫瑰 (Stardust Rose) — 紫粉混合 ───────────────────────────────────────
 val AccentStardustRose = AccentPalette(
     primary = Color(0xFFE8A0C4),
     onPrimary = Color(0xFF4A1535),
@@ -185,7 +175,6 @@ val AccentStardustRose = AccentPalette(
     inversePrimary = Color(0xFF9A3060),
 )
 
-// 深海靛蓝 (Abyss Indigo) — 蓝紫混合 ───────────────────────────────────────
 val AccentAbyssIndigo = AccentPalette(
     primary = Color(0xFF8CB8FF),
     onPrimary = Color(0xFF003060),
@@ -202,7 +191,6 @@ val AccentAbyssIndigo = AccentPalette(
     inversePrimary = Color(0xFF1A5CAA),
 )
 
-// 碧玉苔绿 (Jade Moss) — 绿青混合 ──────────────────────────────────────────
 val AccentJadeMoss = AccentPalette(
     primary = Color(0xFF88D4AA),
     onPrimary = Color(0xFF003824),
@@ -219,7 +207,6 @@ val AccentJadeMoss = AccentPalette(
     inversePrimary = Color(0xFF006A44),
 )
 
-// 暖沙棕 (Warm Sand) — 橙黄混合去色 ────────────────────────────────────────
 val AccentWarmSand = AccentPalette(
     primary = Color(0xFFD4B896),
     onPrimary = Color(0xFF3C2410),
@@ -236,7 +223,6 @@ val AccentWarmSand = AccentPalette(
     inversePrimary = Color(0xFF8A5A30),
 )
 
-// 月光银灰 (Moonlight) — 全去色冷调 ─────────────────────────────────────────
 val AccentMoonlight = AccentPalette(
     primary = Color(0xFFBCC4D0),
     onPrimary = Color(0xFF263040),
@@ -253,7 +239,6 @@ val AccentMoonlight = AccentPalette(
     inversePrimary = Color(0xFF5A6878),
 )
 
-// 极光极光 (Aurora) — 绿紫渐变混合 ──────────────────────────────────────────
 val AccentAurora = AccentPalette(
     primary = Color(0xFF90E0C0),
     onPrimary = Color(0xFF003828),
@@ -290,43 +275,37 @@ val AccentNames = listOf(
     "星尘玫瑰", "深海靛蓝", "碧玉苔绿", "暖沙棕", "月光银灰", "极光",
 )
 
-// Global accent state
 object ThemeState {
     var accent by mutableStateOf(AccentMonetPurple)
     var isDark by mutableStateOf(true)
     var backgroundImagePath by mutableStateOf("")
     var backgroundBlurRadius by mutableStateOf(20)
-    var backgroundBrightness by mutableStateOf(0.75f)  // 0=全黑, 1=原色
-    var uiPanelOpacity by mutableStateOf(0.75f)       // 0=全透明, 1=完全不透明
-    var language by mutableStateOf("zh")              // zh / en
-    var uiAnimationSpeed by mutableStateOf(1.0f)      // 动画速度倍率
-    var uiFontScale by mutableStateOf(1.0f)           // 字体缩放
-    var uiCompactMode by mutableStateOf(false)        // 紧凑模式
-    var uiShowVersionBadge by mutableStateOf(true)    // 侧边栏版本号
-    var uiCornerRadius by mutableStateOf(16)          // 全局圆角 dp
-    var showLogSidebar by mutableStateOf(false)       // 侧边栏显示日志入口
-    var uiSidebarWidth by mutableStateOf(80)          // 侧边栏宽度 dp
-    var customFontPath by mutableStateOf("")          // 自定义字体路径（ttf/otf）
-    // 导航方式
-    var navigationMode by mutableStateOf("sidebar")   // sidebar / floating
-    // 浮动导航专属设置
-    var navFloatingMarginBottom by mutableStateOf(12) // dp
-    var navFloatingMarginSide by mutableStateOf(16)   // dp
-    var navFloatingCornerRadius by mutableStateOf(24) // dp
-    var navFloatingHeight by mutableStateOf(64)       // dp
+    var backgroundBrightness by mutableStateOf(0.75f)
+    var uiPanelOpacity by mutableStateOf(0.75f)
+    var language by mutableStateOf("zh")
+    var uiAnimationSpeed by mutableStateOf(1.0f)
+    var uiFontScale by mutableStateOf(1.0f)
+    var uiCompactMode by mutableStateOf(false)
+    var uiShowVersionBadge by mutableStateOf(true)
+    var uiCornerRadius by mutableStateOf(16)
+    var showLogSidebar by mutableStateOf(false)
+    var uiSidebarWidth by mutableStateOf(80)
+    var customFontPath by mutableStateOf("")
+    var navigationMode by mutableStateOf("sidebar")
+    var navFloatingMarginBottom by mutableStateOf(12)
+    var navFloatingMarginSide by mutableStateOf(16)
+    var navFloatingCornerRadius by mutableStateOf(24)
+    var navFloatingHeight by mutableStateOf(64)
     var navFloatingShowLabels by mutableStateOf(true)
-    // 启动行为
-    var startupPage by mutableStateOf("launch")       // launch / versions / download
+    var startupPage by mutableStateOf("launch")
     var closeAfterLaunch by mutableStateOf(false)
     var confirmBeforeClose by mutableStateOf(true)
     var showConsoleOnLaunch by mutableStateOf(false)
     var checkUpdateOnStartup by mutableStateOf(true)
-    // 预加载的壁纸 bitmap（在 Main 启动时同步加载，消除首帧空白）
     var cachedBgBitmap by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
-    var cachedBgKey by mutableStateOf("")  // 仅 bgPath，模糊由 GPU layer 实时处理
+    var cachedBgKey by mutableStateOf("")
 }
 
-// Build dark color scheme from accent
 private fun buildDarkScheme(accent: AccentPalette): ColorScheme = darkColorScheme(
     primary = accent.primary,
     onPrimary = accent.onPrimary,
@@ -358,9 +337,8 @@ private fun buildDarkScheme(accent: AccentPalette): ColorScheme = darkColorSchem
     surfaceTint = darkSurfaceTint,
 )
 
-// Build light color scheme from accent
 private fun buildLightScheme(accent: AccentPalette): ColorScheme = lightColorScheme(
-    primary = accent.inversePrimary, // Use darker inversePrimary for light mode
+    primary = accent.inversePrimary,
     onPrimary = Color.White,
     primaryContainer = accent.primaryContainer,
     onPrimaryContainer = accent.onPrimaryContainer,
@@ -385,12 +363,8 @@ private fun buildLightScheme(accent: AccentPalette): ColorScheme = lightColorSch
     inversePrimary = accent.primary,
 )
 
-// Smooth animated transitions
-// 使用单一动画驱动，减少 animateColorAsState 数量，降低重组开销
 @Composable
 fun animateColorScheme(target: ColorScheme): ColorScheme {
-    // 只动画关键颜色（视觉影响最大的），减少 animateColorAsState 调用数量
-    // 非关键颜色直接使用 target 值，避免不必要的重组
     val spec = tween<Color>(durationMillis = 500)
     return target.copy(
         primary = animateColorAsState(target.primary, spec, label = "cs_primary").value,
@@ -411,13 +385,11 @@ fun animateColorScheme(target: ColorScheme): ColorScheme {
         surfaceVariant = animateColorAsState(target.surfaceVariant, spec, label = "cs_surfaceVariant").value,
         onSurfaceVariant = animateColorAsState(target.onSurfaceVariant, spec, label = "cs_onSurfaceVariant").value,
         outline = animateColorAsState(target.outline, spec, label = "cs_outline").value,
-        // background 和 onBackground 与 surface/onSurface 高度相关，直接使用 target 值减少动画开销
         background = target.background,
         onBackground = target.onBackground,
     )
 }
 
-// Apply font scaling to all typography text styles
 private fun scaleTypography(base: Typography, scale: Float): Typography {
     if (scale == 1f) return base
     return base.copy(
@@ -439,7 +411,6 @@ private fun scaleTypography(base: Typography, scale: Float): Typography {
     )
 }
 
-// Main theme composable
 @Composable
 fun MD3LTheme(content: @Composable () -> Unit) {
     val baseScheme = if (ThemeState.isDark) buildDarkScheme(ThemeState.accent) else buildLightScheme(ThemeState.accent)

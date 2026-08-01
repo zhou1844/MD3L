@@ -26,7 +26,6 @@ fun DownloadManagerScreen() {
     val finished = tasks.filter { it.status != DownloadHub.TaskStatus.Running }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // 标题栏
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { Navigator.back() }) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -131,7 +130,6 @@ private fun TaskCard(task: DownloadHub.HubTask) {
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // 图标
                 val icon = when (task.type) {
                     DownloadHub.TaskType.JavaVersion -> Icons.Filled.SportsEsports
                     DownloadHub.TaskType.BedrockVersion -> Icons.Filled.ViewInAr

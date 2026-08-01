@@ -30,7 +30,6 @@ fun LogScreen() {
     val isEn = launcher.ui.theme.ThemeState.language == "en"
     val lines = AppLogger.lines
     val listState = rememberLazyListState()
-    // 监听日志列表滚动位置，更新底栏淡出隐藏状态
     LaunchedEffect(listState) {
         snapshotFlow {
             val canScrollForward = listState.canScrollForward
@@ -41,7 +40,6 @@ fun LogScreen() {
         }.collect { (canScrollForward, firstIdx, totalItems) ->
             NavBarScrollState.scrollFraction.value = when {
                 totalItems == 0 -> 0f
-                // 内容太少不足以滚动 → 保持导航栏可见
                 !canScrollForward && firstIdx == 0 -> 0f
                 !canScrollForward -> 1f
                 else -> (firstIdx.toFloat() / totalItems.toFloat()).coerceIn(0f, 0.99f)
@@ -67,7 +65,6 @@ fun LogScreen() {
 
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
 
-        // 顶部工具栏
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(
                 modifier = Modifier.size(42.dp).clip(RoundedCornerShape(14.dp))
@@ -108,7 +105,6 @@ fun LogScreen() {
             }
         }
 
-        // 搜索栏
         OutlinedTextField(
             value = filterQuery,
             onValueChange = { filterQuery = it },
@@ -126,7 +122,6 @@ fun LogScreen() {
             modifier = Modifier.fillMaxWidth(),
         )
 
-        // 日志列表
         ElevatedCard(
             shape = RoundedCornerShape(18.dp),
             modifier = Modifier.fillMaxWidth().weight(1f),

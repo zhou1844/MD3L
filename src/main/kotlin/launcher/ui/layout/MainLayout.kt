@@ -105,14 +105,6 @@ object Navigator {
     }
 }
 
-/**
- * 共享滚动位置状态，由各主屏幕（Launch/Version/Download/Settings 等）写入、
- * [MainLayout] 读取来控制浮动底栏的显示/隐藏。
- *
- * - [scrollFraction] = 0f 表示页面顶部，1f 表示页面底部（完全滚动到底）
- * - `ScrollState` 使用 `value / maxValue` 计算
- * - `LazyListState` / `LazyGridState` 使用 `canScrollForward` 判断是否到底
- */
 object NavBarScrollState {
     val scrollFraction = kotlinx.coroutines.flow.MutableStateFlow(0f)
 }
@@ -120,7 +112,6 @@ object NavBarScrollState {
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun MainLayout(modifier: Modifier = Modifier) {
-    // 应用默认起始页设置
     LaunchedEffect(ThemeState.startupPage) {
         Navigator.applyStartupPage(ThemeState.startupPage)
     }
@@ -129,13 +120,11 @@ fun MainLayout(modifier: Modifier = Modifier) {
     val activeTab = currentRoute.primaryTab()
     val isLaunching by LaunchState.isLaunching.collectAsState()
     val activeProcess by GameProcessManager.activeProcess.collectAsState()
-    // 导航锁定仅在「启动准备阶段」生效，游戏运行后允许自由跳转
     val navLocked = isLaunching
 
     val bgPath = ThemeState.backgroundImagePath
     val bgBlur = ThemeState.backgroundBlurRadius
     val bgBrightness = ThemeState.backgroundBrightness
-    // bgKey 只依赖路径，模糊由 GPU layer 实时处理，切换模糊度 0 延迟
     val bgKey = bgPath
     var bgBitmap by remember { mutableStateOf(if (ThemeState.cachedBgKey == bgKey) ThemeState.cachedBgBitmap else null) }
     LaunchedEffect(bgKey) {
@@ -146,7 +135,6 @@ fun MainLayout(modifier: Modifier = Modifier) {
         bgBitmap = if (bgPath.isNotBlank()) withContext(Dispatchers.IO) {
             runCatching {
                 var src = ImageIO.read(File(bgPath)) ?: return@runCatching null
-                // 降采样到 1280px 供 GPU 渲染，无需 CPU 模糊
                 val maxDim = 1280
                 if (src.width > maxDim || src.height > maxDim) {
                     val scale = maxDim.toFloat() / maxOf(src.width, src.height)
@@ -169,7 +157,6 @@ fun MainLayout(modifier: Modifier = Modifier) {
     val hasBg = bgBitmap != null
     val panelAlpha = if (hasBg) ThemeState.uiPanelOpacity else 1f
 
-    // 有壁纸时面板用 uiPanelOpacity；无壁纸时保持不透明
     val railContainerColor = if (hasBg)
         MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = panelAlpha)
     else
@@ -183,7 +170,6 @@ fun MainLayout(modifier: Modifier = Modifier) {
     val cornerR = ThemeState.uiCornerRadius.dp
     val isEn = ThemeState.language == "en"
 
-    // MD3 动画曲线（共享）
     val md3EmphasizedDecelerate = remember { CubicBezierEasing(0.05f, 0.7f, 0.1f, 1.0f) }
     val md3EmphasizedAccelerate = remember { CubicBezierEasing(0.3f, 0.0f, 0.8f, 0.15f) }
     val md3StandardDecelerate = remember { CubicBezierEasing(0.0f, 0.0f, 0.2f, 1.0f) }
@@ -198,11 +184,6 @@ fun MainLayout(modifier: Modifier = Modifier) {
     }
     val animSpeed = ThemeState.uiAnimationSpeed
 
-    // 浮动导航栏：基于页面滚动位置淡出隐藏
-    // 由各主屏幕（Launch/Version/Download/Settings 等）通过 snapshotFlow
-    // 监听各自的 ScrollState/LazyListState 并写入 NavBarScrollState.scrollFraction。
-    // 隐藏条件：滚动比例 >= 0.90（接近页底）；只要一往上拉（< 0.90）立即显示。
-    // 这种方式同时支持鼠标滚轮滚动和滚动条拖拽，因为两者都会更新 Compose 的 ScrollState。
     var navBarAlpha by remember { mutableStateOf(1f) }
     LaunchedEffect(Unit) {
         NavBarScrollState.scrollFraction
@@ -211,7 +192,6 @@ fun MainLayout(modifier: Modifier = Modifier) {
                 else navBarAlpha = 1f
             }
     }
-    // 切换导航模式或路由时重置
     LaunchedEffect(navigationMode, currentRoute) {
         NavBarScrollState.scrollFraction.value = 0f
         navBarAlpha = 1f
@@ -222,16 +202,12 @@ fun MainLayout(modifier: Modifier = Modifier) {
         label = "navAlpha",
     )
 
-    // 浮动导航栏背景色：比页面背景更突出以避免深色模式混淆
     val navBarBgColor = if (hasBg)
         MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = (panelAlpha + 0.12f).coerceAtMost(1f))
     else
         MaterialTheme.colorScheme.surfaceContainerHigh
 
-    // ═══════════════════════════════════════════════ 统一布局 ═══
-    // 内容区始终在同一个位置，侧边栏/浮动导航通过 AnimatedVisibility 显隐
     Box(modifier = modifier.fillMaxSize().graphicsLayer { clip = true }) {
-        // 全局壁纸底层
         val bmp = bgBitmap
         if (bmp != null) {
             val blurPx = bgBlur.toFloat() * 2f
@@ -260,10 +236,8 @@ fun MainLayout(modifier: Modifier = Modifier) {
             )
         }
 
-        // ═══════════════════════════════════════════════ 内容布局 ═══
         Box(modifier = Modifier.fillMaxSize()) {
             Row(modifier = Modifier.fillMaxSize()) {
-                // Sidebar（仅侧边导航模式显示）
             AnimatedVisibility(
                 visible = navigationMode == "sidebar",
                 enter = fadeIn(animationSpec = tween(200)) + slideInHorizontally(animationSpec = tween(200)),
@@ -310,7 +284,6 @@ fun MainLayout(modifier: Modifier = Modifier) {
                 }
             }
 
-            // Main content（始终存在，两种模式共享同一个实例）
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -361,7 +334,6 @@ fun MainLayout(modifier: Modifier = Modifier) {
                         ScreenContent(route)
                     }
 
-                    // 下载悬浮球
                     val density = LocalDensity.current
                     val fabSizePx = with(density) { 56.dp.toPx() }
                     val fabPadPx = with(density) { 20.dp.toPx() }
@@ -392,7 +364,6 @@ fun MainLayout(modifier: Modifier = Modifier) {
             }
         }
 
-        // 底部浮动导航栏（仅浮动导航模式显示）
         AnimatedVisibility(
             visible = navigationMode == "floating" && navBarAlpha > 0.01f,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(animationSpec = tween(300)),
@@ -433,7 +404,6 @@ fun MainLayout(modifier: Modifier = Modifier) {
                         }
                     }
                 }
-                // 版本号徽章（浮动导航栏上方，浮动模式下隐藏）
                 if (ThemeState.uiShowVersionBadge && navigationMode != "floating") {
                     Text(
                         text = "v${AutoUpdater.CURRENT_VERSION}",
@@ -446,7 +416,6 @@ fun MainLayout(modifier: Modifier = Modifier) {
             }
         }
 
-        // 全局贴纸覆盖层（所有页面可见）
         val stickerScope = rememberCoroutineScope()
         var stickers by remember { mutableStateOf<List<StickerData>>(emptyList()) }
         var showFirstImportHint by remember { mutableStateOf(false) }
@@ -484,7 +453,6 @@ fun MainLayout(modifier: Modifier = Modifier) {
             onFirstImportHintAcknowledged = { showFirstImportHint = false },
         )
 
-        // 右上角贴纸添加按钮（全局）
         IconButton(
             onClick = {
                 val chooser = javax.swing.JFileChooser().apply {
@@ -516,7 +484,7 @@ fun MainLayout(modifier: Modifier = Modifier) {
             )
         }
     }
-    } // end root Box
+    }
 }
 
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
@@ -533,11 +501,9 @@ private fun SidebarNavItem(
     val interactionSource = remember { MutableInteractionSource() }
     var isHovered by remember { mutableStateOf(false) }
 
-    // 缓存动画规格，避免每次重组重新分配
     val colorSpec = remember { tween<Color>(300, easing = CubicBezierEasing(0.2f, 0.0f, 0.0f, 1.0f)) }
     val floatSpec = remember { tween<Float>(300, easing = CubicBezierEasing(0.2f, 0.0f, 0.0f, 1.0f)) }
 
-    // 使用 animateColorAsState 实现平滑颜色过渡
     val containerColor by animateColorAsState(
         targetValue = when {
             selected -> MaterialTheme.colorScheme.primaryContainer
@@ -566,7 +532,6 @@ private fun SidebarNavItem(
         label = "sidebarLabelColor",
     )
 
-    // 选中时图标微放大
     val iconScale by animateFloatAsState(
         targetValue = if (selected) 1.1f else 1.0f,
         animationSpec = floatSpec,
@@ -619,7 +584,6 @@ private fun SidebarNavItem(
     }
 }
 
-// Screen content router
 @Composable
 private fun ScreenContent(route: Route) {
     when (route) {
@@ -642,7 +606,6 @@ private fun ScreenContent(route: Route) {
     }
 }
 
-// Floating nav item（紧凑版）
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 private fun FloatingNavItem(
@@ -739,27 +702,19 @@ private fun FloatingNavItem(
     }
 }
 
-/**
- * 快速箱形模糊（线性时间），迭代3次近似高斯模糊效果。
- * 先缩小到 1/scale 再模糊再放大，进一步提速。
- * Public 供 Main.kt 启动时预处理调用。
- */
 fun fastBoxBlur(src: BufferedImage, radius: Int): BufferedImage {
     if (radius <= 0) return src
     val scale = if (radius > 15) 4 else if (radius > 6) 2 else 1
     val sw = (src.width / scale).coerceAtLeast(1)
     val sh = (src.height / scale).coerceAtLeast(1)
-    // 缩小
     var img = BufferedImage(sw, sh, BufferedImage.TYPE_INT_RGB)
     img.createGraphics().also {
         it.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
         it.drawImage(src, 0, 0, sw, sh, null)
         it.dispose()
     }
-    // 箱形模糊：迭代3次（近似高斯）
     val r = (radius / scale).coerceAtLeast(1)
     repeat(3) { img = boxBlurPass(img, r) }
-    // 放大回原尺寸
     val out = BufferedImage(src.width, src.height, BufferedImage.TYPE_INT_RGB)
     out.createGraphics().also {
         it.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
@@ -774,7 +729,6 @@ private fun boxBlurPass(src: BufferedImage, r: Int): BufferedImage {
     val pixels = IntArray(w * h)
     src.getRGB(0, 0, w, h, pixels, 0, w)
     val tmp = IntArray(w * h)
-    // 水平方向
     for (y in 0 until h) {
         var rSum = 0; var gSum = 0; var bSum = 0
         val start = y * w
@@ -792,7 +746,6 @@ private fun boxBlurPass(src: BufferedImage, r: Int): BufferedImage {
             bSum += (add and 0xFF) - (rem and 0xFF)
         }
     }
-    // 垂直方向
     val out = IntArray(w * h)
     for (x in 0 until w) {
         var rSum = 0; var gSum = 0; var bSum = 0

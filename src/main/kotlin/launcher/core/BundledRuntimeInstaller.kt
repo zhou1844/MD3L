@@ -6,10 +6,6 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipFile
 
-/**
- * 首次启动时检测并安装内置的 Windows 运行库（StoreEngagement.Appx）。
- * 无感安装：静默、失败不阻塞主流程。
- */
 object BundledRuntimeInstaller {
     private const val APPX_RESOURCE = "/runtime/StoreEngagement.Appx"
     private const val MARKER_FAMILY = "Microsoft.Services.Store.Engagement"

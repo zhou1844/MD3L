@@ -18,65 +18,35 @@ import java.util.HexFormat
 import java.util.zip.GZIPInputStream
 import kotlin.io.path.*
 
-/**
- * Terracotta 联机管理器
- *
- * 核心架构：
- *   1. 下载 terracotta-{version}-{os}-{arch}-pkg.tar.gz
- *   2. 解压出 terracotta 可执行文件 + 依赖
- *   3. 启动 terracotta 进程：terracotta.exe --hmcl <port_transfer_file>
- *   4. terracotta 将 HTTP 端口写入 port_transfer_file
- *   5. 后台轮询 http://127.0.0.1:{port}/state 获取状态
- *   6. 通过 REST API 操作：/state/scanning(创建房间) /state/guesting(加入房间)
- *   7. 使用 --quickPlayMultiplayer 参数启动 Minecraft 直连
- *
- * 中继节点：从 https://terracotta.glavo.site/nodes 获取
- */
 object MultiplayerManager {
 
-    // ── 状态定义 ─────────────────────────
     enum class State {
-        /** 未初始化，需下载 Terracotta */
         Uninitialized,
-        /** 正在下载 Terracotta */
         Downloading,
-        /** 正在安装（解压） */
         Installing,
-        /** 正在启动 Terracotta 进程 */
         Launching,
-        /** Terracotta 已启动但尚未进入操作状态 */
         Unknown,
-        /** 空闲就绪，等待用户操作 */
         Idle,
-        /** 正在扫描/创建房间（Host 模式） */
         HostScanning,
-        /** 房间已创建，等待客户端加入 */
         HostOK,
-        /** 正在连接房间（Guest 模式） */
         GuestConnecting,
-        /** 已成功连接到房间 */
         GuestOK,
-        /** 发生异常 */
         Exception,
-        /** 致命错误，需要重新下载 */
         Fatal,
     }
 
-    // ── 玩家档案信息（对应 TerracottaProfile） ────────────────────────
     data class PlayerProfile(
         val name: String,
         val vendor: String = "",
         val type: String = "guest",
     )
 
-    // ── 房间码信息 ────────────────────────────────────────────────────
     data class RoomInfo(
         val code: String,
         val profiles: List<PlayerProfile> = emptyList(),
         val profileIndex: Int = 0,
     )
 
-    // ── Terracotta 配置结构 ────────────────────────────────────────────
     @Serializable
     data class TerracottaConfig(
         val version_latest: String = "",
@@ -91,7 +61,6 @@ object MultiplayerManager {
         val files: Map<String, String> = emptyMap(),
     )
 
-    // ── 状态流 ────────────────────────────────────────────────────────
     private val _state = MutableStateFlow(State.Uninitialized)
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -110,7 +79,6 @@ object MultiplayerManager {
     private val _serverAddress = MutableStateFlow("")
     val serverAddress: StateFlow<String> = _serverAddress.asStateFlow()
 
-    // ── 内部状态 ──────────────────────────────────────────────────────
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var terracottaProcess: Process? = null
     private var terracottaPort: Int = -1
@@ -125,14 +93,11 @@ object MultiplayerManager {
     private var currentExe: Path? = null
     private val currentClassifier: String by lazy { detectClassifier() }
 
-    // ── JSON ───────────────────────────────────────────────────────────
     private val json = Json { ignoreUnknownKeys = true }
 
-    // ── 初始化 ─────────────────────────────────────────────────────────
     fun initialize() {
         scope.launch {
             try {
-                // 加载配置
                 config = loadConfig()
                 if (config == null || config!!.packages.isEmpty()) {
                     _state.value = State.Fatal
@@ -140,7 +105,6 @@ object MultiplayerManager {
                     return@launch
                 }
 
-                // 检查是否已安装
                 val exePath = findLocalExecutable()
                 if (exePath != null) {
                     currentExe = exePath
@@ -156,7 +120,6 @@ object MultiplayerManager {
         }
     }
 
-    // ── 下载 Terracotta ───────────────────────────────────────────────
     fun startDownload() {
         if (_state.value != State.Uninitialized && _state.value != State.Fatal) return
         _state.value = State.Downloading
@@ -169,11 +132,9 @@ object MultiplayerManager {
                 val cfg = config ?: return@launch
                 val pkg = cfg.packages[currentClassifier] ?: return@launch
 
-                // 构建下载 URL 列表（中国用户优先使用国内镜像）
                 val urls = buildDownloadUrls(cfg)
                 val tmpFile = Files.createTempFile("terracotta-", ".tar.gz")
 
-                // 下载
                 var downloaded = false
                 for ((idx, url) in urls.withIndex()) {
                     try {
@@ -188,12 +149,10 @@ object MultiplayerManager {
 
                 if (!downloaded) throw IOException("所有下载源均失败")
 
-                // 安装（解压）
                 _state.value = State.Installing
                 _statusMessage.value = "正在解压 Terracotta..."
                 installBundle(tmpFile, pkg)
 
-                // 启动
                 val exePath = findLocalExecutable()
                 if (exePath != null) {
                     currentExe = exePath
@@ -209,15 +168,12 @@ object MultiplayerManager {
         }
     }
 
-    // ── 创建房间（Host） ──────────────────────────────────────────────
     fun createRoom() {
-        // 立即给出 UI 反馈：避免 fetchNodeList 的网络耗时期间界面毫无响应
         _errorMessage.value = null
         _state.value = State.HostScanning
         _statusMessage.value = "正在准备创建房间..."
         scope.launch {
             try {
-                // 获取中继节点列表
                 val nodes = fetchNodeList()
                 if (nodes.isEmpty()) {
                     _state.value = State.Exception
@@ -227,7 +183,6 @@ object MultiplayerManager {
                 }
                 val playerName = getPlayerName()
 
-                // 构造 GET query string（参照 HMCL TerracottaManager.setScanning）
                 val query = buildString {
                     append("?player=").append(java.net.URLEncoder.encode(playerName, "UTF-8"))
                     for (node in nodes) {
@@ -235,7 +190,6 @@ object MultiplayerManager {
                     }
                 }
 
-                // Fire-and-forget GET — 状态由后台 daemon 轮询捡到
                 httpGet("/state/scanning$query")
 
                 _statusMessage.value = "正在扫描中继节点..."
@@ -246,7 +200,6 @@ object MultiplayerManager {
         }
     }
 
-    // ── 踢出玩家（仅房主可用） ────────────────────────────────────────
     fun kickPlayer(playerName: String) {
         if (playerName.isBlank()) return
         scope.launch {
@@ -261,7 +214,6 @@ object MultiplayerManager {
         }
     }
 
-    // ── 取消 / 断开回到空闲（不杀进程） ─────────────────────────────
     fun cancelToIdle() {
         scope.launch {
             try {
@@ -272,19 +224,16 @@ object MultiplayerManager {
                 _roomInfo.value = null
                 _serverAddress.value = ""
             } catch (_: Exception) {
-                // 如果 HTTP 不通（进程异常），回退到 reset
                 reset()
             }
         }
     }
 
-    // ── 加入房间（Guest） ─────────────────────────────────────────────
     fun joinRoom(code: String) {
         if (code.isBlank()) {
             _errorMessage.value = "房间码不能为空"
             return
         }
-        // 立即给出 UI 反馈：避免 fetchNodeList 的网络耗时期间界面毫无响应
         _errorMessage.value = null
         _state.value = State.GuestConnecting
         _statusMessage.value = "正在准备加入房间 $code ..."
@@ -307,7 +256,6 @@ object MultiplayerManager {
                     }
                 }
 
-                // Fire-and-forget GET
                 httpGet("/state/guesting$query")
 
                 _statusMessage.value = "正在加入房间 $code ..."
@@ -318,7 +266,6 @@ object MultiplayerManager {
         }
     }
 
-    // ── 重置为等待状态 ────────────────────────────────────────────────
     fun setWaiting() {
         scope.launch {
             try {
@@ -329,14 +276,12 @@ object MultiplayerManager {
         }
     }
 
-    // ── 获取 Minecraft 启动参数 ───────────────────────────────────────
     fun getQuickPlayArgs(): List<String> {
         val addr = _serverAddress.value
         if (addr.isBlank()) return emptyList()
         return listOf("--quickPlayMultiplayer", addr)
     }
 
-    // ── 断开/重置 ─────────────────────────────────────────────────────
     fun reset() {
         statePollJob?.cancel()
         terracottaProcess?.destroy()
@@ -366,9 +311,6 @@ object MultiplayerManager {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    //  内部实现
-    // ═══════════════════════════════════════════════════════════════════
 
     private suspend fun launchTerracotta() {
         _state.value = State.Launching
@@ -385,7 +327,6 @@ object MultiplayerManager {
 
                 terracottaProcess = pb.start()
 
-                // 等待 port 文件出现
                 val deadline = System.currentTimeMillis() + 30_000
                 while (System.currentTimeMillis() < deadline) {
                     if (Files.exists(portFile) && Files.size(portFile) > 0) {
@@ -409,7 +350,6 @@ object MultiplayerManager {
                 _state.value = State.Unknown
                 _statusMessage.value = "Terracotta 已启动，端口: $terracottaPort"
 
-                // 启动状态轮询 daemon
                 startStatePolling()
             } catch (e: Exception) {
                 _state.value = State.Fatal
@@ -423,8 +363,8 @@ object MultiplayerManager {
         daemonActive = true
         statePollJob = scope.launch {
             var lastIndex = -1
-            var scanningStartTime = 0L  // 记录进入 host-scanning 的时间戳
-            val SCAN_TIMEOUT_MS = 90_000L  // 扫描超时 90 秒
+            var scanningStartTime = 0L
+            val SCAN_TIMEOUT_MS = 90_000L
             var inScanning = false
             while (isActive && daemonActive && terracottaPort > 0) {
                 try {
@@ -439,7 +379,6 @@ object MultiplayerManager {
                     val index = (obj["index"]?.toString()?.toIntOrNull() ?: 0)
 
                     if (index <= lastIndex) {
-                        // 如果在扫描中且超时，强制报错
                         if (inScanning && System.currentTimeMillis() - scanningStartTime > SCAN_TIMEOUT_MS) {
                             _state.value = State.Exception
                             _errorMessage.value = "扫描中继节点超时（>90s），请检查网络连接或防火墙设置"
@@ -465,7 +404,6 @@ object MultiplayerManager {
                             }
                             _statusMessage.value = "正在扫描中继节点..."
 
-                            // 超时检查
                             if (System.currentTimeMillis() - scanningStartTime > SCAN_TIMEOUT_MS) {
                                 _state.value = State.Exception
                                 _errorMessage.value = "扫描中继节点超时（>90s），请检查网络连接或防火墙设置"
@@ -515,7 +453,6 @@ object MultiplayerManager {
                         }
                     }
                 } catch (_: Exception) {
-                    // 轮询失败，静默重试
                 }
                 delay(500)
             }
@@ -525,7 +462,6 @@ object MultiplayerManager {
     private suspend fun downloadFile(url: String, dest: Path, expectedHash: String) {
         withContext(Dispatchers.IO) {
             var lastError: Exception? = null
-            // 带重试的下载（最多 3 次）
             retry@ for (attempt in 1..3) {
                 try {
                     val connection = URL(url).openConnection() as HttpURLConnection
@@ -533,7 +469,6 @@ object MultiplayerManager {
                     connection.readTimeout = 120_000
                     connection.setRequestProperty("User-Agent", "MD3L/1.1 (Linux)")
 
-                    // 检查 HTTP 状态码
                     val responseCode = connection.responseCode
                     if (responseCode != HttpURLConnection.HTTP_OK) {
                         connection.disconnect()
@@ -546,7 +481,6 @@ object MultiplayerManager {
                     connection.inputStream.use { input ->
                         DigestInputStream(input, digest).use { dis ->
                             Files.newOutputStream(dest).use { output ->
-                                // 64KB 缓冲区 — 大幅减少 syscall 次数
                                 val buffer = ByteArray(65536)
                                 var read = 0L
                                 var n: Int
@@ -554,7 +488,6 @@ object MultiplayerManager {
                                 while (dis.read(buffer).also { n = it } != -1) {
                                     output.write(buffer, 0, n)
                                     read += n
-                                    // 每 1MB 或完成时更新进度，避免频繁更新 UI
                                     if (totalBytes > 0 && (read - lastReport >= 1_048_576 || read >= totalBytes)) {
                                         _downloadProgress.value = read.toFloat() / totalBytes.toFloat()
                                         lastReport = read
@@ -570,7 +503,6 @@ object MultiplayerManager {
                         throw IOException("SHA-512 校验失败！\n期望: $expectedHash\n实际: $actualHash")
                     }
 
-                    // 下载成功，退出重试循环
                     return@withContext
                 } catch (e: Exception) {
                     lastError = e
@@ -593,10 +525,8 @@ object MultiplayerManager {
                 val expectedFiles = pkg.files.keys.toSet()
                 val extracted = mutableSetOf<String>()
 
-                // 简单 TAR 解析
                 val buffer = ByteArray(8192)
                 while (true) {
-                    // 读取 512 字节头部
                     val header = ByteArray(512)
                     var read = 0
                     while (read < 512) {
@@ -604,11 +534,9 @@ object MultiplayerManager {
                         if (n == -1) break
                         read += n
                     }
-                    if (read < 512) break // EOF
+                    if (read < 512) break
 
-                    // 检查是否为空块（双 512 零块表示结束）
                     if (header.all { it == 0.toByte() }) {
-                        // 再读一块确认
                         val nextBlock = ByteArray(512)
                         var nextRead = 0
                         while (nextRead < 512) {
@@ -617,17 +545,14 @@ object MultiplayerManager {
                             nextRead += n
                         }
                         if (nextRead < 512 || nextBlock.all { it == 0.toByte() }) break
-                        // 不是结束，回退 nextBlock
-                        // 简化：直接按 header 继续处理
                     }
 
                     val fileName = String(header, 0, 100).trimEnd('\u0000')
                     val fileSizeStr = String(header, 124, 12).trimEnd('\u0000')
-                    val fileSize = fileSizeStr.toLongOrNull(8) ?: 0L // octal
+                    val fileSize = fileSizeStr.toLongOrNull(8) ?: 0L
 
                     if (fileName.isEmpty()) continue
 
-                    // 跳过不是目标文件的条目
                     val baseName = fileName.substringAfterLast("/").ifBlank { fileName }
                     if (baseName !in expectedFiles) {
                         val skipBlocks = ((fileSize + 511) / 512).toInt()
@@ -635,7 +560,6 @@ object MultiplayerManager {
                         continue
                     }
 
-                    // 写入目标文件
                     val dest = terracottaDir.resolve(baseName)
                     Files.newOutputStream(dest).use { out ->
                         var remaining = fileSize
@@ -648,11 +572,9 @@ object MultiplayerManager {
                         }
                     }
 
-                    // 跳过 padding
                     val padding = (512 - (fileSize % 512)) % 512
                     if (padding > 0) gz.skipNBytes(padding)
 
-                    // 验证文件 hash
                     val expectedHash = pkg.files[baseName] ?: continue
                     val actualHash = HexFormat.of().formatHex(
                         MessageDigest.getInstance("SHA-512").digest(Files.readAllBytes(dest))
@@ -662,7 +584,6 @@ object MultiplayerManager {
                     }
                     extracted.add(baseName)
 
-                    // 设置可执行权限（Linux: 排除 .so/.dylib/.dll；Windows: 只需 .exe）
                     if (baseName.endsWith(".exe", ignoreCase = true)) {
                         dest.toFile().setExecutable(true)
                     } else {
@@ -705,14 +626,10 @@ object MultiplayerManager {
             connection.readTimeout = 5000
             connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
             connection.outputStream.use { it.write(body.toByteArray()) }
-            connection.responseCode // 触发请求
+            connection.responseCode
         }
     }
 
-    /**
-     * 节点列表获取地址（主用 + CN 镜像）。
-     * 顺序：主用 → CN 镜像，全部失败则返回空列表。
-     */
     private val nodeListUrls: List<String> by lazy {
         val isCN = java.util.Locale.getDefault().country == "CN"
         val primary = listOf("https://terracotta.glavo.site/nodes")
@@ -741,7 +658,6 @@ object MultiplayerManager {
                     }
                     if (result.isNotEmpty()) return@withContext result
                 } catch (_: Exception) {
-                    // 尝试下一个镜像
                 }
             }
             emptyList()
@@ -753,7 +669,6 @@ object MultiplayerManager {
         val classifier = currentClassifier
         val primary = cfg.downloads.map { it.replace("\${version}", version).replace("\${classifier}", classifier) }
         val cn = cfg.downloads_CN.map { it.replace("\${version}", version).replace("\${classifier}", classifier) }
-        // 中国用户优先国内源
         val isCN = java.util.Locale.getDefault().country == "CN"
         return if (isCN) cn + primary else primary + cn
     }
@@ -784,7 +699,6 @@ object MultiplayerManager {
             val path = terracottaDir.resolve(fileName)
             if (!Files.isRegularFile(path)) continue
 
-            // Windows: 可执行文件是 .exe（排除 .dll）
             if (isWindows) {
                 if (fileName.endsWith(".exe", ignoreCase = true)) {
                     path.toFile().setExecutable(true)
@@ -793,7 +707,6 @@ object MultiplayerManager {
                 continue
             }
 
-            // Linux/macOS: 任何非库文件（.so/.dylib/.dll）都是可执行候选
             val libSuffixes = listOf(".so", ".dylib", ".dll", ".so.*")
             if (libSuffixes.any { fileName.lowercase().endsWith(it.removeSuffix(".*")) || fileName.matches(Regex(".*\\.so\\..*")) }) {
                 continue
@@ -809,7 +722,6 @@ object MultiplayerManager {
             val stream = MultiplayerManager::class.java.classLoader.getResourceAsStream("terracotta.json")
                 ?: return null
             val text = stream.bufferedReader().readText()
-            // 过滤掉不在 packages 中的 classifier
             val cfg = json.decodeFromString<TerracottaConfig>(text)
             if (cfg.packages.containsKey(currentClassifier)) cfg else null
         } catch (_: Exception) { null }
@@ -830,12 +742,10 @@ object MultiplayerManager {
     }
 
     private fun getPlayerName(): String {
-        // 优先使用已登录的账号名
         val account = AccountRepository.activeAccount.value
         return account?.username ?: "MD3L_Player"
     }
 
-    /** 输入流包装，计算 SHA-512 */
     private class DigestInputStream(
         private val input: InputStream,
         private val digest: MessageDigest,
@@ -855,7 +765,6 @@ object MultiplayerManager {
         override fun close() = input.close()
     }
 
-    /** 跳过 n 个字节 */
     private fun InputStream.skipNBytes(n: Long) {
         var remaining = n
         val buffer = ByteArray(8192)

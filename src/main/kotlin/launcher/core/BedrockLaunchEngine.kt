@@ -31,9 +31,8 @@ class BedrockLaunchEngine : ILaunchEngine {
         private var packageFullNameByFamily = emptyMap<String, String>()
         private const val PACKAGE_FAMILY_CACHE_TTL_MS = 20_000L
 
-        // 预热缓存：key = versionDir 绝对路径，value = 已验证的注册槽
         private val prewarmedSlots = java.util.concurrent.ConcurrentHashMap<String, RegisteredSlotCache>()
-        private const val PREWARM_TTL_MS = 5 * 60 * 1000L // 5 分钟有效
+        private const val PREWARM_TTL_MS = 5 * 60 * 1000L
 
         internal data class RegisteredSlotCache(
             val slot: RegisteredSlot,
@@ -50,9 +49,7 @@ class BedrockLaunchEngine : ILaunchEngine {
             println("[Bedrock] 开始预热: $key")
             runCatching {
                 val engine = BedrockLaunchEngine()
-                // 1. 预热 Get-AppxPackage 缓存（冷启动 PS 最慢的一步）
                 engine.getInstalledPackageFullNameByFamily(forceRefresh = true)
-                // 2. 提前切换版本存档 junction（版本切换最耗时步骤提前到后台）
                 val resolvedDir = minecraftDir.takeIf { it.isNotBlank() }
                     ?: versionDir.parentFile?.parentFile?.absolutePath ?: ""
                 runCatching {
@@ -65,7 +62,6 @@ class BedrockLaunchEngine : ILaunchEngine {
                     }
                     println("[Bedrock] 预热：存档 Junction 已提前切换至 ${targetProfile.absolutePath}")
                 }.onFailure { println("[Bedrock] 预热：Junction 切换失败（不影响启动）: ${it.message}") }
-                // 3. 若已有 .installed marker，验证注册状态并缓存结果
                 val manifestFile = File(versionDir, "AppxManifest.xml")
                 if (manifestFile.isFile) {
                     val packageFile = engine.resolveSelectedVersionPackage(versionDir) ?: manifestFile
@@ -130,11 +126,6 @@ class BedrockLaunchEngine : ILaunchEngine {
         }.orEmpty()
     }
 
-    /**
-     * 返回当前 UWP junction 实际指向的 com.mojang 目录。
-     * 如果 junction 不存在，回退到 UWP 包根目录下的原始路径。
-     * 用于世界/包管理器在版本隔离目录为空时的后备读取。
-     */
     fun resolveActiveJunctionTarget(): File? {
         val packageRoots = findInstalledMinecraftPackageRoots()
         if (packageRoots.isEmpty()) return null
@@ -145,11 +136,6 @@ class BedrockLaunchEngine : ILaunchEngine {
         return target ?: comMojang
     }
 
-    /**
-     * 解析 GDK 版 Minecraft 的全部可能 com.mojang 数据目录。
-     * 包含 users/ 下所有已登录的 Xbox 用户（XUID 目录）以及 users/shared。
-     * 游戏进程可能写入其中任意一个，因此必须全部纳入 junction 隔离。
-     */
     private fun resolveGdkFixedComMojangCandidates(versionId: String): List<File> {
         val appData = System.getenv("APPDATA") ?: System.getProperty("user.home")
         val folderName = if (versionId.contains("preview", ignoreCase = true) ||
@@ -224,12 +210,10 @@ class BedrockLaunchEngine : ILaunchEngine {
             val out = proc.inputStream.bufferedReader().readText().trim()
             proc.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
             if (out.isBlank()) {
-                // 无法确定时保守视为 junction，绝不触发数据搬移
                 return true
             }
             out.contains("JUNCTION", ignoreCase = true)
         } catch (_: Exception) {
-            // 读取失败时保守视为 junction，保护存档不被搬移
             true
         }
     }
@@ -260,10 +244,8 @@ class BedrockLaunchEngine : ILaunchEngine {
                 val moved = tryRobocopyMove(comMojang, targetProfile)
                 if (moved) {
                     println("[Bedrock] 数据移动完成: ${targetProfile.absolutePath}")
-                    // /MOVE 成功后源目录已由 robocopy 清空，直接删除空壳
                     comMojang.deleteRecursively()
                 } else {
-                    // /MOVE 失败（跨盘符等极端情况）回退到增量复制+删除
                     println("[Bedrock] /MOVE 失败，回退增量复制")
                     val copied = tryRobocopyIncremental(comMojang, targetProfile)
                     if (copied) {
@@ -297,7 +279,6 @@ class BedrockLaunchEngine : ILaunchEngine {
                 }
             }
 
-            // AppContainer 沙箱无法跟随 SymbolicLink，必须用 Junction
             val mk = ProcessBuilder(
                 "cmd", "/c", "mklink", "/J",
                 comMojang.absolutePath,
@@ -451,7 +432,7 @@ class BedrockLaunchEngine : ILaunchEngine {
         packageRoots.forEach { root ->
             val mojangDir = File(root, "LocalState/games/com.mojang")
             if (!mojangDir.exists()) mojangDir.mkdirs()
-            
+
             val optionsFile = File(mojangDir, "minecraftpe/options.txt")
             if (optionsFile.exists()) {
                 val lines = optionsFile.readLines().toMutableList()
@@ -501,10 +482,10 @@ class BedrockLaunchEngine : ILaunchEngine {
                     }
                     val texturesDir = File(packDir, "textures/entity")
                     texturesDir.mkdirs()
-                    
+
                     File(texturesDir, "steve.png").delete()
                     File(texturesDir, "alex.png").delete()
-                    
+
                     skinFile.copyTo(File(texturesDir, "steve.png"), overwrite = true)
                     skinFile.copyTo(File(texturesDir, "alex.png"), overwrite = true)
 
@@ -515,7 +496,7 @@ class BedrockLaunchEngine : ILaunchEngine {
                         } else {
                             mutableListOf()
                         }
-                        
+
                         val exists = packsArray.any { it.jsonObject["pack_id"]?.jsonPrimitive?.content == "ee35fa32-0268-45e0-9bc7-60e0fb2eecbe" }
                         if (!exists) {
                             val newPack = buildJsonObject {
@@ -587,13 +568,9 @@ class BedrockLaunchEngine : ILaunchEngine {
             val b = GDK_THRESHOLD.getOrElse(i) { 0 }
             if (a != b) return a > b
         }
-        return true // 完全相等也算 GDK
+        return true
     }
 
-    /**
-     * 1. 版本隔离（Junction 切换） → 2. COM 激活（注册+启动） → 3. 驻留等待进程退出
-     * 移除了窗口句柄检测和超时强杀逻辑。
-     */
     override fun execute(context: LaunchContext): Process {
         runtimeChecked = true
 
@@ -601,20 +578,10 @@ class BedrockLaunchEngine : ILaunchEngine {
             val versionDir = File(context.version.versionDir)
             val versionId = versionDir.name
 
-            // 注意：GDK 版本不能裸跑 Minecraft.Windows.exe。
-            // 裸进程没有 UWP 包标识（package identity），Xbox 许可证/授权查询会失败，
-            // 正版账号也会被判定为「试玩版」。必须先 Add-AppxPackage -Register 注册，
-            // 再通过 COM 激活（ActivateApplication），使进程带包标识，正版授权才生效。
-            // 因此 GDK + MSA 也统一走下方的 launchViaComActivation 路径
 
-            // 版本隔离：切换 com.mojang Junction
             onProgress?.invoke(30, "正在切换版本存档…")
             val targetProfile = resolveBedrockVersionComMojang(context.minecraftDir, context.version.id)
             stopRunningMinecraft()
-            // GDK 版本通过 -Register 以 UWP 包身份运行，游戏实际读取
-            // LocalState/games/com.mojang（UWP 标准路径）；同时也可能读取
-            // %APPDATA%\Minecraft Bedrock\users\...（GDK 原生路径）。
-            // 两条路径都必须切换到版本隔离目录，否则会出现存档串用。
             if (isGdkVersion(versionId)) {
                 val uwpOk = runCatching { switchProfileJunction(targetProfile) }.onFailure {
                     println("[MD3L] GDK UWP Junction 切换失败: ${it.message}")
@@ -630,16 +597,13 @@ class BedrockLaunchEngine : ILaunchEngine {
             }
             println("[MD3L] 版本存档已隔离: ${targetProfile.absolutePath}")
 
-            // 非 GDK 路径额外注入游戏选项（GDK 版本隔离由 Junction 完成，选项注入会干扰）
             if (!isGdkVersion(versionId)) {
                 injectBedrockGameOptions(targetProfile, context)
             }
 
-            // COM 注册 + 激活（GDK 离线 / UWP 通用）
             return launchViaComActivation(versionDir, versionId)
         }
 
-        // 系统已安装的基岩版（未托管版本目录）
         val detectedAumid = detectInstalledMinecraft()
             ?: throw RuntimeException(
                 "基岩版启动失败：未检测到已安装的 Minecraft 基岩版。\n" +
@@ -661,9 +625,6 @@ class BedrockLaunchEngine : ILaunchEngine {
         }.onFailure { println("[MD3L] 停止 Minecraft 进程失败（不影响启动）: ${it.message}") }
     }
 
-    /**
-     * GDK + MSA 正版快速启动：直接执行 EXE，不经过 COM 激活。
-     */
     private fun launchGdkMsaDirect(versionDir: File, versionId: String): Process {
         onProgress?.invoke(30, "正版账户，GDK 快速启动…")
         val exeFile = File(versionDir, "Minecraft.Windows.exe")
@@ -686,10 +647,6 @@ class BedrockLaunchEngine : ILaunchEngine {
         return waitForMinecraftProcess(beforePids, timeoutMs = 30_000)
     }
 
-    /**
-     * COM 激活通用流程：查找/注册包 → COM 激活 → 驻留监控。
-     * GDK 离线版和标准 UWP 版共用此路径，消除冗余代码。
-     */
     private fun launchViaComActivation(versionDir: File, versionId: String): Process {
         val manifestFile = File(versionDir, "AppxManifest.xml")
         if (!manifestFile.isFile) throw RuntimeException(
@@ -732,7 +689,6 @@ class BedrockLaunchEngine : ILaunchEngine {
             }
         }
 
-        // 验证 COM 激活是否真的产生了 Minecraft.Windows.exe 进程
         if (comActivated) {
             val deadline = System.currentTimeMillis() + 5000
             while (System.currentTimeMillis() < deadline) {
@@ -751,15 +707,10 @@ class BedrockLaunchEngine : ILaunchEngine {
             println("[MD3L] COM 激活完全失败，尝试直接启动 EXE 回退")
         }
 
-        // 回退：直接启动 Minecraft.Windows.exe
         onProgress?.invoke(85, "COM 激活未生效，尝试直接启动 EXE…")
         return launchDirectExe(versionDir, versionId)
     }
 
-    /**
-     * 直接启动 Minecraft.Windows.exe 作为 COM 激活失败的回退方案。
-     * FullTrust 应用（非纯沙箱 UWP）允许裸 exe 运行。
-     */
     private fun launchDirectExe(versionDir: File, versionId: String): Process {
         val exeFile = File(versionDir, "Minecraft.Windows.exe")
         if (!exeFile.isFile) throw RuntimeException(
@@ -779,7 +730,6 @@ class BedrockLaunchEngine : ILaunchEngine {
     }
 
     private fun uwpMonitorProcess(): Process {
-        // 只等待 Minecraft.Windows 进程出现，不检查窗口句柄
         val script = """
             ${'$'}deadline = (Get-Date).AddSeconds(30)
             do {
@@ -808,7 +758,6 @@ class BedrockLaunchEngine : ILaunchEngine {
             ?: throw RuntimeException("等待 Minecraft.Windows.exe 超时（${timeoutMs / 1000}s），游戏未能启动。")
         println("[MD3L] 游戏进程已就绪: PID=${foundHandle.pid()}")
         onProgress?.invoke(100, "游戏已启动")
-        // 轻量驻留：仅等待进程退出
         val sentinelScript = """
             Wait-Process -Id ${foundHandle.pid()} -ErrorAction SilentlyContinue
         """.trimIndent()
@@ -1053,8 +1002,6 @@ class BedrockLaunchEngine : ILaunchEngine {
         """.trimIndent()
 
         val scriptFile = File.createTempFile("md3l-bedrock-register-", ".ps1")
-        // PowerShell 5.1 对无 BOM 的 UTF-8 文件会按系统 ANSI 解码（中文 Windows = GBK），
-        // 导致中文注释乱码破坏语法。必须加 BOM。
         scriptFile.writeText("\uFEFF$script", Charsets.UTF_8)
         try {
             onProgress?.invoke(60, "正在注册应用包…")
@@ -1065,7 +1012,6 @@ class BedrockLaunchEngine : ILaunchEngine {
             onProgress?.invoke(80, "注册完成，正在验证…")
             println("[Bedrock] -Register 注册日志:\n$output")
             if (proc.exitValue() != 0) {
-                // 检测是否因系统未开启开发人员模式/侧载导致
                 if (output.contains("0x80073CFF") || output.contains("开发者许可证") || output.contains("旁加载")) {
                     throw RuntimeException(
                         "基岩版注册失败：系统未开启开发人员模式（侧载）。\n\n" +
@@ -1089,7 +1035,6 @@ class BedrockLaunchEngine : ILaunchEngine {
             val family = output.lineSequence().firstOrNull { it.startsWith("FAMILY ") }
                 ?.substringAfter("FAMILY ")?.trim()?.takeIf { it.isNotBlank() }
                 ?: throw RuntimeException("基岩版注册成功但未解析到 PackageFamilyName:\n$output")
-            // AUMID = PackageFamilyName!AppId，AppId 直接从 manifest XML 解析，无需再跑 PowerShell
             val appId = parseAppIdFromManifest(manifestFile)
                 ?: throw RuntimeException("基岩版注册成功但无法从 manifest 解析 Application Id:\n$output")
             val aumid = "$family!$appId"
@@ -1115,7 +1060,6 @@ class BedrockLaunchEngine : ILaunchEngine {
 
     private fun sanitizeManifestForRegister(manifestFile: File): File {
         val content = manifestFile.readText(Charsets.UTF_8)
-        // -Register -DevelopmentMode 不兼容这两个 Extension，会报 0x80080204
         val badCategories = listOf(
             "windows.customInstall",
             "windows.loopbackAccessRules",
@@ -1134,7 +1078,7 @@ class BedrockLaunchEngine : ILaunchEngine {
         manifestFile.copyTo(backup, overwrite = true)
         manifestFile.writeText(cleaned, Charsets.UTF_8)
         println("[Bedrock] sanitized manifest in-place: removed incompatible extensions")
-        return manifestFile  // 路径不变，但内容已清理
+        return manifestFile
     }
 
     private fun ensureVCLibsInstalled() {
@@ -1182,7 +1126,7 @@ class BedrockLaunchEngine : ILaunchEngine {
             output.lines().map { it.trim() }.filter { it.isNotBlank() }.toSet()
         } catch (e: Exception) {
             println("[Bedrock] 获取已安装包列表失败: ${e.message}")
-            return // 检查失败不阻止启动
+            return
         }
 
         println("[Bedrock] 已安装 ${installedPackages.size} 个 Appx 包")
@@ -1306,7 +1250,6 @@ class BedrockLaunchEngine : ILaunchEngine {
         }
     }
 
-    // vtable: [0]QueryInterface [1]AddRef [2]Release [3]ActivateApplication [4]ActivateForFile [5]ActivateForProtocol
     private fun activateUwpApplication(aumid: String): Int {
         Ole32.INSTANCE.CoInitializeEx(Pointer.NULL, Ole32.COINIT_APARTMENTTHREADED)
         try {
@@ -1334,11 +1277,11 @@ class BedrockLaunchEngine : ILaunchEngine {
             hr = HRESULT(
                 activateApp.invokeInt(
                     arrayOf(
-                        pAAM,           // this 指针
-                        aumidWStr,      // appUserModelId
-                        WString(""),    // arguments (空)
-                        0,              // ACTIVATEOPTIONS = AO_NONE
-                        pidRef.pointer, // out processId
+                        pAAM,
+                        aumidWStr,
+                        WString(""),
+                        0,
+                        pidRef.pointer,
                     )
                 )
             )
@@ -1374,7 +1317,6 @@ class BedrockLaunchEngine : ILaunchEngine {
                 extractZipToDir(bundleFile, targetDir, onProgress)
             }
             "msixvc" -> {
-                // .msixvc = XVD (Xbox Virtual Disk) 容器，必须用专用解码器
                 println("[Bedrock] 检测到 MSIXVC 格式，尝试纯 Kotlin XVD 解码器...")
                 val xvdProgress = if (onProgress != null) GdkXvdExtractor.ExtractProgress { cur, total, name ->
                     onProgress(cur, total, name)
@@ -1573,7 +1515,6 @@ class BedrockLaunchEngine : ILaunchEngine {
             val packType = detectPackType(manifest)
             val packRootDir = manifest.parentFile!!
 
-            // 优先用 manifest header.uuid 作目录名（LeviLauncher 同款），避免临时目录名污染
             val uuid = readManifestUuid(manifest)
             val packName = uuid?.replace("-", "")
                 ?: packFile.nameWithoutExtension
