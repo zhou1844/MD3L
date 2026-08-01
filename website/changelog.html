@@ -85,13 +85,31 @@
   <div class="container">
     <div class="timeline">
 
-      <!-- v1.4.1 -->
+      <!-- v1.4.4.a -->
       <div class="tl-item reveal">
         <div class="tl-dot"></div>
         <div class="tl-card">
           <div class="tl-header">
-            <span class="tl-version">v1.4.1</span>
+            <span class="tl-version">v1.4.4.a</span>
             <span class="tl-badge latest">最新</span>
+            <span class="tl-date">2026-08</span>
+          </div>
+          <ul class="change-list">
+            <li class="change-item"><span class="change-type type-new">新增</span>正式支持 Linux 平台（x86_64），提供 AppImage 版本，功能与 Windows 版一致，支持 Java 版与基岩版启动</li>
+            <li class="change-item"><span class="change-type type-imp">优化</span>基岩版 GDK 启动引擎重构：版本存档隔离支持多个 Xbox 用户目录（XUID），UWP 与 GDK 固定路径双 Junction 切换，防止存档串用</li>
+            <li class="change-item"><span class="change-type type-imp">优化</span>启动前自动停止运行中的 Minecraft 进程，确保版本存档 Junction 可正常切换</li>
+            <li class="change-item"><span class="change-type type-fix">修复</span>GDK 版本存档迁移失败时保留原始 com.mojang 目录，防止数据丢失</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- v1.4.1 -->
+      <div class="tl-item reveal">
+        <div class="tl-dot old"></div>
+        <div class="tl-card">
+          <div class="tl-header">
+            <span class="tl-version">v1.4.1</span>
+            <span class="tl-badge minor">次要版本</span>
             <span class="tl-date">2026-06</span>
           </div>
           <ul class="change-list">

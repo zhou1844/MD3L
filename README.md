@@ -32,10 +32,13 @@
 
 去 [Release 页面](https://github.com/zhou1844/MD3L/releases) 下最新安装包。
 
-或者直接走 OneDrive 直链（最新版）：  
-👉 **[下载 MD3L Setup.exe](https://dlink.host/1drv/aHR0cHM6Ly8xZHJ2Lm1zL3UvYy80NmEyZjAxZDI1NjA4YjI5L0lRQXhjLWpkb2tnSVNJbjZ3UHpHQUptNUFhZEtnSW5iR2lLQjFFTDRsSlVJZXhRP2U9cjZ6M0Vi.exe)**
+或者直接走 OneDrive 直链（最新版）：
+- **Windows** 👉 **[下载 MD3L Setup.exe](https://dlink.host/1drv/aHR0cHM6Ly8xZHJ2Lm1zL3UvYy80NmEyZjAxZDI1NjA4YjI5L0lRQXhjLWpkb2tnSVNJbjZ3UHpHQUptNUFhZEtnSW5iR2lLQjFFTDRsSlVJZXhRP2U9ald5dGpZ.exe)**
+- **Linux** 👉 **[下载 MD3L AppImage](https://dlink.host/1drv/aHR0cHM6Ly8xZHJ2Lm1zL3UvYy80NmEyZjAxZDI1NjA4YjI5L0lRREFqR1RsbDlkWlFKWnh3NG1NSEJqckFmMFpFc2tSOWNaTTA4NFFJbzFJQlhJP2U9RmgyMXV5.appimage)**
 
-系统要求：Windows 10 / 11 64 位，不需要装 Java（内置了）。
+系统要求：
+- **Windows 10 / 11 64 位**，不需要装 Java（内置了）
+- **Linux x86_64**，AppImage 版，无需安装依赖
 
 也可以访问项目网站：https://md3l.top
 
