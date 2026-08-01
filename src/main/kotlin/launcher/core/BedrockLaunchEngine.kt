@@ -57,7 +57,12 @@ class BedrockLaunchEngine : ILaunchEngine {
                     ?: versionDir.parentFile?.parentFile?.absolutePath ?: ""
                 runCatching {
                     val targetProfile = engine.resolveBedrockVersionComMojang(resolvedDir, versionId)
-                    engine.switchProfileJunction(targetProfile)
+                    if (engine.isGdkVersion(versionId)) {
+                        engine.switchProfileJunction(targetProfile)
+                        engine.switchGdkProfileJunction(targetProfile, versionId)
+                    } else {
+                        engine.switchProfileJunction(targetProfile)
+                    }
                     println("[Bedrock] 预热：存档 Junction 已提前切换至 ${targetProfile.absolutePath}")
                 }.onFailure { println("[Bedrock] 预热：Junction 切换失败（不影响启动）: ${it.message}") }
                 // 3. 若已有 .installed marker，验证注册状态并缓存结果
@@ -141,80 +146,42 @@ class BedrockLaunchEngine : ILaunchEngine {
     }
 
     /**
-     * 解析 GDK 版 Minecraft 的 com.mojang 数据目录。
-     * 优先扫描 users/ 下已登录的 Xbox 用户（XUID 目录），
-     * 回退到 users/shared。
+     * 解析 GDK 版 Minecraft 的全部可能 com.mojang 数据目录。
+     * 包含 users/ 下所有已登录的 Xbox 用户（XUID 目录）以及 users/shared。
+     * 游戏进程可能写入其中任意一个，因此必须全部纳入 junction 隔离。
      */
-    private fun resolveGdkComMojang(versionId: String): File {
+    private fun resolveGdkFixedComMojangCandidates(versionId: String): List<File> {
         val appData = System.getenv("APPDATA") ?: System.getProperty("user.home")
         val folderName = if (versionId.contains("preview", ignoreCase = true) ||
             versionId.contains("beta", ignoreCase = true)
         ) "Minecraft Bedrock Preview" else "Minecraft Bedrock"
         val baseDir = File(appData, folderName)
         val usersDir = File(baseDir, "users")
-        // 动态扫描已登录的 Xbox 用户目录（XUID 是唯一的数字 ID）
+        val candidates = mutableListOf<File>()
         if (usersDir.isDirectory) {
-            val activeXuid = usersDir.listFiles()?.firstOrNull { dir ->
-                dir.isDirectory && File(dir, "games/com.mojang").exists()
-            }
-            if (activeXuid != null) {
-                println("[MD3L] 发现 GDK Xbox 用户目录: ${activeXuid.name}")
-                return File(activeXuid, "games/com.mojang")
+            usersDir.listFiles()?.filter { dir ->
+                dir.isDirectory && !dir.name.equals("shared", ignoreCase = true)
+            }?.sortedBy { it.name }?.forEach { xuidDir ->
+                println("[MD3L] 发现 GDK Xbox 用户目录: ${xuidDir.name}")
+                candidates.add(File(xuidDir, "games/com.mojang"))
             }
         }
-        // 回退到 users/shared
-        return File(usersDir, "shared/games/com.mojang").apply { mkdirs() }
+        candidates.add(File(usersDir, "shared/games/com.mojang"))
+        return candidates.distinct()
     }
 
     fun resolveVersionProfilePublic(minecraftDir: String, versionId: String): File =
         resolveVersionProfile(minecraftDir, versionId)
 
-    /**
-     * 返回版本的 com.mojang 目录，统一使用 bedrock_profiles/<versionId>/com.mojang。
-     * Pack/World 管理、导出/导入、启动 junction 均走此路径。
-     */
     fun resolveBedrockVersionComMojang(minecraftDir: String, versionId: String): File {
-        // GDK versions write to a fixed APPDATA path (not UWP junction-controlled).
-        // World manager, pack manager, and launch must all use this real path.
-        if (isGdkVersion(versionId.removePrefix("Bedrock ").trim())) {
-            return resolveGdkComMojang(versionId)
-        }
-        val profile = resolveVersionProfile(minecraftDir, versionId)
-        // 如果隔离目录为空（版本号低于 GDK 阈值但实际是 GDK 安装），
-        // 尝试 GDK 路径作为后备
-        if (!profile.isDirectory || profile.listFiles().isNullOrEmpty()) {
-            val gdkPath = resolveGdkComMojang(versionId)
-            if (gdkPath.isDirectory && gdkPath.listFiles()?.isNotEmpty() == true) {
-                println("[MD3L] 非 GDK 版本 ${versionId} 使用 GDK 数据路径后备: ${gdkPath.absolutePath}")
-                return gdkPath
-            }
-        }
-        return profile
+        return resolveVersionProfile(minecraftDir, versionId)
     }
 
-    /**
-     * 返回当前活跃的 com.mojang 目录（Mod 下载安装用），统一走 bedrock_profiles。
-     */
     fun resolveActiveComMojangPublic(minecraftDir: String, versionId: String): File {
-        if (isGdkVersion(versionId.removePrefix("Bedrock ").trim())) {
-            return resolveGdkComMojang(versionId)
-        }
-        val profile = resolveVersionProfile(minecraftDir, versionId)
-        // 相同后备逻辑（Mod 下载安装等场景）
-        if (!profile.isDirectory || profile.listFiles().isNullOrEmpty()) {
-            val gdkPath = resolveGdkComMojang(versionId)
-            if (gdkPath.isDirectory && gdkPath.listFiles()?.isNotEmpty() == true) {
-                return gdkPath
-            }
-        }
-        return profile
+        return resolveVersionProfile(minecraftDir, versionId)
     }
 
     private fun resolveVersionProfile(minecraftDir: String, versionId: String): File {
-        if (isGdkVersion(versionId.removePrefix("Bedrock ").trim())) {
-            return resolveGdkComMojang(versionId)
-        }
-        // 优先使用用户自定义存档根目录（可避免跨盘符拷贝）
         val customProfilesDir = runCatching { runBlocking { AppSettings.load() }.bedrockProfilesDir }.getOrNull()
         val base = if (!customProfilesDir.isNullOrBlank()) {
             File(customProfilesDir, "md3l_profiles")
@@ -232,21 +199,38 @@ class BedrockLaunchEngine : ILaunchEngine {
     private fun readJunctionTarget(dir: File): File? {
         if (!dir.exists()) return null
         return try {
-            val proc = ProcessBuilder("fsutil", "reparsepoint", "query", dir.absolutePath)
+            val escaped = dir.absolutePath.replace("'", "''")
+            val script = "\$i = Get-Item -LiteralPath '$escaped' -Force -ErrorAction SilentlyContinue; " +
+                "if (\$i -and \$i.LinkType -eq 'Junction') { Write-Output \$i.Target }"
+            val proc = ProcessBuilder("powershell", "-NoProfile", "-Command", script)
                 .redirectErrorStream(true).start()
-            val text = proc.inputStream.bufferedReader().readText()
+            val out = proc.inputStream.bufferedReader().readText().trim().lines()
+                .firstOrNull { it.isNotBlank() }
             proc.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
-            if (proc.exitValue() != 0) return null
-            val target = text.lineSequence()
-                .firstOrNull { it.trimStart().startsWith("Print Name:", ignoreCase = true) }
-                ?.substringAfter(":")?.trim()
-                ?: text.lineSequence()
-                    .firstOrNull { it.trimStart().startsWith("Substitute Name:", ignoreCase = true) }
-                    ?.substringAfter(":")?.trim()
-                    ?.removePrefix("\\??\\")
-            target?.let { File(it).canonicalFile }
+            if (out != null && File(out).exists()) File(out).canonicalFile else null
         } catch (_: Exception) {
             null
+        }
+    }
+
+    private fun isReparsePoint(dir: File): Boolean {
+        if (!dir.exists()) return false
+        return try {
+            val escaped = dir.absolutePath.replace("'", "''")
+            val script = "\$i = Get-Item -LiteralPath '$escaped' -Force -ErrorAction SilentlyContinue; " +
+                "if (\$i -and \$i.LinkType -eq 'Junction') { Write-Output 'JUNCTION' } else { Write-Output 'NO' }"
+            val proc = ProcessBuilder("powershell", "-NoProfile", "-Command", script)
+                .redirectErrorStream(true).start()
+            val out = proc.inputStream.bufferedReader().readText().trim()
+            proc.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+            if (out.isBlank()) {
+                // 无法确定时保守视为 junction，绝不触发数据搬移
+                return true
+            }
+            out.contains("JUNCTION", ignoreCase = true)
+        } catch (_: Exception) {
+            // 读取失败时保守视为 junction，保护存档不被搬移
+            true
         }
     }
 
@@ -271,7 +255,7 @@ class BedrockLaunchEngine : ILaunchEngine {
                 return@forEach
             }
 
-            if (comMojang.exists() && currentTarget == null) {
+            if (!isReparsePoint(comMojang) && comMojang.exists() && currentTarget == null) {
                 println("[Bedrock] 首次迁移：/MOVE 方式将数据移动到版本 profile（无文件复制，速度极快）")
                 val moved = tryRobocopyMove(comMojang, targetProfile)
                 if (moved) {
@@ -330,6 +314,87 @@ class BedrockLaunchEngine : ILaunchEngine {
             println("[Bedrock] Junction 建立成功: ${comMojang.absolutePath} → ${targetProfile.canonicalPath}")
         }
         return allOk
+    }
+
+    private fun switchGdkProfileJunction(targetProfile: File, versionId: String): Boolean {
+        val candidates = resolveGdkFixedComMojangCandidates(versionId)
+        targetProfile.mkdirs()
+        var allOk = true
+        candidates.forEach { fixedComMojang ->
+            val ok = switchSingleGdkJunction(fixedComMojang, targetProfile)
+            if (!ok) allOk = false
+        }
+        return allOk
+    }
+
+    private fun switchSingleGdkJunction(fixedComMojang: File, targetProfile: File): Boolean {
+        val parent = fixedComMojang.parentFile
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs()
+        }
+        targetProfile.mkdirs()
+
+        val currentTarget = readJunctionTarget(fixedComMojang)
+        if (currentTarget != null && currentTarget == targetProfile.canonicalFile) {
+            println("[Bedrock] GDK Junction 已正确指向 ${targetProfile.canonicalFile}，零切换")
+            return true
+        }
+
+        if (!isReparsePoint(fixedComMojang) && fixedComMojang.exists() && currentTarget == null) {
+            println("[Bedrock] GDK 首次迁移：/MOVE 方式将数据移动到版本 profile")
+            val moved = tryRobocopyMove(fixedComMojang, targetProfile)
+            if (moved) {
+                println("[Bedrock] GDK 数据移动完成: ${targetProfile.absolutePath}")
+                fixedComMojang.deleteRecursively()
+            } else {
+                println("[Bedrock] GDK /MOVE 失败，回退增量复制")
+                val copied = tryRobocopyIncremental(fixedComMojang, targetProfile)
+                if (copied) {
+                    val profileHasData = targetProfile.exists() && (targetProfile.listFiles()?.isNotEmpty() == true)
+                    if (profileHasData) {
+                        fixedComMojang.deleteRecursively()
+                        println("[Bedrock] GDK 增量复制迁移完成: ${targetProfile.absolutePath}")
+                    } else {
+                        println("[Bedrock] GDK 警告：迁移后 profile 目录为空，保留源目录以保护数据")
+                        return false
+                    }
+                } else {
+                    println("[Bedrock] GDK 数据迁移失败，保留原始 com.mojang 目录以防止数据丢失")
+                    return false
+                }
+            }
+        }
+
+        if (fixedComMojang.exists() || currentTarget != null) {
+            val rm = ProcessBuilder("cmd", "/c", "rmdir", fixedComMojang.absolutePath)
+                .redirectErrorStream(true).start()
+            rm.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+            if (fixedComMojang.exists() && fixedComMojang.isDirectory && fixedComMojang.listFiles()?.isEmpty() == true) {
+                fixedComMojang.delete()
+            }
+            if (fixedComMojang.exists()) {
+                throw RuntimeException(
+                    "无法移除旧的 GDK com.mojang 目录/junction: ${fixedComMojang.absolutePath}\n" +
+                    "请手动删除该目录后重试，或以管理员身份运行启动器。"
+                )
+            }
+        }
+
+        val mk = ProcessBuilder(
+            "cmd", "/c", "mklink", "/J",
+            fixedComMojang.absolutePath,
+            targetProfile.canonicalPath
+        ).redirectErrorStream(true).start()
+        val mkOut = mk.inputStream.bufferedReader().readText().trim()
+        mk.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+        if (mk.exitValue() != 0 && !fixedComMojang.exists()) {
+            throw RuntimeException(
+                "GDK 版本存档 Junction 建立失败，请以管理员身份运行启动器。\n" +
+                "路径: ${fixedComMojang.absolutePath}\n错误: $mkOut"
+            )
+        }
+        println("[Bedrock] GDK Junction 建立成功: ${fixedComMojang.absolutePath} → ${targetProfile.canonicalPath}")
+        return true
     }
 
     private fun tryRobocopyMove(sourceDir: File, targetDir: File): Boolean {
@@ -513,7 +578,7 @@ class BedrockLaunchEngine : ILaunchEngine {
         }.onFailure { println("[MD3L] 注入游戏选项失败: ${it.message}") }
     }
 
-    private fun isGdkVersion(versionId: String): Boolean {
+    fun isGdkVersion(versionId: String): Boolean {
         val GDK_THRESHOLD = listOf(1, 20, 120, 4)
         val parts = versionId.trim().split(".").mapNotNull { it.toIntOrNull() }
         if (parts.size < 4) return false
@@ -545,7 +610,24 @@ class BedrockLaunchEngine : ILaunchEngine {
             // 版本隔离：切换 com.mojang Junction
             onProgress?.invoke(30, "正在切换版本存档…")
             val targetProfile = resolveBedrockVersionComMojang(context.minecraftDir, context.version.id)
-            runCatching { switchProfileJunction(targetProfile) }
+            stopRunningMinecraft()
+            // GDK 版本通过 -Register 以 UWP 包身份运行，游戏实际读取
+            // LocalState/games/com.mojang（UWP 标准路径）；同时也可能读取
+            // %APPDATA%\Minecraft Bedrock\users\...（GDK 原生路径）。
+            // 两条路径都必须切换到版本隔离目录，否则会出现存档串用。
+            if (isGdkVersion(versionId)) {
+                val uwpOk = runCatching { switchProfileJunction(targetProfile) }.onFailure {
+                    println("[MD3L] GDK UWP Junction 切换失败: ${it.message}")
+                }.getOrDefault(false)
+                val gdkOk = runCatching { switchGdkProfileJunction(targetProfile, versionId) }.onFailure {
+                    println("[MD3L] GDK 固定路径 Junction 切换失败: ${it.message}")
+                }.getOrDefault(false)
+                if (!uwpOk && !gdkOk) {
+                    println("[MD3L] 警告：GDK 版本存档隔离未完全生效，游戏可能读取共享存档")
+                }
+            } else {
+                runCatching { switchProfileJunction(targetProfile) }
+            }
             println("[MD3L] 版本存档已隔离: ${targetProfile.absolutePath}")
 
             // 非 GDK 路径额外注入游戏选项（GDK 版本隔离由 Junction 完成，选项注入会干扰）
@@ -567,6 +649,16 @@ class BedrockLaunchEngine : ILaunchEngine {
         println("[MD3L] COM 系统包激活成功 AUMID=$detectedAumid")
         onProgress?.invoke(95, "已激活，等待游戏进程…")
         return uwpMonitorProcess()
+    }
+
+    private fun stopRunningMinecraft() {
+        runCatching {
+            val script = "Get-Process -Name 'Minecraft.Windows','Minecraft.Windows.exe' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue"
+            ProcessBuilder("powershell", "-NoProfile", "-Command", script)
+                .redirectErrorStream(true).start()
+                .waitFor(10, java.util.concurrent.TimeUnit.SECONDS)
+            println("[MD3L] 已停止运行中的 Minecraft 进程（确保 Junction 可切换）")
+        }.onFailure { println("[MD3L] 停止 Minecraft 进程失败（不影响启动）: ${it.message}") }
     }
 
     /**
