@@ -61,7 +61,8 @@ fun BedrockModScreen() {
             val lastId = s.lastVersionId
             if (s.minecraftDir.isNotBlank() && lastId.isNotBlank()) {
                 runCatching {
-                    comMojangDir = BedrockLaunchEngine().resolveActiveComMojangPublic(s.minecraftDir, lastId)
+                    // 使用「游戏实际读取」的有效目录，保证 GDK 版本下资源下载/导入与游戏内可见性一致
+                    comMojangDir = BedrockLaunchEngine().resolveEffectiveComMojangDir(s.minecraftDir, lastId)
                 }
             }
         }

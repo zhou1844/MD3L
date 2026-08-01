@@ -167,6 +167,27 @@ class BedrockLaunchEngine : ILaunchEngine {
         return resolveVersionProfile(minecraftDir, versionId)
     }
 
+    /**
+     * 解析「游戏实际读取」的 com.mojang 目录。
+     *
+     * 无论 UWP 还是 GDK 版本，启动器均采用版本隔离机制，各个版本的存档存储在
+     * `bedrock_profiles/<versionId>/com.mojang` 目录下。
+     *
+     * 对于 GDK 版本，启动器通过将 %APPDATA%\Minecraft Bedrock\users\<xuid>\games\com.mojang 建立 Junction 软链接
+     * 指向当前版本的 profile 目录。
+     *
+     * 本函数在返回 profile 目录的同时，会同步更新 Junction 链接，确保地图管理/导入与游戏实际读取路径 100% 一致。
+     */
+    fun resolveEffectiveComMojangDir(minecraftDir: String, versionId: String): File {
+        val profileDir = resolveVersionProfile(minecraftDir, versionId)
+        if (isGdkVersion(versionId)) {
+            runCatching { switchGdkProfileJunction(profileDir, versionId) }
+        } else {
+            runCatching { switchProfileJunction(profileDir) }
+        }
+        return profileDir
+    }
+
     private fun resolveVersionProfile(minecraftDir: String, versionId: String): File {
         val customProfilesDir = runCatching { runBlocking { AppSettings.load() }.bedrockProfilesDir }.getOrNull()
         val base = if (!customProfilesDir.isNullOrBlank()) {
@@ -184,6 +205,12 @@ class BedrockLaunchEngine : ILaunchEngine {
 
     private fun readJunctionTarget(dir: File): File? {
         if (!dir.exists()) return null
+        runCatching {
+            if (java.nio.file.Files.isSymbolicLink(dir.toPath())) {
+                val target = java.nio.file.Files.readSymbolicLink(dir.toPath()).toFile()
+                if (target.exists()) return target.canonicalFile
+            }
+        }
         return try {
             val escaped = dir.absolutePath.replace("'", "''")
             val script = "\$i = Get-Item -LiteralPath '$escaped' -Force -ErrorAction SilentlyContinue; " +
@@ -201,6 +228,7 @@ class BedrockLaunchEngine : ILaunchEngine {
 
     private fun isReparsePoint(dir: File): Boolean {
         if (!dir.exists()) return false
+        if (java.nio.file.Files.isSymbolicLink(dir.toPath())) return true
         return try {
             val escaped = dir.absolutePath.replace("'", "''")
             val script = "\$i = Get-Item -LiteralPath '$escaped' -Force -ErrorAction SilentlyContinue; " +
@@ -560,10 +588,12 @@ class BedrockLaunchEngine : ILaunchEngine {
     }
 
     fun isGdkVersion(versionId: String): Boolean {
+        if (versionId.contains("gdk", ignoreCase = true)) return true
         val GDK_THRESHOLD = listOf(1, 20, 120, 4)
-        val parts = versionId.trim().split(".").mapNotNull { it.toIntOrNull() }
-        if (parts.size < 4) return false
-        for (i in 0 until 4) {
+        val parts = Regex("\\d+").findAll(versionId).mapNotNull { it.value.toIntOrNull() }.toList()
+        if (parts.isEmpty()) return false
+        val len = maxOf(parts.size, GDK_THRESHOLD.size)
+        for (i in 0 until len) {
             val a = parts.getOrElse(i) { 0 }
             val b = GDK_THRESHOLD.getOrElse(i) { 0 }
             if (a != b) return a > b

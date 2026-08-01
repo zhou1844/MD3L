@@ -709,7 +709,8 @@ private fun importBedrockPack(
             ?: throw RuntimeException("无法解析 Minecraft 根目录")
 
         val engine = BedrockLaunchEngine()
-        val profileDir = engine.resolveVersionProfilePublic(minecraftDir, versionId)
+        // 使用「游戏实际读取」的有效目录，保证 GDK 版本下导入的 Addon 在游戏内可见
+        val profileDir = engine.resolveEffectiveComMojangDir(minecraftDir, versionId)
         var success = 0
         val failed = mutableListOf<String>()
         for (f in files) {

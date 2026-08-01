@@ -52,14 +52,8 @@ fun BedrockPackManagerScreen(versionId: String, versionDir: String, packType: St
         return try {
             val minecraftDir = File(versionDir).parentFile?.parentFile?.absolutePath ?: return null
             val engine = BedrockLaunchEngine()
-            val profile = engine.resolveBedrockVersionComMojang(minecraftDir, versionId)
-            if (!profile.isDirectory || profile.listFiles().isNullOrEmpty()) {
-                val junctionTarget = engine.resolveActiveJunctionTarget()
-                if (junctionTarget != null) {
-                    return junctionTarget
-                }
-            }
-            profile
+            // 使用「游戏实际读取」的有效目录，保证 GDK 版本下导入的资源包/行为包在游戏内可见
+            engine.resolveEffectiveComMojangDir(minecraftDir, versionId)
         } catch (_: Exception) { null }
     }
 
@@ -312,7 +306,8 @@ private fun doImportPack(versionDir: String, versionId: String, packType: String
         val minecraftDir = File(versionDir).parentFile?.parentFile?.absolutePath
             ?: return "无法解析 Minecraft 根目录"
         val engine = BedrockLaunchEngine()
-        val profileDir = engine.resolveBedrockVersionComMojang(minecraftDir, versionId)
+        // 使用「游戏实际读取」的有效目录，保证 GDK 版本下导入的资源包/行为包在游戏内可见
+        val profileDir = engine.resolveEffectiveComMojangDir(minecraftDir, versionId)
         var success = 0
         val failed = mutableListOf<String>()
         for (f in files) {

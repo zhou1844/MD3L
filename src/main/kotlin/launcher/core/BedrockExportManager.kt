@@ -17,7 +17,7 @@ object BedrockExportManager {
             val engine = BedrockLaunchEngine()
             val resolvedDir = minecraftDir.takeIf { it.isNotBlank() }
                 ?: File(versionDir).parentFile?.parentFile?.absolutePath ?: ""
-            val profileDir = engine.resolveBedrockVersionComMojang(resolvedDir, versionId)
+            val profileDir = engine.resolveEffectiveComMojangDir(resolvedDir, versionId)
 
             val packFolders = listOf(
                 "behavior_packs" to profileDir.resolve("behavior_packs"),
@@ -75,7 +75,7 @@ object BedrockExportManager {
             val engine = BedrockLaunchEngine()
             val resolvedMinecraftDir = minecraftDir.takeIf { it.isNotBlank() }
                 ?: File(versionDir).parentFile?.parentFile?.absolutePath ?: ""
-            val profileDir = engine.resolveBedrockVersionComMojang(resolvedMinecraftDir, versionId)
+            val profileDir = engine.resolveEffectiveComMojangDir(resolvedMinecraftDir, versionId)
 
             val behaviorPacksDir = profileDir.resolve("behavior_packs")
             val resourcePacksDir = profileDir.resolve("resource_packs")
@@ -133,7 +133,7 @@ object BedrockExportManager {
             val engine = BedrockLaunchEngine()
             val resolvedMinecraftDir = minecraftDir.takeIf { it.isNotBlank() }
                 ?: vd.parentFile?.parentFile?.absolutePath ?: ""
-            val profileDir = engine.resolveBedrockVersionComMojang(resolvedMinecraftDir, versionId)
+            val profileDir = engine.resolveEffectiveComMojangDir(resolvedMinecraftDir, versionId)
 
             outputFile.parentFile?.mkdirs()
             ZipOutputStream(outputFile.outputStream().buffered()).use { zos ->
@@ -166,7 +166,7 @@ object BedrockExportManager {
             val engine = BedrockLaunchEngine()
             val resolvedMinecraftDir = minecraftDir.takeIf { it.isNotBlank() }
                 ?: File(versionDir).parentFile?.parentFile?.absolutePath ?: ""
-            val profileDir = engine.resolveBedrockVersionComMojang(resolvedMinecraftDir, versionId)
+            val profileDir = engine.resolveEffectiveComMojangDir(resolvedMinecraftDir, versionId)
 
             var metaJson: String? = null
             ZipInputStream(packFile.inputStream().buffered()).use { zis ->
@@ -231,7 +231,7 @@ object BedrockExportManager {
 
             val versionRootDir = File(resolvedDir, "bedrock_versions/$versionId")
             val engine = BedrockLaunchEngine()
-            val profileDir = engine.resolveBedrockVersionComMojang(resolvedDir, versionId)
+            val profileDir = engine.resolveEffectiveComMojangDir(resolvedDir, versionId)
 
             onProgress?.invoke("正在恢复版本 $versionId…")
             ZipInputStream(backupFile.inputStream().buffered()).use { zis ->
