@@ -388,7 +388,6 @@ fun CfBedrockDetailScreen(project: CfBedrockProject) {
                                                 val comMojangDir: File? = if (settings.minecraftDir.isNotBlank()) {
                                                     withContext(Dispatchers.IO) {
                                                         val verId = selectedTargetVersion?.id ?: localVersions.firstOrNull()?.id
-                                                        // 使用「游戏实际读取」的有效目录，保证 GDK 版本下地图/资源下载后游戏内可见
                                                         if (verId != null) engine.resolveEffectiveComMojangDir(settings.minecraftDir, verId) else null
                                                     }
                                                 } else null

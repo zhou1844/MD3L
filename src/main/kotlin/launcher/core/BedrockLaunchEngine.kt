@@ -167,17 +167,6 @@ class BedrockLaunchEngine : ILaunchEngine {
         return resolveVersionProfile(minecraftDir, versionId)
     }
 
-    /**
-     * 解析「游戏实际读取」的 com.mojang 目录。
-     *
-     * 无论 UWP 还是 GDK 版本，启动器均采用版本隔离机制，各个版本的存档存储在
-     * `bedrock_profiles/<versionId>/com.mojang` 目录下。
-     *
-     * 对于 GDK 版本，启动器通过将 %APPDATA%\Minecraft Bedrock\users\<xuid>\games\com.mojang 建立 Junction 软链接
-     * 指向当前版本的 profile 目录。
-     *
-     * 本函数在返回 profile 目录的同时，会同步更新 Junction 链接，确保地图管理/导入与游戏实际读取路径 100% 一致。
-     */
     fun resolveEffectiveComMojangDir(minecraftDir: String, versionId: String): File {
         val profileDir = resolveVersionProfile(minecraftDir, versionId)
         if (isGdkVersion(versionId)) {

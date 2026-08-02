@@ -56,7 +56,6 @@ fun BedrockWorldManagerScreen(versionId: String, versionDir: String) {
         return try {
             val minecraftDir = File(versionDir).parentFile?.parentFile?.absolutePath ?: return null
             val engine = BedrockLaunchEngine()
-            // 使用「游戏实际读取」的有效目录，保证 GDK 版本下地图管理与游戏内可见性一致
             val effective = engine.resolveEffectiveComMojangDir(minecraftDir, versionId)
             File(effective, "minecraftWorlds")
         } catch (_: Exception) { null }
@@ -346,7 +345,6 @@ private fun doImportWorld(versionDir: String, versionId: String): String {
         val minecraftDir = File(versionDir).parentFile?.parentFile?.absolutePath
             ?: return "无法解析 Minecraft 根目录"
         val engine = BedrockLaunchEngine()
-        // 使用「游戏实际读取」的有效目录，保证 GDK 版本下导入后游戏内可见
         val effectiveDir = engine.resolveEffectiveComMojangDir(minecraftDir, versionId)
         val worldsDir = File(effectiveDir, "minecraftWorlds").apply { mkdirs() }
 
