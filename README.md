@@ -81,6 +81,8 @@ src/main/kotlin/launcher/
 - [HMCL](https://github.com/HMCL-dev/HMCL) — 很多实现思路的参考
 - [MCAPPX](https://www.mcappx.com) -基岩版下载源
 - Minecraft 当然是 Mojang 的
+- Bedrockboot
+- Levilauncher
 
 ## License
 
